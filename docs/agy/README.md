@@ -40,6 +40,7 @@ command agy --mode accept-edits --model gemini-3.8-flash-high
 - 指示書にない npm パッケージを追加するときは、報告に名前と理由を書く
 - push してよいのは作業ブランチ `agy/<フェーズ名>` だけ。main への push・マージ・force push はしない
 - commit メッセージは日本語でよい。1 つの commit には 1 つの目的だけを入れる
+- 画面を実装するときは、docs/SPEC.md §10「UI モックと UI 調整」に従い、承認済みモックに合わせる。報告には PC 幅（1440px）とスマホ幅（390px）のスクリーンショットを `docs/agy/reports/img/` に置いて貼る
 - 完了報告の前に `npm run lint`、`npm run typecheck`、`npm test` を通す。結果を報告に貼る
 
 ## 報告ファイルの書き方

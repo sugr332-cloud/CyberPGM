@@ -281,6 +281,13 @@ Combat          : id, session_id?, round, turn_index, participants(JSON), log(JS
 | 3 | **シナリオ**（メーカー、フローチャート、エンカウンターの戦闘投入、進行モード、ログ） | 1 本のシナリオを作成し、通しで進行できる |
 | 4 | 仕上げ（PWA オフライン、バックアップ、ネットラン等の拡張） | — |
 
+### UI モックと UI 調整（必須。2026-10-20 ユーザー決定）
+
+- 画面を実装するフェーズ（Phase 1〜3）では、**実装の前に UI モックを作り、ユーザーの承認を得る**。モックは Claude が作る（claude.ai のデザインキャンバス: <https://claude.ai/artifact/54Qt6LXbYVRxwfwH4Kkg5S>）。ユーザーはモックにコメントして調整を指示する
+- agy は承認されたモックに合わせて実装する。モックの配色（`#0D0E11` 地、味方 `#4FB6E3`、敵 `#F28C38`、アクセント `#FF5A5F`）とフォント（Chakra Petch / IBM Plex Sans JP / JetBrains Mono）を共通のデザイントークンとして `apps/web` に定義する
+- 実装後、**PC 幅（1440px）とスマホ幅（390px）のスクリーンショット**を報告に添付する。ユーザーが実機で確認して UI の調整を指示し、調整が終わるまでそのフェーズを完了にしない
+- 現在のモック v1: 戦闘（PC・スマホ・参加者カード）、商店（PC 一覧・スマホ詳細）、シナリオ（メーカー PC・進行モード スマホ）
+
 ### agy の運用
 
 - 各 Phase の指示書を Claude が `docs/agy/<phase>.md` に書き、agy が実装して `docs/agy/reports/` に報告する。Claude はレビューする
