@@ -213,7 +213,7 @@ Item(共通)
   fvtt_id, tags[], notes
 Weapon(item_id) : weapon_type, skill, damage, rof, magazine, hands, concealable, quality,
                   autofire, dv_table_id, ammo_types[]
-Armor(item_id)  : sp, location[head|body|shield], penalty
+Armor(item_id)  : sp_head, sp_body, is_head, is_body, is_shield, shield_hp, penalty
 Cyberware(item_id): cw_type, install_location, humanity_loss_roll, humanity_loss_static,
                   slots, requires[]
 Image           : id, item_id?|npc_id?|scenario_id?, path, origin[book_scan|user|fvtt_icon],
