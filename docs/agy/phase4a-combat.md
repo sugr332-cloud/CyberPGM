@@ -218,3 +218,11 @@ FVTT の武器に `ignoreArmorPercent` がある（アサルト・ライフル�
 2. **予備の弾を名前で探している**（`'弾'`・`'ammo'`・`'bullet'` を含む名前）。品目の `kind = 'ammo'` で探す。**予備の弾がなければリロードできない**（指示書 §4。いまは予備がなくても満タンになる）。テスト: 予備なし → リロード不可、予備 1 → リロードで 0 になり所持品から消える
 3. **武器の選択欄と計算する武器がずれている**: 選択欄は「ヘビー・ピストル（残弾: —）」なのに、計算は所持品の「大型拳銃 8/8」で行っている。選択欄は **所持品のうち `kind = 'weapon'` の行**（entry_id・名前・残弾）から作り、選んだ entry で計算する。`characters.weapons` の文字列（品目 ID のないもの）は計算に使えないので、選択欄に出さない（カードの表示はそのままでよい）
 4. 報告 03 に、直した項目ごとのテスト名を書く
+
+## 13. マージ後の不具合 04（2026-10-20 Claude。新しいブランチ `agy/phase4a-import-fix` で直す）
+
+Phase 4a は main にマージした（2912f75）。本番の DB で `npm run import:fvtt` を取り込み直したら **518 件すべて「Unchanged」になり、`weapons.suppressive` と `weapons.ignore_armor_percent` が空のまま**。`importer.ts` の差分判定が `items` の列しか比べていないため、サブテーブル（`weapons`・`armors`・`cyberwares`）に列を足しても更新されない。
+
+- 差分判定にサブテーブルの列を含める（GM が編集する列は従来どおり上書きしない）
+- テスト: 古い形の DB（`suppressive`・`ignore_armor_percent` が null の武器）に取り込むと、値が入り「Updated」に数えられる。2 回目は「Unchanged」
+- 本番の取り込み直しは Claude が行う
