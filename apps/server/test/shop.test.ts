@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { app } from '../src/index.js';
 import { db } from '../src/db/client.js';
-import { characters, shops, shop_stock, transactions, items } from '../src/db/schema.js';
+import { characters, shops, shop_stock, transactions, items, images } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { runDemoSeed } from '../src/db/seed-demo.js';
 import { SaveFileSchema } from '@cyberpgm/shared';
@@ -437,6 +437,46 @@ describe('Phase 3a: Shop & Commerce System', () => {
         headers: { Authorization: `Bearer ${playerToken}` },
       });
       expect(imgRes.status).toBe(403);
+    });
+  });
+
+  describe('6. Catalog specs & image resolution (§10 Review 02)', () => {
+    it('returns weapon damage and rof without dummy values in items catalog', async () => {
+      const res = await app.request('/api/items?q=Heavy+Pistol', {
+        headers: { Authorization: `Bearer ${gmToken}` },
+      });
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      const pistol = data.items.find((i: { name_en: string }) => i.name_en === 'Heavy Pistol');
+      expect(pistol).toBeDefined();
+      expect(pistol.damage).toBe('3d6');
+      expect(pistol.rof).toBe(2);
+      expect(pistol.image_id).toBeDefined();
+
+      const rifleRes = await app.request('/api/items?q=Assault+Rifle', {
+        headers: { Authorization: `Bearer ${gmToken}` },
+      });
+      const rifleData = await rifleRes.json();
+      const rifle = rifleData.items.find((i: { name_en: string }) => i.name_en === 'Assault Rifle');
+      expect(rifle).toBeDefined();
+      expect(rifle.damage).toBe('5d6');
+      expect(rifle.rof).toBe(1);
+    });
+
+    it('returns upgrade category with 51 items', async () => {
+      const res = await app.request('/api/items', {
+        headers: { Authorization: `Bearer ${gmToken}` },
+      });
+      const data = await res.json();
+      expect(data.category_counts['upgrade']).toBe(51);
+    });
+
+    it('authenticates image request via ?t=<token> query parameter', async () => {
+      const imgRow = db.select().from(images).where(eq(images.origin, 'fvtt')).get();
+      if (imgRow) {
+        const res = await app.request(`/api/images/${imgRow.id}?t=${gmToken}`);
+        expect(res.status).toBe(200);
+      }
     });
   });
 });

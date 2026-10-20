@@ -139,14 +139,50 @@ itemsRouter.get('/', async (c) => {
     },
   });
 
+  const formattedItems = itemList.map((item) => formatItemSummary(item));
+
   return c.json({
     total,
     limit,
     offset,
     category_counts: categoryCounts,
-    items: itemList,
+    items: formattedItems,
   });
 });
+
+function formatItemSummary(item: any) {
+  const imgs: Array<typeof images.$inferSelect> = item.images || [];
+  let primaryImgId: string | null = null;
+  if (imgs.length > 0) {
+    const primary = imgs.find((img) => img.is_primary);
+    if (primary) {
+      primaryImgId = primary.id;
+    } else {
+      const bookScan = imgs.find((img) => img.origin === 'book_scan');
+      const user = imgs.find((img) => img.origin === 'user');
+      const fvtt = imgs.find((img) => img.origin === 'fvtt');
+      primaryImgId = (bookScan || user || fvtt || imgs[0])?.id ?? null;
+    }
+  }
+
+  return {
+    ...item,
+    image_id: primaryImgId ?? item.image_id ?? null,
+    // Weapon fields (§10 Review 02)
+    damage: item.weapon?.damage ?? null,
+    rof: item.weapon?.rof ?? null,
+    magazine_max: item.weapon?.magazine_max ?? null,
+    weapon_type: item.weapon?.weapon_type ?? null,
+    // Armor fields (§10 Review 02)
+    sp_head: item.armor?.sp_head ?? null,
+    sp_body: item.armor?.sp_body ?? null,
+    is_shield: item.armor?.is_shield ? Boolean(item.armor.is_shield) : false,
+    shield_hp: item.armor?.shield_hp ?? null,
+    // Cyberware fields (§10 Review 02)
+    humanity_loss_static: item.cyberware?.humanity_loss_static ?? null,
+    humanity_loss_roll: item.cyberware?.humanity_loss_roll ?? null,
+  };
+}
 
 // GET /api/items/:id - get item details including sub-tables and images
 itemsRouter.get('/:id', async (c) => {
@@ -167,7 +203,7 @@ itemsRouter.get('/:id', async (c) => {
     return c.json({ error: 'Item not found' }, 404);
   }
 
-  return c.json(item);
+  return c.json(formatItemSummary(item));
 });
 
 // PATCH /api/items/:id - update GM-editable fields of an item (GM only)
@@ -208,7 +244,7 @@ itemsRouter.patch('/:id', requireGm, async (c) => {
     },
   });
 
-  return c.json(updatedItem);
+  return c.json(formatItemSummary(updatedItem));
 });
 
 // POST /api/items/:id/images - upload item image (GM only)

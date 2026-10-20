@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { createDb } from '../apps/server/src/db/client.js';
 import { devices, items } from '../apps/server/src/db/schema.js';
 import { eq } from 'drizzle-orm';
+import path from 'node:path';
 
 test('Shop purchase flow: GM purchases Heavy Pistol for Viper, reflected on Player Sheet via me:update and notify', async ({ browser }) => {
   const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
@@ -27,7 +28,7 @@ test('Shop purchase flow: GM purchases Heavy Pistol for Viper, reflected on Play
   await expect(shopTabBtn).toBeVisible();
   await shopTabBtn.click();
 
-  // Verify Shop view components
+  // Verify Shop view components (Emojis removed)
   await expect(gmPage.getByTestId('shop-selector')).toBeVisible();
   await expect(gmPage.getByTestId('item-search-input')).toBeVisible();
   await expect(gmPage.getByTestId('shop-cart-panel')).toBeVisible();
@@ -36,23 +37,61 @@ test('Shop purchase flow: GM purchases Heavy Pistol for Viper, reflected on Play
   const searchInput = gmPage.getByTestId('item-search-input');
   await searchInput.fill('Heavy Pistol');
 
-  // Verify item card is displayed and click it to open detail panel
-  const itemCard = gmPage.locator('[data-testid^="item-card-"]').first();
+  // Verify Heavy Pistol card is displayed with REAL stats (3d6 · ROF 2, no dummy 1d6)
+  const itemCard = gmPage
+    .locator('[data-testid^="item-card-"]')
+    .filter({ hasText: 'Heavy Pistol' })
+    .filter({ hasText: '3d6 · ROF 2' })
+    .first();
   await expect(itemCard).toBeVisible();
+
+  // Verify item image loaded correctly (naturalWidth > 0, not broken box)
+  const cardImage = itemCard.getByTestId('item-card-image');
+  await expect(cardImage).toBeVisible();
+  const naturalWidth = await cardImage.evaluate((img: HTMLImageElement) => img.naturalWidth);
+  expect(naturalWidth).toBeGreaterThan(0);
+
+  // Click card to open detail panel
   await itemCard.click();
 
   // Verify detail panel loaded
   const detailPanel = gmPage.getByTestId('item-detail-panel');
   await expect(detailPanel).toBeVisible();
   await expect(detailPanel.getByText('Heavy Pistol')).toBeVisible();
+  await expect(detailPanel.getByText(/3d6 \/ ROF 2/)).toBeVisible();
 
   // Take Screenshot: GM Shop view with item detail (1440px)
   await gmPage.screenshot({
     path: 'docs/agy/reports/img/phase3a-shop-gm.png',
   });
 
-  // Add to Cart
-  const addCartBtn = gmPage.locator('[data-testid^="add-to-cart-"]').first();
+  // Open "画像登録・切抜" Modal
+  const openCropBtn = detailPanel.getByRole('button', { name: '画像登録・切抜' });
+  await expect(openCropBtn).toBeVisible();
+  await openCropBtn.click();
+
+  const cropModal = gmPage.getByTestId('image-crop-modal');
+  await expect(cropModal).toBeVisible();
+
+  // Set file to input for interactive crop preview
+  const sampleImagePath = path.resolve('docs/agy/reports/img/phase2-gm-pc.png');
+  await gmPage.getByTestId('crop-file-input').setInputFiles(sampleImagePath);
+
+  // Verify canvas and preview rendered
+  await expect(gmPage.getByTestId('crop-main-canvas')).toBeVisible();
+  await expect(gmPage.getByTestId('crop-preview-canvas')).toBeVisible();
+
+  // Take Screenshot: Interactive Image Crop Modal
+  await gmPage.screenshot({
+    path: 'docs/agy/reports/img/phase3a-crop-modal.png',
+  });
+
+  // Close Crop Modal
+  await cropModal.getByRole('button', { name: 'キャンセル' }).click();
+  await expect(cropModal).not.toBeVisible();
+
+  // Add Heavy Pistol to Cart
+  const addCartBtn = itemCard.locator('button', { hasText: '＋ カート' });
   await addCartBtn.click();
 
   // Verify item in cart
@@ -62,7 +101,6 @@ test('Shop purchase flow: GM purchases Heavy Pistol for Viper, reflected on Play
   // Select Viper as buyer
   const buyerSelect = gmPage.getByTestId('purchase-buyer-select');
   await expect(buyerSelect).toBeVisible();
-  // Ensure first option (Viper) is selected
   await buyerSelect.selectOption({ index: 0 });
 
   // Take Screenshot: Detail & Cart before purchase

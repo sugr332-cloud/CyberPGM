@@ -7,7 +7,7 @@ import {
   Transaction,
   InventoryEntry,
 } from '@cyberpgm/shared';
-import { api } from '../api.js';
+import { api, getGmToken } from '../api.js';
 
 interface ShopViewProps {
   characters: CharacterSheet[];
@@ -72,13 +72,32 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
   const [sellPcId, setSellPcId] = useState<string>(characters[0]?.id || '');
   const [sellQtyMap, setSellQtyMap] = useState<Record<string, number>>({});
 
-  // Image Upload & Crop Modal
+  // Image Upload & Interactive Crop Modal
   const [showImageModal, setShowImageModal] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [loadedImg, setLoadedImg] = useState<HTMLImageElement | null>(null);
   const [imageOrigin, setImageOrigin] = useState<'book_scan' | 'user'>('user');
   const [imageVisibility, setImageVisibility] = useState<'gm' | 'players'>('players');
   const [cropUploading, setCropUploading] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Crop rectangle state in canvas coordinates
+  const [cropRect, setCropRect] = useState<{ x: number; y: number; w: number; h: number }>({
+    x: 40,
+    y: 40,
+    w: 200,
+    h: 200,
+  });
+  const [dragMode, setDragMode] = useState<'move' | 'resize' | null>(null);
+  const [dragStart, setDragStart] = useState<{ mouseX: number; mouseY: number; rect: typeof cropRect }>({
+    mouseX: 0,
+    mouseY: 0,
+    rect: { x: 40, y: 40, w: 200, h: 200 },
+  });
+
+  const mainCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const gmToken = getGmToken() || '';
 
   // Load Shops
   const loadShops = useCallback(async () => {
@@ -200,9 +219,10 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
       const price = calculateItemPrice(item);
       setCart([...cart, { item, qty: 1, unit_price_override: price }]);
       if (item.kind === 'cyberware') {
+        const defaultHl = item.humanity_loss_static ?? (item.cyberware?.humanity_loss_static ?? 0);
         setCwInstallOpts((prev) => ({
           ...prev,
-          [item.id]: { install: false, humanityLoss: item.cyberware?.humanity_loss_static ?? 2 },
+          [item.id]: { install: false, humanityLoss: defaultHl },
         }));
       }
     }
@@ -380,38 +400,186 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
     }
   };
 
-  // Image Upload Crop Handling
+  // Redraw Interactive Crop Canvas & Preview
+  const redrawCropCanvas = useCallback(() => {
+    if (!loadedImg || !mainCanvasRef.current) return;
+    const cvs = mainCanvasRef.current;
+    const ctx = cvs.getContext('2d');
+    if (!ctx) return;
+
+    const cw = cvs.width;
+    const ch = cvs.height;
+
+    // Draw source image fit inside canvas
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.drawImage(loadedImg, 0, 0, cw, ch);
+
+    // Dim background outside selection
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    // Top
+    ctx.fillRect(0, 0, cw, cropRect.y);
+    // Bottom
+    ctx.fillRect(0, cropRect.y + cropRect.h, cw, ch - (cropRect.y + cropRect.h));
+    // Left
+    ctx.fillRect(0, cropRect.y, cropRect.x, cropRect.h);
+    // Right
+    ctx.fillRect(cropRect.x + cropRect.w, cropRect.y, cw - (cropRect.x + cropRect.w), cropRect.h);
+
+    // Selection border
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+    ctx.setLineDash([]);
+
+    // Resize handle at bottom-right
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(cropRect.x + cropRect.w - 8, cropRect.y + cropRect.h - 8, 8, 8);
+
+    // Update preview canvas
+    if (previewCanvasRef.current) {
+      const pCvs = previewCanvasRef.current;
+      const pCtx = pCvs.getContext('2d');
+      if (pCtx) {
+        pCvs.width = 160;
+        pCvs.height = 160;
+        pCtx.clearRect(0, 0, 160, 160);
+
+        // Map cropRect to natural image coordinates
+        const scaleX = loadedImg.naturalWidth / cw;
+        const scaleY = loadedImg.naturalHeight / ch;
+
+        const srcX = Math.max(0, cropRect.x * scaleX);
+        const srcY = Math.max(0, cropRect.y * scaleY);
+        const srcW = Math.min(loadedImg.naturalWidth - srcX, cropRect.w * scaleX);
+        const srcH = Math.min(loadedImg.naturalHeight - srcY, cropRect.h * scaleY);
+
+        if (srcW > 0 && srcH > 0) {
+          pCtx.drawImage(loadedImg, srcX, srcY, srcW, srcH, 0, 0, 160, 160);
+        }
+      }
+    }
+  }, [loadedImg, cropRect]);
+
+  useEffect(() => {
+    redrawCropCanvas();
+  }, [redrawCropCanvas]);
+
+  // Image Selection for Crop
   const handleImageFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setImageFile(file);
-    const url = URL.createObjectURL(file);
 
-    // Draw to canvas for square crop preview
+    const url = URL.createObjectURL(file);
     const img = new Image();
     img.src = url;
     img.onload = () => {
-      if (canvasRef.current) {
-        const cvs = canvasRef.current;
-        const ctx = cvs.getContext('2d');
-        if (!ctx) return;
-        const size = Math.min(img.width, img.height);
-        const startX = (img.width - size) / 2;
-        const startY = (img.height - size) / 2;
-        cvs.width = 400;
-        cvs.height = 400;
-        ctx.clearRect(0, 0, 400, 400);
-        ctx.drawImage(img, startX, startY, size, size, 0, 0, 400, 400);
+      setLoadedImg(img);
+
+      // Initialize cropRect to center 60% of canvas
+      const canvasW = 460;
+      const canvasH = Math.round((460 * img.naturalHeight) / img.naturalWidth) || 300;
+      if (mainCanvasRef.current) {
+        mainCanvasRef.current.width = canvasW;
+        mainCanvasRef.current.height = Math.min(canvasH, 360);
       }
+
+      const initW = Math.round(canvasW * 0.6);
+      const initH = Math.round((mainCanvasRef.current?.height || 300) * 0.6);
+      setCropRect({
+        x: Math.round((canvasW - initW) / 2),
+        y: Math.round(((mainCanvasRef.current?.height || 300) - initH) / 2),
+        w: initW,
+        h: initH,
+      });
     };
   };
 
+  // Mouse Handlers for dragging / resizing cropRect
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const cvs = mainCanvasRef.current;
+    if (!cvs) return;
+    const rect = cvs.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    // Check if clicked near bottom-right resize handle
+    const handleX = cropRect.x + cropRect.w;
+    const handleY = cropRect.y + cropRect.h;
+    if (Math.abs(mouseX - handleX) < 16 && Math.abs(mouseY - handleY) < 16) {
+      setDragMode('resize');
+      setDragStart({ mouseX, mouseY, rect: { ...cropRect } });
+      return;
+    }
+
+    // Check if clicked inside cropRect for moving
+    if (
+      mouseX >= cropRect.x &&
+      mouseX <= cropRect.x + cropRect.w &&
+      mouseY >= cropRect.y &&
+      mouseY <= cropRect.y + cropRect.h
+    ) {
+      setDragMode('move');
+      setDragStart({ mouseX, mouseY, rect: { ...cropRect } });
+    }
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!dragMode || !mainCanvasRef.current) return;
+    const cvs = mainCanvasRef.current;
+    const rect = cvs.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const dx = mouseX - dragStart.mouseX;
+    const dy = mouseY - dragStart.mouseY;
+
+    if (dragMode === 'move') {
+      const newX = Math.max(0, Math.min(cvs.width - dragStart.rect.w, dragStart.rect.x + dx));
+      const newY = Math.max(0, Math.min(cvs.height - dragStart.rect.h, dragStart.rect.y + dy));
+      setCropRect({
+        ...dragStart.rect,
+        x: newX,
+        y: newY,
+      });
+    } else if (dragMode === 'resize') {
+      const newW = Math.max(30, Math.min(cvs.width - dragStart.rect.x, dragStart.rect.w + dx));
+      const newH = Math.max(30, Math.min(cvs.height - dragStart.rect.y, dragStart.rect.h + dy));
+      setCropRect({
+        ...dragStart.rect,
+        w: newW,
+        h: newH,
+      });
+    }
+  };
+
+  const handleCanvasMouseUp = () => {
+    setDragMode(null);
+  };
+
+  // Execute upload of cropped image
   const handleUploadCroppedImage = async () => {
-    if (!selectedItem || !canvasRef.current) return;
+    if (!selectedItem || !loadedImg || !mainCanvasRef.current) return;
     setCropUploading(true);
     try {
-      const cvs = canvasRef.current;
-      cvs.toBlob(async (blob) => {
+      const cvs = mainCanvasRef.current;
+      const scaleX = loadedImg.naturalWidth / cvs.width;
+      const scaleY = loadedImg.naturalHeight / cvs.height;
+
+      const srcX = Math.max(0, cropRect.x * scaleX);
+      const srcY = Math.max(0, cropRect.y * scaleY);
+      const srcW = Math.min(loadedImg.naturalWidth - srcX, cropRect.w * scaleX);
+      const srcH = Math.min(loadedImg.naturalHeight - srcY, cropRect.h * scaleY);
+
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = Math.round(srcW);
+      offCanvas.height = Math.round(srcH);
+      const offCtx = offCanvas.getContext('2d');
+      if (!offCtx) return;
+
+      offCtx.drawImage(loadedImg, srcX, srcY, srcW, srcH, 0, 0, offCanvas.width, offCanvas.height);
+
+      offCanvas.toBlob(async (blob) => {
         if (!blob) return;
         const formData = new FormData();
         formData.append('image', blob, 'cropped.png');
@@ -420,8 +588,10 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
 
         await api.uploadItemImage(selectedItem.id, formData);
         await handleSelectItem(selectedItem.id);
+        await loadItems();
         setShowImageModal(false);
         setImageFile(null);
+        setLoadedImg(null);
         setCropUploading(false);
       }, 'image/png');
     } catch (err) {
@@ -430,7 +600,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
     }
   };
 
-  // Categories list
+  // Categories list (§10 Review 02: key 'upgrade' instead of 'mod')
   const categoryKeys = [
     { key: '', label: 'すべて' },
     { key: 'weapon', label: '武器' },
@@ -440,7 +610,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
     { key: 'gear', label: 'ギア' },
     { key: 'clothing', label: '衣服' },
     { key: 'ammo', label: '弾薬' },
-    { key: 'mod', label: '改造パーツ' },
+    { key: 'upgrade', label: '改造パーツ' },
     { key: 'program', label: 'プログラム' },
     { key: 'vehicle', label: '乗り物' },
     { key: 'drug', label: 'ドラッグ' },
@@ -448,7 +618,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minHeight: '80vh' }}>
-      {/* Top Bar: Shop Selector & Actions */}
+      {/* Top Bar: Shop Selector & Actions (Emojis removed §10 Review 02) */}
       <div
         style={{
           display: 'flex',
@@ -561,7 +731,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
               cursor: 'pointer',
             }}
           >
-            💰 PC から売却
+            PC から売却
           </button>
           <button
             onClick={handleOpenHistory}
@@ -575,7 +745,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
               cursor: 'pointer',
             }}
           >
-            📜 取引履歴
+            取引履歴
           </button>
           <button
             onClick={handleOpenPriceConfigs}
@@ -589,7 +759,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
               cursor: 'pointer',
             }}
           >
-            ⚙️ 価格帯設定
+            価格帯設定
           </button>
         </div>
       </div>
@@ -871,7 +1041,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                   cursor: 'pointer',
                 }}
               >
-                🂠 カード
+                カード
               </button>
               <button
                 onClick={() => setViewMode('table')}
@@ -887,7 +1057,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                   cursor: 'pointer',
                 }}
               >
-                ☷ 一覧表
+                一覧表
               </button>
             </div>
           </div>
@@ -944,7 +1114,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                       transition: 'border-color 0.15s ease',
                     }}
                   >
-                    {/* Item Image / Placeholder */}
+                    {/* Item Image (§10 Review 02: /api/images/:id?t=token) */}
                     <div
                       style={{
                         height: '110px',
@@ -954,19 +1124,21 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                         justifyContent: 'center',
                         overflow: 'hidden',
                         position: 'relative',
+                        padding: '4px',
                       }}
                     >
-                      {item.image_path ? (
+                      {item.image_id ? (
                         <img
-                          src={`/images/${item.image_path}`}
-                          alt={item.name_ja}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          data-testid="item-card-image"
+                          src={`/api/images/${item.image_id}?t=${encodeURIComponent(gmToken)}`}
+                          alt={item.name_ja_override || item.name_ja}
+                          style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                           onError={(e) => {
                             (e.target as HTMLElement).style.display = 'none';
                           }}
                         />
                       ) : (
-                        <span style={{ fontSize: '2rem', opacity: 0.3 }}>📦</span>
+                        <span style={{ fontSize: '1.2rem', color: 'var(--color-text-muted)' }}>—</span>
                       )}
 
                       {/* Verify Status Badge */}
@@ -1007,19 +1179,28 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                         </div>
                       </div>
 
-                      {/* Key Stats */}
+                      {/* Key Stats (§10 Review 02: No dummy values, dash fallback) */}
                       <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                         {item.kind === 'weapon' && (
                           <span>
-                            {item.weapon_type || '武器'} · {item.damage || '1d6'} · ROF {item.rof ?? 1}
+                            {item.weapon_type || '武器'} · {item.damage || '—'} · ROF {item.rof ?? '—'}
                           </span>
                         )}
-                        {item.kind === 'armor' && <span>SP {item.sp ?? 0}</span>}
+                        {item.kind === 'armor' && (
+                          <span>
+                            {item.is_shield
+                              ? `シールド HP ${item.shield_hp ?? '—'}`
+                              : `頭 SP ${item.sp_head ?? '—'} / 体 SP ${item.sp_body ?? '—'}`}
+                          </span>
+                        )}
                         {item.kind === 'cyberware' && (
-                          <span>HL {item.humanity_loss_static ?? 2} ({item.humanity_loss_dice || '1d6'})</span>
+                          <span>
+                            HL {item.humanity_loss_static ?? '—'}
+                            {item.humanity_loss_roll ? ` (${item.humanity_loss_roll})` : ''}
+                          </span>
                         )}
                         {!['weapon', 'armor', 'cyberware'].includes(item.kind) && (
-                          <span>{item.summary_ja || item.kind}</span>
+                          <span>{item.summary_ja || '—'}</span>
                         )}
                       </div>
 
@@ -1172,9 +1353,13 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                       </td>
                       <td style={{ padding: '8px', color: 'var(--color-text-muted)' }}>{item.kind}</td>
                       <td style={{ padding: '8px', color: 'var(--color-text-muted)' }}>
-                        {item.kind === 'weapon' && `${item.damage || ''} / ROF ${item.rof ?? 1}`}
-                        {item.kind === 'armor' && `SP ${item.sp ?? 0}`}
-                        {item.kind === 'cyberware' && `HL ${item.humanity_loss_static ?? 2}`}
+                        {item.kind === 'weapon' && `${item.damage || '—'} / ROF ${item.rof ?? '—'}`}
+                        {item.kind === 'armor' &&
+                          (item.is_shield
+                            ? `シールド HP ${item.shield_hp ?? '—'}`
+                            : `頭 SP ${item.sp_head ?? '—'} / 体 SP ${item.sp_body ?? '—'}`)}
+                        {item.kind === 'cyberware' && `HL ${item.humanity_loss_static ?? '—'}`}
+                        {!['weapon', 'armor', 'cyberware'].includes(item.kind) && (item.summary_ja || '—')}
                       </td>
                       <td style={{ padding: '8px', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
                         {calculateItemPrice(item).toLocaleString()} eb
@@ -1252,22 +1437,24 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    padding: '6px',
                   }}
                 >
-                  {selectedItem.image_path ? (
+                  {selectedItem.image_id ? (
                     <img
-                      src={`/images/${selectedItem.image_path}`}
+                      src={`/api/images/${selectedItem.image_id}?t=${encodeURIComponent(gmToken)}`}
                       alt={selectedItem.name_ja}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                     />
                   ) : (
-                    <span style={{ fontSize: '2.5rem', opacity: 0.3 }}>📦</span>
+                    <span style={{ fontSize: '1.5rem', color: 'var(--color-text-muted)' }}>—</span>
                   )}
 
                   <button
                     onClick={() => {
                       setShowImageModal(true);
                       setImageFile(null);
+                      setLoadedImg(null);
                     }}
                     style={{
                       position: 'absolute',
@@ -1282,16 +1469,18 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                       cursor: 'pointer',
                     }}
                   >
-                    📷 画像登録・切抜
+                    画像登録・切抜
                   </button>
                 </div>
 
-                {/* Sub-table specs */}
+                {/* Sub-table specs (§10 Review 02: dash fallback, no fake numbers) */}
                 <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--color-text-muted)' }}>基本価格:</span>
                     <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                      {selectedItem.price_eb?.toLocaleString()} eb
+                      {selectedItem.price_eb !== null && selectedItem.price_eb !== undefined
+                        ? `${selectedItem.price_eb.toLocaleString()} eb`
+                        : '—'}
                     </span>
                   </div>
 
@@ -1299,20 +1488,24 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--color-text-muted)' }}>武器種別:</span>
-                        <span>{selectedItem.weapon.type}</span>
+                        <span>{selectedItem.weapon.weapon_type || selectedItem.weapon_type || '—'}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--color-text-muted)' }}>ダメージ / ROF:</span>
-                        <span>{selectedItem.weapon.damage} / ROF {selectedItem.weapon.rof}</span>
+                        <span>
+                          {selectedItem.weapon.damage || '—'} / ROF {selectedItem.weapon.rof ?? '—'}
+                        </span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--color-text-muted)' }}>装弾数 / 弾薬:</span>
-                        <span>{selectedItem.weapon.ammo_capacity}発 ({selectedItem.weapon.ammo_type})</span>
+                        <span>
+                          {selectedItem.weapon.magazine_max ?? '—'}発 ({selectedItem.weapon.ammo_types || '—'})
+                        </span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--color-text-muted)' }}>隠匿 / 両手:</span>
                         <span>
-                          {selectedItem.weapon.concealable ? '隠匿可' : '不可'} · {selectedItem.weapon.hands}手
+                          {selectedItem.weapon.concealable ? '隠匿可' : '不可'} · {selectedItem.weapon.hands ?? '—'}手
                         </span>
                       </div>
                     </>
@@ -1322,7 +1515,11 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--color-text-muted)' }}>SP / 部位:</span>
-                        <span>SP {selectedItem.armor.sp} ({selectedItem.armor.location})</span>
+                        <span>
+                          {selectedItem.armor.is_shield
+                            ? `シールド HP ${selectedItem.armor.shield_hp ?? '—'}`
+                            : `頭 SP ${selectedItem.armor.sp_head ?? '—'} / 体 SP ${selectedItem.armor.sp_body ?? '—'}`}
+                        </span>
                       </div>
                     </>
                   )}
@@ -1332,12 +1529,15 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--color-text-muted)' }}>人間性減少:</span>
                         <span>
-                          {selectedItem.cyberware.humanity_loss_static} ({selectedItem.cyberware.humanity_loss_dice})
+                          {selectedItem.cyberware.humanity_loss_static ?? '—'}
+                          {selectedItem.cyberware.humanity_loss_roll ? ` (${selectedItem.cyberware.humanity_loss_roll})` : ''}
                         </span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--color-text-muted)' }}>部位 / スロット:</span>
-                        <span>{selectedItem.cyberware.installation} / {selectedItem.cyberware.slots}枠</span>
+                        <span>
+                          {selectedItem.cyberware.install_location || '—'} / {selectedItem.cyberware.slot_size ?? '—'}枠
+                        </span>
                       </div>
                     </>
                   )}
@@ -1465,7 +1665,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
             )}
           </div>
 
-          {/* Cart & Purchase Panel */}
+          {/* Cart & Purchase Panel (Emojis removed §10 Review 02) */}
           <div
             data-testid="shop-cart-panel"
             style={{
@@ -1479,7 +1679,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>🛒 カート ({cart.length})</span>
+              <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>カート ({cart.length})</span>
               {cart.length > 0 && (
                 <button
                   onClick={() => setCart([])}
@@ -1503,7 +1703,8 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                   const effectivePrice =
                     c.unit_price_override !== undefined ? c.unit_price_override : calculateItemPrice(c.item);
                   const isCyber = c.item.kind === 'cyberware';
-                  const cwOpt = cwInstallOpts[c.item.id] || { install: false, humanityLoss: 2 };
+                  const defaultHl = c.item.humanity_loss_static ?? (c.item.cyberware?.humanity_loss_static ?? 0);
+                  const cwOpt = cwInstallOpts[c.item.id] || { install: false, humanityLoss: defaultHl };
 
                   return (
                     <div
@@ -1663,7 +1864,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                                 }}
                               />
                               <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
-                                (元: {c.item.cyberware?.humanity_loss_static ?? 2})
+                                (元: {c.item.humanity_loss_static ?? '—'})
                               </span>
                             </div>
                           )}
@@ -1907,7 +2108,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
         </div>
       )}
 
-      {/* Modal: PC Sell */}
+      {/* Modal: PC Sell (Emojis removed §10 Review 02) */}
       {showSellModal && (
         <div
           style={{
@@ -2070,7 +2271,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
         </div>
       )}
 
-      {/* Modal: Transaction History */}
+      {/* Modal: Transaction History (Emojis removed §10 Review 02) */}
       {showHistoryModal && (
         <div
           style={{
@@ -2127,7 +2328,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span style={{ fontWeight: 600 }}>
-                        {tx.kind === 'buy' ? '🛒 購入' : '💰 売却'} · {tx.character_name || tx.character_id}
+                        {tx.kind === 'buy' ? '購入' : '売却'} · {tx.character_name || tx.character_id}
                         {tx.shop_name && ` (${tx.shop_name})`}
                       </span>
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: tx.kind === 'buy' ? 'var(--color-warning)' : 'var(--color-success)' }}>
@@ -2253,16 +2454,17 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
         </div>
       )}
 
-      {/* Modal: Image Upload & Crop */}
+      {/* Modal: Interactive Crop & Image Upload (§10 Review 02) */}
       {showImageModal && (
         <div
+          data-testid="image-crop-modal"
           style={{
             position: 'fixed',
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2274,49 +2476,115 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
               backgroundColor: 'var(--color-surface)',
               border: '1px solid var(--color-border)',
               borderRadius: '8px',
-              padding: '24px',
-              width: '90%',
-              maxWidth: '460px',
+              padding: '20px',
+              width: '95%',
+              maxWidth: '680px',
               display: 'flex',
               flexDirection: 'column',
               gap: '12px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
             }}
           >
-            <h3 style={{ margin: 0, fontSize: '1.1rem' }}>品目画像登録・切抜</h3>
-
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={handleImageFileSelect}
-              style={{ fontSize: '0.85rem' }}
-            />
-
-            {/* Canvas Crop Area */}
-            <div
-              style={{
-                width: '100%',
-                height: '240px',
-                backgroundColor: 'var(--color-surface-elevated)',
-                borderRadius: '6px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-              }}
-            >
-              <canvas
-                ref={canvasRef}
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  objectFit: 'contain',
-                }}
-              />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>品目画像トリミング・登録</h3>
+              <button
+                onClick={() => setShowImageModal(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.1rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', fontSize: '0.8rem' }}>
+            <div>
+              <input
+                data-testid="crop-file-input"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={handleImageFileSelect}
+                style={{ fontSize: '0.85rem' }}
+              />
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginLeft: '8px' }}>
+                ※本のスキャンや画像から、枠をドラッグして自由な位置・大きさでトリミングできます
+              </span>
+            </div>
+
+            {/* Canvas Interactive Crop Area & Live Preview */}
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              {/* Main Crop Area */}
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: '320px',
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  position: 'relative',
+                  minHeight: '260px',
+                }}
+              >
+                {loadedImg ? (
+                  <canvas
+                    data-testid="crop-main-canvas"
+                    ref={mainCanvasRef}
+                    onMouseDown={handleCanvasMouseDown}
+                    onMouseMove={handleCanvasMouseMove}
+                    onMouseUp={handleCanvasMouseUp}
+                    onMouseLeave={handleCanvasMouseUp}
+                    style={{
+                      maxWidth: '100%',
+                      cursor: dragMode === 'resize' ? 'nwse-resize' : dragMode === 'move' ? 'grabbing' : 'grab',
+                    }}
+                  />
+                ) : (
+                  <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                    画像ファイルを選択してください
+                  </div>
+                )}
+              </div>
+
+              {/* Preview Area */}
+              <div
+                style={{
+                  width: '180px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  alignItems: 'center',
+                }}
+              >
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
+                  切り抜きプレビュー
+                </div>
+                <div
+                  style={{
+                    width: '160px',
+                    height: '160px',
+                    backgroundColor: 'var(--color-surface-elevated)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <canvas data-testid="crop-preview-canvas" ref={previewCanvasRef} style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
+                  枠内ドラッグ: 移動<br />右下角ドラッグ: 拡大縮小
+                </div>
+              </div>
+            </div>
+
+            {/* Origin & Visibility Settings */}
+            <div style={{ display: 'flex', gap: '16px', fontSize: '0.8rem', flexWrap: 'wrap' }}>
               <div>
-                <label style={{ color: 'var(--color-text-muted)', marginRight: '4px' }}>出所:</label>
+                <label style={{ color: 'var(--color-text-muted)', marginRight: '6px' }}>出所:</label>
                 <select
                   value={imageOrigin}
                   onChange={(e) => {
@@ -2325,7 +2593,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                     setImageVisibility(orig === 'book_scan' ? 'gm' : 'players');
                   }}
                   style={{
-                    padding: '4px',
+                    padding: '4px 8px',
                     borderRadius: '4px',
                     border: '1px solid var(--color-border)',
                     backgroundColor: 'var(--color-surface-elevated)',
@@ -2338,12 +2606,12 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
               </div>
 
               <div>
-                <label style={{ color: 'var(--color-text-muted)', marginRight: '4px' }}>公開先:</label>
+                <label style={{ color: 'var(--color-text-muted)', marginRight: '6px' }}>公開先:</label>
                 <select
                   value={imageVisibility}
                   onChange={(e) => setImageVisibility(e.target.value as 'gm' | 'players')}
                   style={{
-                    padding: '4px',
+                    padding: '4px 8px',
                     borderRadius: '4px',
                     border: '1px solid var(--color-border)',
                     backgroundColor: 'var(--color-surface-elevated)',
@@ -2356,7 +2624,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
               <button
                 type="button"
                 onClick={() => setShowImageModal(false)}
@@ -2372,8 +2640,9 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                 キャンセル
               </button>
               <button
+                data-testid="crop-confirm-button"
                 onClick={handleUploadCroppedImage}
-                disabled={!imageFile || cropUploading}
+                disabled={!imageFile || !loadedImg || cropUploading}
                 style={{
                   padding: '8px 16px',
                   borderRadius: '6px',
@@ -2381,7 +2650,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                   backgroundColor: 'var(--color-primary)',
                   color: '#fff',
                   fontWeight: 600,
-                  cursor: !imageFile || cropUploading ? 'not-allowed' : 'pointer',
+                  cursor: !imageFile || !loadedImg || cropUploading ? 'not-allowed' : 'pointer',
                 }}
               >
                 {cropUploading ? 'アップロード中...' : '切り抜いて登録'}

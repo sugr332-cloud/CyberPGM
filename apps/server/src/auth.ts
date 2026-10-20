@@ -112,7 +112,7 @@ export function extractToken(c: Context): string | null {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.slice(7).trim();
   }
-  const queryToken = c.req.query('token');
+  const queryToken = c.req.query('token') || c.req.query('t');
   if (queryToken) {
     return queryToken.trim();
   }
