@@ -89,3 +89,7 @@ Google サイト版（外からの作成とメール送信）は Phase 6。こ�
 - `npm run lint`、`npm run typecheck`、`npm test`、E2E が通る
 - 報告に、スクリーンショット、指示書と違う判断をした箇所、ユーザーに確認してほしいこと（作成方法の数値の入れ方など）を書く
 - テスト用に動いている `npm start`（ポート 8787）は止めない。E2E は別のポートで動かす
+
+## 9. Phase 3a からの持ち越し（最初に直す。commit は分ける）
+
+- 商店の詳細で、武器種別が内部名のまま（`heavyPistol`）、弾薬の種類が JSON のまま（`(["heavyPistol"])`）出ている。武器種別と弾薬の種類に日本語の表示名を付ける（FVTT の babele か、なければ仮訳の対応表を `packages/shared` に置き、`provisional: true` を付ける。Issue #11）。表示は「大型拳銃」「弾薬: 大型拳銃用」のようにする
