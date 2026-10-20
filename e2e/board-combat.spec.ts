@@ -186,6 +186,43 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
     })
     .run();
 
+  // Create Booster character behind the wall (x=8, y=5)
+  const boosterId = generateUlid();
+  db.insert(characters)
+    .values({
+      id: boosterId,
+      name: 'ブースター',
+      kind: 'mook',
+      role: 'Booster',
+      hp: 20,
+      hp_max: 20,
+      sp_head: 0,
+      sp_body: 4,
+      eb: 0,
+      humanity: 30,
+      emp_max: 3,
+      stats: JSON.stringify({ int: 4, ref: 5, dex: 5, tech: 3, cool: 4, will: 4, luck: 0, move: 5, body: 6, emp: 3 }),
+      skills: JSON.stringify({ Handgun: 4, Evasion: 4 }),
+      cyberware: '[]',
+      inventory: '[]',
+      crit_injuries: '[]',
+      created_at: now,
+      updated_at: now,
+    })
+    .run();
+
+  // Place Booster token at (8, 5) behind wall (wall is at x=5, y=3..8)
+  db.insert(board_tokens)
+    .values({
+      id: generateUlid(),
+      board_id: testBoardId,
+      character_id: boosterId,
+      x: 8,
+      y: 5,
+      gm_only: false,
+    })
+    .run();
+
   // Add a GM-only token at (10, 5)
   db.insert(board_tokens)
     .values({
@@ -202,6 +239,7 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
   const combatId = generateUlid();
   const viperPartId = generateUlid();
   const gangerPartId = generateUlid();
+  const boosterPartId = generateUlid();
 
   db.insert(combats)
     .values({
@@ -239,6 +277,20 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
       side: 'enemy',
       initiative: 12,
       order_index: 1,
+      active: true,
+      out: false,
+    })
+    .run();
+
+  db.insert(combat_participants)
+    .values({
+      id: boosterPartId,
+      combat_id: combatId,
+      character_id: boosterId,
+      name: 'ブースター',
+      side: 'enemy',
+      initiative: 8,
+      order_index: 2,
       active: true,
       out: false,
     })
@@ -293,15 +345,20 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
   await expect(confirmMoveBtn).toBeVisible();
   await confirmMoveBtn.click();
 
-  // --- Step 2: Test Shooting with Line of Sight (Yellow Cover) ---
+  // --- Step 2: Test Shooting with Line of Sight (Yellow Cover vs Red Blocked) ---
   // Select "射撃"
   await gmPage.getByRole('button', { name: '射撃', exact: true }).click();
 
-  // Select target: ガンガー
-  await gmPage.getByRole('button', { name: 'ガンガー', exact: true }).click();
-
-  // Verify automatic distance calculation and LoS line
+  // 1. Target Booster (behind full wall at x=5, y=3..8): line should be RED (#EF4444)
+  await gmPage.getByRole('button', { name: 'ブースター', exact: true }).click();
   await expect(gmPage.locator('.los-line')).toBeVisible();
+  await expect(gmPage.locator('.los-line line')).toHaveAttribute('stroke', '#EF4444');
+  await expect(gmPage.getByText(/射線: × 射撃不可/)).toBeVisible();
+
+  // 2. Target Ganger (behind wooden crate at x=4, y=2): line should be YELLOW (#EAB308)
+  await gmPage.getByRole('button', { name: 'ガンガー', exact: true }).click();
+  await expect(gmPage.locator('.los-line')).toBeVisible();
+  await expect(gmPage.locator('.los-line line')).toHaveAttribute('stroke', '#EAB308');
   await expect(gmPage.getByText(/射線: △ 遮蔽越し/).first()).toBeVisible();
   await expect(gmPage.getByText(/遮蔽物に当てるかは GM が決める/i)).toBeVisible();
 
@@ -356,6 +413,14 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
   // Verify TV screen loads without login or PIN
   await expect(tvPage.getByText(/CyberPGM/i)).toBeVisible();
   await expect(tvPage.locator('.board-view-container')).toBeVisible();
+
+  // TV Screen: Verify board SVG has scaled up and is not fixed to 800px
+  const tvSvg = tvPage.locator('.board-view-container svg');
+  await expect(tvSvg).toBeVisible();
+  const tvSvgBox = await tvSvg.boundingBox();
+  expect(tvSvgBox).not.toBeNull();
+  expect(tvSvgBox!.height).toBeGreaterThan(800);
+  expect(tvSvgBox!.width).toBeGreaterThan(1000);
 
   // TV tokens: Ally token (Viper) shows ally name and numeric HP
   const viperTvToken = tvPage.locator('.token-group', { hasText: 'ヴァイパー' });

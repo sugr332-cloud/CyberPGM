@@ -26,7 +26,7 @@ export interface BoardViewProps {
     y1: number;
     x2: number;
     y2: number;
-    status: LosStatus | 'partial';
+    status: LosStatus;
   } | null;
   isGm?: boolean;
   isScreen?: boolean;
@@ -127,11 +127,25 @@ export const BoardView: React.FC<BoardViewProps> = ({
   // Convert SVG client coords to grid cell
   const getCellFromEvent = (e: React.MouseEvent<SVGSVGElement>): { x: number; y: number } | null => {
     if (!svgRef.current) return null;
-    const rect = svgRef.current.getBoundingClientRect();
-    const clientX = e.clientX - rect.left;
-    const clientY = e.clientY - rect.top;
-    const svgX = clientX / scale;
-    const svgY = clientY / scale;
+    let svgX: number;
+    let svgY: number;
+
+    const ctm = svgRef.current.getScreenCTM();
+    if (ctm && svgRef.current.createSVGPoint) {
+      const pt = svgRef.current.createSVGPoint();
+      pt.x = e.clientX;
+      pt.y = e.clientY;
+      const svgP = pt.matrixTransform(ctm.inverse());
+      svgX = svgP.x;
+      svgY = svgP.y;
+    } else {
+      const rect = svgRef.current.getBoundingClientRect();
+      const clientX = e.clientX - rect.left;
+      const clientY = e.clientY - rect.top;
+      svgX = clientX / scale;
+      svgY = clientY / scale;
+    }
+
     const x = Math.floor(svgX / cellPx);
     const y = Math.floor(svgY / cellPx);
     if (x < 0 || x >= cols || y < 0 || y >= rows) return null;
@@ -195,7 +209,19 @@ export const BoardView: React.FC<BoardViewProps> = ({
   return (
     <div
       className={`board-view-container relative flex flex-col items-center select-none bg-slate-950 text-slate-100 rounded-lg border border-slate-800 ${className}`}
-      style={{ ...style }}
+      style={{
+        ...style,
+        ...(isScreen
+          ? {
+              width: '100%',
+              height: '100%',
+              minHeight: 0,
+              minWidth: 0,
+              border: 'none',
+              backgroundColor: 'transparent',
+            }
+          : {}),
+      }}
     >
       {/* Board Toolbar (hidden in Screen view) */}
       {!isScreen && (
@@ -417,17 +443,37 @@ export const BoardView: React.FC<BoardViewProps> = ({
       {/* SVG Canvas Scroll Area */}
       <div
         className="w-full overflow-auto flex items-center justify-center p-2"
-        style={{ maxHeight: isScreen ? '100vh' : '70vh' }}
+        style={{
+          flex: 1,
+          width: '100%',
+          minHeight: 0,
+          minWidth: 0,
+          height: isScreen ? '100%' : undefined,
+          maxHeight: isScreen ? '100%' : '70vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: isScreen ? 'hidden' : 'auto',
+          boxSizing: 'border-box',
+        }}
       >
         <svg
           ref={svgRef}
-          width={boardWidth * scale}
-          height={boardHeight * scale}
+          width={isScreen ? '100%' : boardWidth * scale}
+          height={isScreen ? '100%' : boardHeight * scale}
           viewBox={`0 0 ${boardWidth} ${boardHeight}`}
+          preserveAspectRatio="xMidYMid meet"
           className="border border-slate-800 shadow-2xl transition-transform"
           onClick={handleSvgClick}
           onMouseUp={handleMouseUp}
-          style={{ cursor: mode === 'move' ? 'crosshair' : 'default' }}
+          style={{
+            maxWidth: '100%',
+            maxHeight: '100%',
+            width: isScreen ? '100%' : undefined,
+            height: isScreen ? '100%' : undefined,
+            display: 'block',
+            cursor: mode === 'move' ? 'crosshair' : 'default',
+          }}
         >
           <defs>
             {/* Grid Pattern */}
@@ -641,13 +687,13 @@ export const BoardView: React.FC<BoardViewProps> = ({
                 stroke={
                   losLine.status === 'clear'
                     ? '#22C55E'
-                    : losLine.status === 'partial'
+                    : losLine.status === 'cover'
                     ? '#EAB308'
                     : '#EF4444'
                 }
                 strokeWidth={3}
                 strokeDasharray={
-                  losLine.status === 'partial'
+                  losLine.status === 'cover'
                     ? '6 4'
                     : losLine.status === 'blocked'
                     ? '4 4'
@@ -663,7 +709,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                 stroke={
                   losLine.status === 'clear'
                     ? '#22C55E'
-                    : losLine.status === 'partial'
+                    : losLine.status === 'cover'
                     ? '#EAB308'
                     : '#EF4444'
                 }

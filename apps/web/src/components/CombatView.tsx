@@ -19,6 +19,7 @@ import {
   checkLineOfSight,
   gridDistance,
   DEFAULT_RULES,
+  LosStatus,
 } from '@cyberpgm/rules';
 import { BoardView } from './BoardView.js';
 
@@ -58,7 +59,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [forceMove, setForceMove] = useState<boolean>(false);
 
   // Line of Sight & Cover State
-  const [losOverride, setLosOverride] = useState<'auto' | 'clear' | 'partial' | 'blocked'>('auto');
+  const [losOverride, setLosOverride] = useState<'auto' | LosStatus>('auto');
   const [hitCover, setHitCover] = useState<boolean>(false);
   const [coverDamageInput, setCoverDamageInput] = useState<string>('');
   const [coverHpInput, setCoverHpInput] = useState<string>('');
@@ -1966,14 +1967,14 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                   color:
                                     losInfo.status === 'clear'
                                       ? 'var(--color-ally)'
-                                      : losInfo.status === 'cover' || losInfo.status === 'partial'
+                                      : losInfo.status === 'cover'
                                       ? 'var(--color-warning)'
                                       : 'var(--color-danger)',
                                 }}
                               >
                                 {losInfo.status === 'clear'
                                   ? '射線: ○ クリア'
-                                  : losInfo.status === 'cover' || losInfo.status === 'partial'
+                                  : losInfo.status === 'cover'
                                   ? `射線: △ 遮蔽越し (${losInfo.hitCoverObject?.label || '遮蔽物'} HP:${losInfo.hitCoverObject?.cover_hp ?? '未設定'})`
                                   : '射線: × 射撃不可'}
                               </span>
@@ -1992,14 +1993,14 @@ export const CombatView: React.FC<CombatViewProps> = ({
                               >
                                 <option value="auto">射線: 自動判定</option>
                                 <option value="clear">強制: 通る (クリア)</option>
-                                <option value="partial">強制: 遮蔽越し</option>
+                                <option value="cover">強制: 遮蔽越し</option>
                                 <option value="blocked">強制: 撃てない</option>
                               </select>
                             </div>
                           )}
 
                           {/* Cover Rule Warning & Damage input */}
-                          {(losInfo?.status === 'cover' || losInfo?.status === 'partial' || losOverride === 'partial') && (
+                          {(losInfo?.status === 'cover' || losOverride === 'cover') && (
                             <div
                               style={{
                                 padding: '8px 10px',

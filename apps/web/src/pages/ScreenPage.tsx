@@ -290,6 +290,7 @@ export const ScreenPage: React.FC = () => {
       <main
         style={{
           flex: 1,
+          minHeight: 0,
           display: 'flex',
           overflow: 'hidden',
           padding: '16px',
@@ -300,6 +301,9 @@ export const ScreenPage: React.FC = () => {
         <div
           style={{
             flex: 1,
+            height: '100%',
+            minWidth: 0,
+            minHeight: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
