@@ -66,10 +66,6 @@ export const CharacterCreateInputSchema = CharacterSchema.omit({
 
 export const CharacterUpdateInputSchema = CharacterCreateInputSchema.partial();
 
-export const GmLoginInputSchema = z.object({
-  pin: z.string().min(1),
-});
-
 export const JoinInputSchema = z.object({
   code: z.string().min(1),
 });

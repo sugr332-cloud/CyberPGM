@@ -1,9 +1,7 @@
-import crypto from 'node:crypto';
-import { Hono, Context } from 'hono';
+import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { characters, devices, images } from '../db/schema.js';
-import { getOrCreateGmPin } from '../config.js';
 import {
   registerDevice,
   revokeCharacterDevices,
@@ -11,7 +9,6 @@ import {
 } from '../auth.js';
 import { sessionManager } from '../session.js';
 import {
-  GmLoginInputSchema,
   JoinInputSchema,
   ClaimInputSchema,
   ClaimResolveInputSchema,
@@ -20,88 +17,25 @@ import { generateUlid } from '@cyberpgm/shared';
 
 export const authRoutes = new Hono();
 
-interface RateLimitEntry {
-  failCount: number;
-  lockedUntil: number;
-}
-
-const gmRateLimits = new Map<string, RateLimitEntry>();
-
-export function resetGmRateLimits(): void {
-  gmRateLimits.clear();
-}
-
-function getClientIp(c: Context): string {
-  const forwarded = c.req.header('x-forwarded-for');
-  if (forwarded) {
-    return forwarded.split(',')[0].trim();
-  }
-  const realIp = c.req.header('x-real-ip');
-  if (realIp) {
-    return realIp.trim();
-  }
-  const envObj = c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined;
-  if (envObj?.incoming?.socket?.remoteAddress) {
-    return envObj.incoming.socket.remoteAddress;
-  }
-  return '127.0.0.1';
-}
-
-function verifyPin(inputPin: string, actualPin: string): boolean {
-  const hashInput = crypto.createHash('sha256').update(inputPin).digest();
-  const hashActual = crypto.createHash('sha256').update(actualPin).digest();
-  return crypto.timingSafeEqual(hashInput, hashActual);
-}
-
 /**
- * GM login via PIN.
- * Rate limit: 5 consecutive failures from same IP locks out for 60 seconds (HTTP 429).
+ * Automatically issues a GM token when the GM window is opened.
+ * No PIN or credentials required.
  */
-authRoutes.post('/gm', async (c) => {
-  const clientIp = getClientIp(c);
-  const now = Date.now();
-  const entry = gmRateLimits.get(clientIp);
+authRoutes.post('/gm-token', async (c) => {
+  const userAgent = c.req.header('User-Agent') || 'GM Console';
+  const { token, deviceId } = registerDevice({
+    role: 'gm',
+    label: userAgent,
+  });
 
-  if (entry && entry.lockedUntil > now) {
-    const retryAfter = Math.ceil((entry.lockedUntil - now) / 1000);
-    c.header('Retry-After', String(retryAfter));
-    return c.json(
-      {
-        error: 'Too many failed login attempts. Please wait 60 seconds.',
-        retryAfter,
-      },
-      429,
-    );
-  }
+  return c.json({
+    token,
+    role: 'gm',
+    deviceId,
+  });
+});
 
-  const body = await c.req.json();
-  const parsed = GmLoginInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: 'Invalid input', details: parsed.error.issues }, 400);
-  }
-
-  const { pin } = getOrCreateGmPin();
-  const isMatch = verifyPin(parsed.data.pin, pin);
-
-  if (!isMatch) {
-    const currentFails = (entry && entry.lockedUntil <= now ? entry.failCount : 0) + 1;
-    if (currentFails >= 5) {
-      gmRateLimits.set(clientIp, {
-        failCount: currentFails,
-        lockedUntil: now + 60_000,
-      });
-    } else {
-      gmRateLimits.set(clientIp, {
-        failCount: currentFails,
-        lockedUntil: 0,
-      });
-    }
-    return c.json({ error: 'Invalid GM PIN' }, 401);
-  }
-
-  // Success: reset rate limit counter for this IP
-  gmRateLimits.delete(clientIp);
-
+authRoutes.get('/gm-token', async (c) => {
   const userAgent = c.req.header('User-Agent') || 'GM Console';
   const { token, deviceId } = registerDevice({
     role: 'gm',

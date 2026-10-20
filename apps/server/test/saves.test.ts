@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { app } from '../src/index.js';
-import { getOrCreateGmPin } from '../src/config.js';
 import { db } from '../src/db/client.js';
 import { characters, saves } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
@@ -12,11 +11,8 @@ describe('Saves & Load operations (phase 2 §6 & §9)', () => {
 
   beforeAll(async () => {
     runDemoSeed();
-    const { pin } = getOrCreateGmPin();
-    const gmLogin = await app.request('/api/auth/gm', {
+    const gmLogin = await app.request('/api/auth/gm-token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin }),
     });
     const data = await gmLogin.json();
     gmToken = data.token;

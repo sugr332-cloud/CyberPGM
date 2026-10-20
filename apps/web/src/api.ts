@@ -57,10 +57,9 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 
 export const api = {
   // Auth
-  gmLogin: (pin: string) =>
-    request<{ token: string; role: 'gm'; deviceId: string }>('/api/auth/gm', {
+  fetchGmToken: () =>
+    request<{ token: string; role: 'gm'; deviceId: string }>('/api/auth/gm-token', {
       method: 'POST',
-      body: JSON.stringify({ pin }),
     }),
 
   joinSession: (code: string) =>

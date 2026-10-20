@@ -3,50 +3,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { getProjectRoot } from '@cyberpgm/shared';
 
-export interface AppConfig {
-  gmPin: string;
-}
+export type AppConfig = Record<string, unknown>;
 
 export function getConfigPath(): string {
   const root = getProjectRoot();
   return path.join(root, 'data', 'config.json');
-}
-
-/**
- * Loads or initializes GM PIN in data/config.json.
- */
-export function getOrCreateGmPin(): { pin: string; isNew: boolean } {
-  const configPath = getConfigPath();
-  const dir = path.dirname(configPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  if (fs.existsSync(configPath)) {
-    try {
-      const content = fs.readFileSync(configPath, 'utf-8');
-      const data = JSON.parse(content) as AppConfig;
-      if (data.gmPin && typeof data.gmPin === 'string') {
-        return { pin: data.gmPin, isNew: false };
-      }
-    } catch {
-      // ignore and recreate
-    }
-  }
-
-  // Generate 6-digit random PIN
-  const pin = Math.floor(100000 + Math.random() * 900000).toString();
-  fs.writeFileSync(configPath, JSON.stringify({ gmPin: pin }, null, 2), 'utf-8');
-  return { pin, isNew: true };
-}
-
-export function updateGmPin(newPin: string): void {
-  const configPath = getConfigPath();
-  const dir = path.dirname(configPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  fs.writeFileSync(configPath, JSON.stringify({ gmPin: newPin }, null, 2), 'utf-8');
 }
 
 /**
