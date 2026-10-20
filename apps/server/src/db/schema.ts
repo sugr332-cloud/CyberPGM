@@ -202,6 +202,28 @@ export const transactions = sqliteTable('transactions', {
   at: integer('at').notNull(),
 });
 
+export const character_submissions = sqliteTable('character_submissions', {
+  id: text('id').primaryKey(),
+  source: text('source').notNull(), // 'wifi' | 'file'
+  status: text('status').notNull().default('pending'), // 'pending' | 'accepted' | 'rejected'
+  name: text('name').notNull(),
+  role: text('role').notNull(),
+  image_path: text('image_path'),
+  character_data: text('character_data').notNull(), // JSON string: CharacterDraft
+  created_with: text('created_with').notNull(), // JSON string: { method, starting_funds }
+  validation_results: text('validation_results').notNull(), // JSON string: CharacterValidationResult
+  rejection_comment: text('rejection_comment'),
+  accepted_character_id: text('accepted_character_id'),
+  created_at: integer('created_at').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
+export const skill_notes = sqliteTable('skill_notes', {
+  key: text('key').primaryKey(),
+  text: text('text').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
 // Relations
 export const itemsRelations = relations(items, ({ one, many }) => ({
   weapon: one(weapons, {

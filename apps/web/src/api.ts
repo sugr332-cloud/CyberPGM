@@ -12,6 +12,10 @@ import {
   SellInput,
   PriceCategoryConfig,
   ItemPatchInput,
+  CreationMethodConfig,
+  CharacterDraft,
+  CharacterSubmission,
+  CpgmCharacterFile,
 } from '@cyberpgm/shared';
 
 export const API_BASE = '';
@@ -314,5 +318,80 @@ export const api = {
     request<{ success: boolean; categories: PriceCategoryConfig[] }>('/api/settings/price-categories', {
       method: 'PUT',
       body: JSON.stringify({ categories }),
+    }, getGmToken()),
+
+  // Character Creation & Submissions (Phase 3b)
+  getCreationMethods: () =>
+    request<{
+      methods: CreationMethodConfig[];
+      active_method: string;
+      starting_funds: number | null;
+    }>('/api/creation-methods'),
+
+  updateCreationMethod: (key: string, data: CreationMethodConfig) =>
+    request<CreationMethodConfig>(`/api/creation-methods/${key}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  setActiveCreationMethod: (active_method: string) =>
+    request<{ active_method: string }>('/api/creation-methods-active', {
+      method: 'PUT',
+      body: JSON.stringify({ active_method }),
+    }, getGmToken()),
+
+  getSkillNotes: () =>
+    request<{ notes: Record<string, string> }>('/api/skill-notes'),
+
+  updateSkillNote: (key: string, text: string) =>
+    request<{ ok: boolean; key: string; text: string; updated_at: number }>(`/api/skill-notes/${key}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ text }),
+    }, getGmToken()),
+
+  uploadCharacterImage: async (file: File) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    return request<{ image_id: string; image_path: string }>('/api/character-submissions/image', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  submitCharacter: (
+    character: CharacterDraft,
+    source: 'wifi' | 'file' = 'wifi',
+    created_with?: { method: string; starting_funds?: number | null },
+  ) =>
+    request<{
+      id: string;
+      status: 'pending';
+      validation_results: any;
+    }>('/api/character-submissions', {
+      method: 'POST',
+      body: JSON.stringify({ character, source, created_with }),
+    }),
+
+  getCharacterSubmissions: () =>
+    request<{ submissions: CharacterSubmission[] }>('/api/character-submissions', {}, getGmToken()),
+
+  getCharacterSubmission: (id: string) =>
+    request<CharacterSubmission>(`/api/character-submissions/${id}`),
+
+  acceptCharacterSubmission: (id: string) =>
+    request<{ ok: boolean; character_id: string }>(`/api/character-submissions/${id}/accept`, {
+      method: 'POST',
+    }, getGmToken()),
+
+  rejectCharacterSubmission: (id: string, comment: string) =>
+    request<{ ok: boolean }>(`/api/character-submissions/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ comment }),
+    }, getGmToken()),
+
+  importCharacterSubmission: (cpgmData: CpgmCharacterFile) =>
+    request<CharacterSubmission>('/api/character-submissions/import', {
+      method: 'POST',
+      body: JSON.stringify(cpgmData),
     }, getGmToken()),
 };

@@ -2,6 +2,22 @@ import { SKILL_CATALOG, type SkillCatalogEntry } from './skills-data.js';
 
 export * from './skills-data.js';
 
+export const SKILL_CATEGORIES: Record<string, string> = {
+  awarenessSkills: '認識',
+  bodySkills: '身体',
+  controlSkills: '操縦',
+  educationSkills: '教育',
+  fightingSkills: '戦闘',
+  performanceSkills: '演技',
+  rangedweaponSkills: '射撃',
+  socialSkills: '社会',
+  techniqueSkills: '技術',
+};
+
+export function formatSkillCategory(category: string): string {
+  return SKILL_CATEGORIES[category] || category;
+}
+
 /**
  * Looks up skill definition from catalog by key (case-insensitive).
  */

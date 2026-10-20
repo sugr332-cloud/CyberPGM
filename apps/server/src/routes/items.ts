@@ -8,15 +8,13 @@ import {
   generateUlid,
   getProjectRoot,
 } from '@cyberpgm/shared';
-import { requireAuth, requireGm } from '../auth.js';
+import { requireGm } from '../auth.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
 export const itemsRouter = new Hono();
 
-itemsRouter.use('*', requireAuth);
-
-// GET /api/items - list items with rich filtering, search, and sorting
+// GET /api/items - list items with rich filtering, search, and sorting (public catalog)
 itemsRouter.get('/', async (c) => {
   const queryResult = ItemsQuerySchema.safeParse(c.req.query());
   if (!queryResult.success) {

@@ -15,6 +15,8 @@ import {
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { Footer } from '../components/Footer.js';
 import { ShopView } from '../components/ShopView.js';
+import { SkillsView } from '../components/SkillsView.js';
+import { CharacterReceptionView } from '../components/CharacterReceptionView.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -49,6 +51,8 @@ export const GmPage: React.FC = () => {
   const [moneyLogs, setMoneyLogs] = useState<MoneyLogEntry[]>([]);
   const [startingFunds, setStartingFunds] = useState<string>('');
   const [isUpdatingFunds, setIsUpdatingFunds] = useState(false);
+  const [pcSubTab, setPcSubTab] = useState<'list' | 'reception'>('list');
+  const [pendingSubmissionsCount, setPendingSubmissionsCount] = useState<number>(0);
 
   // Money Quick Send State
   const [selectedAmount, setSelectedAmount] = useState<number | 'custom'>(500);
@@ -181,6 +185,13 @@ export const GmPage: React.FC = () => {
 
     api.getMoneyLogs()
       .then((res: { logs: MoneyLogEntry[] }) => setMoneyLogs(res.logs))
+      .catch(() => {});
+
+    api.getCharacterSubmissions()
+      .then((res) => {
+        const count = res.submissions.filter((s) => s.status === 'pending').length;
+        setPendingSubmissionsCount(count);
+      })
       .catch(() => {});
   }, [token]);
 
@@ -548,8 +559,68 @@ export const GmPage: React.FC = () => {
       {/* Tab Contents */}
       <main style={{ flex: 1, padding: '24px', maxWidth: '1440px', margin: '0 auto', width: '100%' }}>
         {activeTab === 'pc' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            {/* Top Controls: Funds settings and Quick Send Bar */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Sub-tab Navigation */}
+            <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--color-border)', paddingBottom: '8px' }}>
+              <button
+                onClick={() => setPcSubTab('list')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: pcSubTab === 'list' ? 'var(--color-surface-elevated)' : 'transparent',
+                  color: pcSubTab === 'list' ? 'var(--color-ally)' : 'var(--color-text-muted)',
+                  fontWeight: pcSubTab === 'list' ? 700 : 500,
+                  cursor: 'pointer',
+                  fontSize: '0.95rem',
+                }}
+              >
+                PC 一覧
+              </button>
+              <button
+                onClick={() => setPcSubTab('reception')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: pcSubTab === 'reception' ? 'var(--color-surface-elevated)' : 'transparent',
+                  color: pcSubTab === 'reception' ? 'var(--color-ally)' : 'var(--color-text-muted)',
+                  fontWeight: pcSubTab === 'reception' ? 700 : 500,
+                  cursor: 'pointer',
+                  fontSize: '0.95rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <span>キャラ受付</span>
+                {pendingSubmissionsCount > 0 && (
+                  <span
+                    style={{
+                      backgroundColor: 'var(--color-warning)',
+                      color: '#000',
+                      fontSize: '0.75rem',
+                      fontWeight: 800,
+                      padding: '1px 6px',
+                      borderRadius: '10px',
+                    }}
+                  >
+                    {pendingSubmissionsCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {pcSubTab === 'reception' ? (
+              <CharacterReceptionView
+                onRefreshCharacters={refreshAllData}
+                onOpenQr={handleOpenQr}
+                startingFunds={startingFunds}
+                onSaveStartingFunds={handleSaveStartingFunds}
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {/* Top Controls: Funds settings and Quick Send Bar */}
             <div
               style={{
                 backgroundColor: 'var(--color-surface)',
@@ -933,9 +1004,13 @@ export const GmPage: React.FC = () => {
                 <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>ログはありません</p>
               )}
             </div>
+            </div>
+          )}
           </div>
         ) : activeTab === 'shop' ? (
           <ShopView characters={characters} onRefreshCharacters={refreshAllData} />
+        ) : activeTab === 'skills' ? (
+          <SkillsView characters={characters} />
         ) : (
           /* Placeholder for other tabs */
           <div
@@ -951,7 +1026,6 @@ export const GmPage: React.FC = () => {
             <h2 style={{ fontSize: '1.25rem', color: 'var(--color-text)', marginBottom: '8px' }}>
               {activeTab === 'combat' && '戦闘タブ（Phase 4 で実装）'}
               {activeTab === 'scenario' && 'シナリオタブ（Phase 5 で実装）'}
-              {activeTab === 'skills' && '技能一覧と成功率タブ（Phase 3 で実装）'}
               {activeTab === 'db' && 'DBタブ（Phase 3 で実装）'}
             </h2>
             <p style={{ fontSize: '0.875rem' }}>この機能は後のフェーズで実装されます。</p>

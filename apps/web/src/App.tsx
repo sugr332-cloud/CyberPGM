@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { GmPage } from './pages/GmPage.js';
 import { PlayerPage } from './pages/PlayerPage.js';
+import { CharacterCreatePage } from './pages/CharacterCreatePage.js';
 import { ItemsDebug } from './pages/ItemsDebug.js';
 
 export const App: React.FC = () => {
@@ -10,6 +11,7 @@ export const App: React.FC = () => {
       <Routes>
         <Route path="/gm" element={<GmPage />} />
         <Route path="/player" element={<PlayerPage />} />
+        <Route path="/player/create" element={<CharacterCreatePage />} />
         <Route path="/debug/items" element={<ItemsDebug />} />
         {/* Default route to /player */}
         <Route path="/" element={<Navigate to="/player" replace />} />

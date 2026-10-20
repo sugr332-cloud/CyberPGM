@@ -7,3 +7,4 @@ export * from './damage.js';
 export * from './wounds.js';
 export * from './movement.js';
 export * from './humanity.js';
+export * from './creation.js';

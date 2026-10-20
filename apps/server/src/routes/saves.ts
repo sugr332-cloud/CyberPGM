@@ -12,6 +12,8 @@ import {
   shops,
   shop_stock,
   transactions,
+  character_submissions,
+  skill_notes,
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
@@ -65,6 +67,8 @@ export function buildSaveData(name: string): SaveFile {
     ...t,
     lines: JSON.parse(t.lines || '[]'),
   }));
+  const subRows = db.select().from(character_submissions).all();
+  const notesRows = db.select().from(skill_notes).all();
 
   return {
     format: 'cpgm-save',
@@ -78,6 +82,8 @@ export function buildSaveData(name: string): SaveFile {
     shops: shopsRows,
     shop_stock: stockRows,
     transactions: txRows.map((t) => ({ ...t, kind: t.kind as 'buy' | 'sell' })),
+    character_submissions: subRows,
+    skill_notes: notesRows,
   };
 }
 
@@ -360,6 +366,45 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
           t.total_eb,
           t.at,
         );
+      }
+    }
+
+    // Restore character submissions
+    sqlite.prepare('DELETE FROM character_submissions').run();
+    if (data.character_submissions && data.character_submissions.length > 0) {
+      const insertSub = sqlite.prepare(`
+        INSERT INTO character_submissions (
+          id, source, status, name, role, image_path, character_data,
+          created_with, validation_results, rejection_comment, accepted_character_id,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const cs of data.character_submissions as any[]) {
+        insertSub.run(
+          cs.id,
+          cs.source,
+          cs.status,
+          cs.name,
+          cs.role,
+          cs.image_path ?? null,
+          typeof cs.character_data === 'string' ? cs.character_data : JSON.stringify(cs.character_data),
+          typeof cs.created_with === 'string' ? cs.created_with : JSON.stringify(cs.created_with),
+          typeof cs.validation_results === 'string' ? cs.validation_results : JSON.stringify(cs.validation_results),
+          cs.rejection_comment ?? null,
+          cs.accepted_character_id ?? null,
+          cs.created_at,
+          cs.updated_at,
+        );
+      }
+    }
+
+    // Restore skill notes
+    if (data.skill_notes && data.skill_notes.length > 0) {
+      const insertNote = sqlite.prepare(`
+        INSERT OR REPLACE INTO skill_notes (key, text, updated_at) VALUES (?, ?, ?)
+      `);
+      for (const sn of data.skill_notes as any[]) {
+        insertNote.run(sn.key, sn.text, sn.updated_at);
       }
     }
   });
