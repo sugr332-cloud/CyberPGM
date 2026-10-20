@@ -12,6 +12,8 @@ import { charactersRoutes } from './routes/characters.js';
 import { moneyRoutes } from './routes/money.js';
 import { savesRoutes } from './routes/saves.js';
 import { settingsRoutes } from './routes/settings.js';
+import { shopsRoutes } from './routes/shops.js';
+import { commerceRoutes } from './routes/commerce.js';
 import { verifyToken, authMiddleware } from './auth.js';
 import { sessionManager } from './session.js';
 import { createDailyBackup } from './config.js';
@@ -38,6 +40,8 @@ app.route('/api/saves', savesRoutes);
 app.route('/api', settingsRoutes);
 app.route('/api/items', itemsRouter);
 app.route('/api/images', imagesRouter);
+app.route('/api/shops', shopsRoutes);
+app.route('/api', commerceRoutes);
 
 // WebSocket endpoint
 app.get(

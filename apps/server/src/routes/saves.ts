@@ -9,6 +9,9 @@ import {
   money_log,
   char_log,
   app_settings,
+  shops,
+  shop_stock,
+  transactions,
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
@@ -53,15 +56,28 @@ export function buildSaveData(name: string): SaveFile {
     }
   }
 
+  const shopsRows = db.select().from(shops).all().map((s) => ({
+    ...s,
+    categories: JSON.parse(s.categories || '[]') as string[],
+  }));
+  const stockRows = db.select().from(shop_stock).all();
+  const txRows = db.select().from(transactions).all().map((t) => ({
+    ...t,
+    lines: JSON.parse(t.lines || '[]'),
+  }));
+
   return {
     format: 'cpgm-save',
-    version: 1,
+    version: 2,
     savedAt: Date.now(),
     name,
     characters: chars,
     money_log: moneyLogs,
     char_log: charLogs,
     app_settings: settingsObj,
+    shops: shopsRows,
+    shop_stock: stockRows,
+    transactions: txRows.map((t) => ({ ...t, kind: t.kind as 'buy' | 'sell' })),
   };
 }
 
@@ -294,6 +310,57 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
     `);
     for (const [k, v] of Object.entries(data.app_settings)) {
       insertSetting.run(k, JSON.stringify(v));
+    }
+
+    // Clear and restore shops, shop_stock, and transactions
+    sqlite.prepare('DELETE FROM shop_stock').run();
+    sqlite.prepare('DELETE FROM transactions').run();
+    sqlite.prepare('DELETE FROM shops').run();
+
+    if (data.shops && data.shops.length > 0) {
+      const insertShop = sqlite.prepare(`
+        INSERT INTO shops (id, name, price_multiplier, buyback_rate, categories, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const s of data.shops) {
+        insertShop.run(
+          s.id,
+          s.name,
+          s.price_multiplier,
+          s.buyback_rate,
+          JSON.stringify(s.categories || []),
+          s.created_at,
+          s.updated_at,
+        );
+      }
+    }
+
+    if (data.shop_stock && data.shop_stock.length > 0) {
+      const insertStock = sqlite.prepare(`
+        INSERT INTO shop_stock (id, shop_id, item_id, quantity)
+        VALUES (?, ?, ?, ?)
+      `);
+      for (const st of data.shop_stock) {
+        insertStock.run(st.id, st.shop_id, st.item_id, st.quantity ?? null);
+      }
+    }
+
+    if (data.transactions && data.transactions.length > 0) {
+      const insertTx = sqlite.prepare(`
+        INSERT INTO transactions (id, character_id, shop_id, kind, lines, total_eb, at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const t of data.transactions) {
+        insertTx.run(
+          t.id,
+          t.character_id,
+          t.shop_id ?? null,
+          t.kind,
+          JSON.stringify(t.lines || []),
+          t.total_eb,
+          t.at,
+        );
+      }
     }
   });
 

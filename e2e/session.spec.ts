@@ -85,8 +85,8 @@ test('GM direct access (no PIN), player QR join, and real-time fund notification
   await expect(playerPage.getByRole('heading', { name: 'ヴァイパー' })).toBeVisible();
   await expect(playerPage.getByText(/ソロ/i)).toBeVisible();
   await expect(playerPage.getByText(/HP/i)).toBeVisible();
-  await expect(playerPage.getByText('拳銃')).toBeVisible();
-  await expect(playerPage.getByText('回避')).toBeVisible();
+  await expect(playerPage.getByText('拳銃', { exact: true })).toBeVisible();
+  await expect(playerPage.getByText('回避', { exact: true })).toBeVisible();
 
   // Take Screenshot: Player Character Sheet
   await playerPage.screenshot({

@@ -93,7 +93,7 @@ describe('Saves & Load operations (phase 2 §6 & §9)', () => {
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.format).toBe('cpgm-save');
-      expect(parsed.data.version).toBe(1);
+      expect(parsed.data.version).toBe(2);
       expect(parsed.data.characters.length).toBeGreaterThanOrEqual(4);
     }
   });

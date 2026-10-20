@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { app_settings, devices } from '../db/schema.js';
+import { app_settings, devices, rule_constants } from '../db/schema.js';
 import { requireGm, revokeDeviceById } from '../auth.js';
 import { sessionManager } from '../session.js';
-import { AppSettingsSchema } from '@cyberpgm/shared';
+import { AppSettingsSchema, PriceCategoriesSettingSchema } from '@cyberpgm/shared';
 
 export const settingsRoutes = new Hono();
 
@@ -83,4 +83,70 @@ settingsRoutes.delete('/devices/:id', requireGm, async (c) => {
   sessionManager.broadcastPresence();
 
   return c.json({ success: true });
+});
+
+/**
+ * GET /api/settings/price-categories: Get price categories with optional Japanese labels.
+ */
+settingsRoutes.get('/settings/price-categories', async (c) => {
+  // Read base price category definitions from rule_constants
+  const rcRow = db.select().from(rule_constants).where(eq(rule_constants.key, 'price_category')).get();
+  let baseCategories: Array<{ key: string; max: number; label_ja?: string }> = [];
+  if (rcRow) {
+    try {
+      baseCategories = JSON.parse(rcRow.value);
+    } catch {
+      baseCategories = [];
+    }
+  }
+
+  // Read custom labels from app_settings
+  const labelsRow = db
+    .select()
+    .from(app_settings)
+    .where(eq(app_settings.key, 'price_categories_labels'))
+    .get();
+
+  if (labelsRow) {
+    try {
+      const customConfig = JSON.parse(labelsRow.value) as Array<{
+        key: string;
+        max: number;
+        label_ja?: string;
+      }>;
+      const labelMap = new Map(customConfig.map((item) => [item.key, item.label_ja]));
+      baseCategories = baseCategories.map((cat) => ({
+        ...cat,
+        label_ja: labelMap.get(cat.key) || cat.label_ja || '',
+      }));
+    } catch {
+      // ignore
+    }
+  }
+
+  return c.json({ price_categories: baseCategories });
+});
+
+/**
+ * PUT /api/settings/price-categories: GM updates price category Japanese labels.
+ */
+settingsRoutes.put('/settings/price-categories', requireGm, async (c) => {
+  const body = await c.req.json();
+  const parsed = PriceCategoriesSettingSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid price category settings', details: parsed.error.issues }, 400);
+  }
+
+  db.insert(app_settings)
+    .values({
+      key: 'price_categories_labels',
+      value: JSON.stringify(parsed.data),
+    })
+    .onConflictDoUpdate({
+      target: app_settings.key,
+      set: { value: JSON.stringify(parsed.data) },
+    })
+    .run();
+
+  return c.json({ price_categories: parsed.data });
 });

@@ -14,6 +14,7 @@ import {
 } from '../api.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { Footer } from '../components/Footer.js';
+import { ShopView } from '../components/ShopView.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -933,6 +934,8 @@ export const GmPage: React.FC = () => {
               )}
             </div>
           </div>
+        ) : activeTab === 'shop' ? (
+          <ShopView characters={characters} onRefreshCharacters={refreshAllData} />
         ) : (
           /* Placeholder for other tabs */
           <div
@@ -948,7 +951,6 @@ export const GmPage: React.FC = () => {
             <h2 style={{ fontSize: '1.25rem', color: 'var(--color-text)', marginBottom: '8px' }}>
               {activeTab === 'combat' && '戦闘タブ（Phase 4 で実装）'}
               {activeTab === 'scenario' && 'シナリオタブ（Phase 5 で実装）'}
-              {activeTab === 'shop' && '商店タブ（Phase 3 で実装）'}
               {activeTab === 'skills' && '技能一覧と成功率タブ（Phase 3 で実装）'}
               {activeTab === 'db' && 'DBタブ（Phase 3 で実装）'}
             </h2>
