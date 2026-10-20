@@ -1,19 +1,13 @@
 import { test, expect } from '@playwright/test';
-import path from 'node:path';
-import fs from 'node:fs';
-import { db } from '../apps/server/src/db/client.js';
+import { createDb } from '../apps/server/src/db/client.js';
 import { devices } from '../apps/server/src/db/schema.js';
 
-test('GM login, player QR join, and real-time fund notification flow', async ({ browser }) => {
-  // Clear any existing active devices before E2E test
-  db.delete(devices).run();
+test('GM direct access (no PIN), player QR join, and real-time fund notification flow', async ({ browser }) => {
+  const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
+  const { db } = createDb(dbPath);
 
-  // Read current GM PIN from data/config.json
-  const configPath = path.resolve(process.cwd(), 'data/config.json');
-  expect(fs.existsSync(configPath)).toBe(true);
-  const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-  const pin = config.gmPin;
-  expect(pin).toBeDefined();
+  // Clear any existing active devices before E2E test in test DB
+  db.delete(devices).run();
 
   // 1. GM Context (1440x900)
   const gmContext = await browser.newContext({
@@ -21,15 +15,11 @@ test('GM login, player QR join, and real-time fund notification flow', async ({ 
   });
   const gmPage = await gmContext.newPage();
 
-  // Access GM window
+  // Access GM window directly (no PIN required)
   await gmPage.goto('/gm');
-  await expect(gmPage.getByPlaceholder(/GM PIN/i)).toBeVisible();
 
-  // Login with PIN
-  await gmPage.getByPlaceholder(/GM PIN/i).fill(pin);
-  await gmPage.getByRole('button', { name: 'ログイン' }).click();
-
-  // Verify GM Dashboard loaded
+  // Verify GM Dashboard loaded directly without PIN prompt
+  await expect(gmPage.getByPlaceholder(/GM PIN/i)).not.toBeVisible();
   await expect(gmPage.getByText('CYBERPGM').first()).toBeVisible();
   await expect(gmPage.getByText('ヴァイパー').first()).toBeVisible();
   await expect(gmPage.getByRole('button', { name: '参加用 QR' })).toBeVisible();

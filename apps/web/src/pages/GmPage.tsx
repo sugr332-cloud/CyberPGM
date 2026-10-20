@@ -11,15 +11,35 @@ import {
   api,
   getGmToken,
   setGmToken,
-  removeGmToken,
 } from '../api.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { Footer } from '../components/Footer.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
-  const [pinInput, setPinInput] = useState('');
-  const [loginError, setLoginError] = useState('');
+
+  // Automatically acquire GM token on mount if not present
+  useEffect(() => {
+    let active = true;
+    const initToken = async () => {
+      const currentToken = getGmToken();
+      if (!currentToken) {
+        try {
+          const res = await api.fetchGmToken();
+          setGmToken(res.token);
+          if (active) {
+            setToken(res.token);
+          }
+        } catch (err) {
+          console.error('Failed to obtain GM token:', err);
+        }
+      }
+    };
+    initToken();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // GM Main View State
   const [activeTab, setActiveTab] = useState<'pc' | 'combat' | 'scenario' | 'shop' | 'skills' | 'db'>('pc');
@@ -143,8 +163,13 @@ export const GmPage: React.FC = () => {
       .then((res: { characters: CharacterSheet[] }) => setCharacters(res.characters))
       .catch((err: unknown) => {
         console.warn('Failed to load characters:', err);
-        removeGmToken();
-        setToken(null);
+        // Automatically renew token if expired or revoked
+        api.fetchGmToken()
+          .then((res) => {
+            setGmToken(res.token);
+            setToken(res.token);
+          })
+          .catch(() => {});
       });
 
     api.getSettings()
@@ -161,20 +186,6 @@ export const GmPage: React.FC = () => {
   useEffect(() => {
     refreshAllData();
   }, [refreshAllData]);
-
-  // Handle Login
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError('');
-    try {
-      const res = await api.gmLogin(pinInput.trim());
-      setGmToken(res.token);
-      setToken(res.token);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setLoginError(msg || 'ログインに失敗しました');
-    }
-  };
 
   // Resolve Claim Request
   const handleResolveClaim = async (allow: boolean) => {
@@ -341,105 +352,21 @@ export const GmPage: React.FC = () => {
     reader.readAsText(file);
   };
 
-  // 1. PIN Login Screen
+  // Loading state while GM token is being automatically acquired
   if (!token) {
     return (
       <div
         style={{
           minHeight: '100vh',
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '24px',
           backgroundColor: 'var(--color-bg)',
+          color: 'var(--color-text-muted)',
+          fontSize: '0.9rem',
         }}
       >
-        <div
-          style={{
-            maxWidth: '380px',
-            width: '100%',
-            backgroundColor: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '8px',
-            padding: '32px 24px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '20px',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-          }}
-        >
-          <div style={{ textAlign: 'center' }}>
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '0.8rem',
-                backgroundColor: 'rgba(255, 90, 95, 0.2)',
-                color: 'var(--color-accent)',
-                padding: '2px 8px',
-                borderRadius: '4px',
-                fontWeight: 700,
-              }}
-            >
-              GM CONSOLE
-            </span>
-            <h1
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '1.6rem',
-                color: 'var(--color-text)',
-                marginTop: '8px',
-              }}
-            >
-              CYBERPGM
-            </h1>
-            <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-              GM PINを入力してログインしてください
-            </p>
-          </div>
-
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <input
-              type="password"
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value)}
-              placeholder="GM PIN (6桁)"
-              maxLength={10}
-              autoFocus
-              style={{
-                backgroundColor: 'var(--color-bg)',
-                border: '1px solid var(--color-border-light)',
-                borderRadius: '6px',
-                padding: '12px',
-                fontSize: '1.25rem',
-                textAlign: 'center',
-                color: 'var(--color-text)',
-                letterSpacing: '4px',
-                fontFamily: 'var(--font-mono)',
-              }}
-            />
-            {loginError && (
-              <p style={{ color: 'var(--color-accent)', fontSize: '0.85rem', textAlign: 'center' }}>
-                {loginError}
-              </p>
-            )}
-            <button
-              type="submit"
-              style={{
-                backgroundColor: 'var(--color-accent)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                padding: '12px',
-                fontWeight: 700,
-                fontSize: '1rem',
-                cursor: 'pointer',
-              }}
-            >
-              ログイン
-            </button>
-          </form>
-        </div>
+        GM コンソールを読み込み中…
       </div>
     );
   }
@@ -563,22 +490,6 @@ export const GmPage: React.FC = () => {
             }}
           >
             保存・読み込み
-          </button>
-          <button
-            onClick={() => {
-              removeGmToken();
-              setToken(null);
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--color-text-muted)',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              padding: '8px',
-            }}
-          >
-            ログアウト
           </button>
         </div>
       </header>

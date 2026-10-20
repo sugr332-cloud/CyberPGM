@@ -3,7 +3,6 @@ import { WebSocket } from 'ws';
 import { app, injectWebSocket } from '../src/index.js';
 import { getRequestListener } from '@hono/node-server';
 import { startDualServer, DualServerInstance } from '../src/net.js';
-import { getOrCreateGmPin } from '../src/config.js';
 import { sessionManager } from '../src/session.js';
 import { db } from '../src/db/client.js';
 import { characters, devices } from '../src/db/schema.js';
@@ -22,7 +21,6 @@ describe('WebSocket synchronization (phase 2 §5 & §9)', () => {
   beforeAll(async () => {
     runDemoSeed();
     db.delete(devices).run(); // Ensure clean devices
-    const { pin } = getOrCreateGmPin();
     testPort = 18791;
 
     const listener = getRequestListener(app.fetch);
@@ -36,10 +34,8 @@ describe('WebSocket synchronization (phase 2 §5 & §9)', () => {
     }
 
     // GM Token
-    const gmLogin = await app.request('/api/auth/gm', {
+    const gmLogin = await app.request('/api/auth/gm-token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin }),
     });
     const gmData = await gmLogin.json();
     gmToken = gmData.token;

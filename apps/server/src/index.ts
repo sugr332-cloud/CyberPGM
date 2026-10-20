@@ -14,7 +14,7 @@ import { savesRoutes } from './routes/saves.js';
 import { settingsRoutes } from './routes/settings.js';
 import { verifyToken, authMiddleware } from './auth.js';
 import { sessionManager } from './session.js';
-import { getOrCreateGmPin, createDailyBackup } from './config.js';
+import { createDailyBackup } from './config.js';
 import { resolveLanIp, startDualServer } from './net.js';
 
 export const app = new Hono();
@@ -145,10 +145,7 @@ export async function startServer(): Promise<void> {
     console.log(`[backup] Daily snapshot created: ${backupFile}`);
   }
 
-  // 2. GM PIN
-  const { pin, isNew } = getOrCreateGmPin();
-
-  // 3. Resolve LAN IP
+  // 2. Resolve LAN IP
   const lanArg = process.argv.find((a) => a.startsWith('--lan='))?.split('=')[1] ??
     (process.argv.includes('--lan') ? process.argv[process.argv.indexOf('--lan') + 1] : undefined);
   const lanResult = resolveLanIp({
@@ -182,9 +179,6 @@ export async function startServer(): Promise<void> {
   console.log('              CYBERPUNK RED - CYBERPGM SESSION              ');
   console.log('============================================================\n');
   console.log(`  GM Window URL :  ${gmUrl}`);
-  if (isNew) {
-    console.log(`  GM PIN (Initial) :  ${pin}`);
-  }
   console.log(`  Player Join URL :  ${playerUrl}`);
   console.log(`  Session Code  :  ${sessionCode}\n`);
 
