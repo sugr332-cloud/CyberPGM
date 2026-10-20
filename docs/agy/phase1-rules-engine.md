@@ -202,3 +202,19 @@ vitest で、**各関数に正常系と境界のテスト** を書く。少な�
 
 - 上のテストがすべて通り、`npm run lint`、`npm run typecheck`、`npm test` が通る
 - 報告に、実装した関数の一覧、テスト結果、カバレッジ、指示書と違う判断をした箇所を書く
+
+## 14. レビュー指摘 02（2026-10-20 Claude。同じブランチで直して報告 02 を出す）
+
+Phase 1 の実装は指示書どおりで、テストも通っている。ただし、Claude が FVTT の `_applyDamage`（`src/modules/actor/cpr-actor.js`）と突き合わせたところ、**指示書 §7 の 3 点が FVTT と違っていた**（指示書の誤り）。次のとおり直す。
+
+1. **一定以下の SP を無視（ignoreBelowSP）**: FVTT は `SP < ignoreBelowSP` のとき防具を無視する（**未満**。以下ではない）。`sp < ignoreBelowSP` に直し、境界のテスト（sp = ignoreBelowSP なら無視しない）を足す
+2. **盾**: FVTT の動き
+   - 盾を使い、盾の HP が 0 より大きいとき、盾は `min(ダメージ合計 + クリティカルの +5, 盾の HP)` だけ減る
+   - **爆発物でなければ、その攻撃はそこで止まる**。盾の HP を超えた分も体には通らない（HP 0、SP も減らない、致命傷表なし）
+   - **爆発物（グレネード・ロケット）** は、盾を同じように減らしたうえで、盾の HP が残っていれば止まる。盾が 0 になったら、**減らさない元のダメージ** がそのまま防具の計算に進む（Issue #14 で日本語版を確認する。テスト名に Issue 番号を書く）
+   - テストの「盾 HP 10・ダメージ 16 → 残り 6 が体へ」は誤り。「盾 HP 10・ダメージ 16 → shieldHpAfter 0、hpLoss 0、spAfter は元のまま、criticalInjuryTable null」に直す。爆発物で盾が壊れる場合のテストも足す
+3. **非致死の攻撃**: FVTT は `damageLethal` が false のとき、HP が 1 未満にならないように止める（HP が既に 0 以下なら減らさない）。`resolveDamage` に任意の `lethal?: boolean`（既定 true）と `currentHp?: number` を足し、`lethal: false` なら `hpLoss` を `currentHp − 1` までに抑える（currentHp ≤ 0 なら 0）。どの攻撃が非致死かは Phase 4 で武器データから決める
+4. **FVTT アイコンの公開範囲の移行（agy の実装の指摘）**: いまの取り込みは、毎回 `visibility === 'gm'` の fvtt_icon を `players` に戻すため、**GM があとで「GM のみ」にした画像も、取り込みのたびに戻ってしまう**。次のように直す
+   - 既存データの `gm → players` の切り替えは、**1 回だけのデータ移行** にする（drizzle の新しいマイグレーション SQL: `UPDATE images SET visibility = 'players' WHERE origin = 'fvtt_icon' AND visibility = 'gm';`）
+   - 取り込みでは、新しく追加する fvtt_icon を `players` で作り、更新のときは visibility に **触らない**
+   - テスト: 取り込み後に GM が visibility を `gm` に変え、もう一度取り込んでも `gm` のままであること
