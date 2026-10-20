@@ -1,0 +1,22 @@
+_id: testArmor0000001
+name: Test Armor Vest
+type: armor
+img: null
+system:
+  headLocation:
+    sp: 0
+  bodyLocation:
+    sp: 11
+  isHeadLocation: false
+  isBodyLocation: true
+  isShield: false
+  shieldHitPoints:
+    max: 0
+  penalty: 0
+  price:
+    market: 100
+  sources:
+    - book: Test Book
+      page: 43
+  description:
+    value: <p>A test armor vest description.</p>

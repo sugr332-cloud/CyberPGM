@@ -1,0 +1,19 @@
+{
+  "name": "@cyberpgm/import-fvtt",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cyberpgm/server": "*",
+    "@cyberpgm/shared": "*",
+    "better-sqlite3": "^11.8.1",
+    "drizzle-orm": "^0.39.3",
+    "yaml": "^2.7.0"
+  }
+}

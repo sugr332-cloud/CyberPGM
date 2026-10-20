@@ -1,0 +1,30 @@
+_id: testWeapon000001
+name: Test Pistol
+type: weapon
+img: systems/cyberpunk-red-core/icons/compendium/weapons/test_pistol.svg
+system:
+  weaponType: pistol
+  weaponSkill: Handgun
+  damage: 2d6
+  rof: 2
+  magazine:
+    max: 12
+    value: 12
+  handsReq: 1
+  concealable:
+    concealable: true
+  quality: standard
+  fireModes:
+    autoFire: 0
+  critFailEffect: jammed
+  dvTable: DV Pistol
+  ammoVariety:
+    - mediumPistol
+  isRanged: true
+  price:
+    market: 100
+  sources:
+    - book: Test Book
+      page: 42
+  description:
+    value: <p>A test pistol description.</p>
