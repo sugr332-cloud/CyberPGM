@@ -566,6 +566,8 @@ export function runImport(options: ImportOptions): ImportReportData {
             existingItem.source_page_en !== sourcePageEn ||
             existingItem.raw_system !== rawSystem;
 
+          const hasSubtableDiff = isSubtableDiff(sqlite, itemId, kind, doc);
+
           let isImageDiff = false;
           let existingImg:
             | { id: string; visibility: string; license: string | null; attribution: string | null; path: string }
@@ -593,7 +595,7 @@ export function runImport(options: ImportOptions): ImportReportData {
             }
           }
 
-          if (isItemDiff || isImageDiff) {
+          if (isItemDiff || isImageDiff || hasSubtableDiff) {
             if (!dryRun) {
               if (isItemDiff) {
                 sqlite
@@ -618,7 +620,13 @@ export function runImport(options: ImportOptions): ImportReportData {
                     now,
                     itemId,
                   );
+              } else if (hasSubtableDiff) {
+                sqlite
+                  .prepare(`UPDATE items SET updated_at = ? WHERE id = ?`)
+                  .run(now, itemId);
+              }
 
+              if (isItemDiff || hasSubtableDiff) {
                 insertOrUpdateSubtables(sqlite, itemId, kind, doc);
               }
 
@@ -739,6 +747,121 @@ class RollbackError extends Error {
   }
 }
 
+function isWeaponDiff(
+  sqlite: Database.Database,
+  itemId: string,
+  sys: Record<string, any>,
+): boolean {
+  const existing = sqlite
+    .prepare('SELECT * FROM weapons WHERE item_id = ?')
+    .get(itemId) as Record<string, any> | undefined;
+  if (!existing) return true;
+
+  const weaponType = sys.weaponType || null;
+  const skill = sys.weaponSkill || null;
+  const damage = sys.damage || null;
+  const rof = typeof sys.rof === 'number' ? sys.rof : null;
+  const magazineMax = typeof sys.magazine?.max === 'number' ? sys.magazine.max : null;
+  const hands = typeof sys.handsReq === 'number' ? sys.handsReq : null;
+  const concealable = sys.concealable?.concealable ? 1 : 0;
+  const quality = sys.quality || null;
+  const autofire = typeof sys.fireModes?.autoFire === 'number' ? sys.fireModes.autoFire : null;
+  const critFailEffect = sys.critFailEffect || null;
+  const dvTableKey = sys.dvTable || null;
+  const ammoTypes = Array.isArray(sys.ammoVariety) ? JSON.stringify(sys.ammoVariety) : null;
+  const isRanged = sys.isRanged ? 1 : 0;
+  const suppressive = sys.fireModes?.suppressiveFire ? 1 : 0;
+  const ignoreArmorPercent = typeof sys.ignoreArmorPercent === 'number' ? sys.ignoreArmorPercent : null;
+
+  return (
+    (existing.weapon_type ?? null) !== weaponType ||
+    (existing.skill ?? null) !== skill ||
+    (existing.damage ?? null) !== damage ||
+    (existing.rof ?? null) !== rof ||
+    (existing.magazine_max ?? null) !== magazineMax ||
+    (existing.hands ?? null) !== hands ||
+    (existing.concealable ?? null) !== concealable ||
+    (existing.quality ?? null) !== quality ||
+    (existing.autofire ?? null) !== autofire ||
+    (existing.crit_fail_effect ?? null) !== critFailEffect ||
+    (existing.dv_table_key ?? null) !== dvTableKey ||
+    (existing.ammo_types ?? null) !== ammoTypes ||
+    (existing.is_ranged ?? null) !== isRanged ||
+    (existing.suppressive ?? null) !== suppressive ||
+    (existing.ignore_armor_percent ?? null) !== ignoreArmorPercent
+  );
+}
+
+function isArmorDiff(
+  sqlite: Database.Database,
+  itemId: string,
+  sys: Record<string, any>,
+): boolean {
+  const existing = sqlite
+    .prepare('SELECT * FROM armors WHERE item_id = ?')
+    .get(itemId) as Record<string, any> | undefined;
+  if (!existing) return true;
+
+  const spHead = typeof sys.headLocation?.sp === 'number' ? sys.headLocation.sp : null;
+  const spBody = typeof sys.bodyLocation?.sp === 'number' ? sys.bodyLocation.sp : null;
+  const isHead = sys.isHeadLocation ? 1 : 0;
+  const isBody = sys.isBodyLocation ? 1 : 0;
+  const isShield = sys.isShield ? 1 : 0;
+  const shieldHp = typeof sys.shieldHitPoints?.max === 'number' ? sys.shieldHitPoints.max : null;
+  const penalty = typeof sys.penalty === 'number' ? sys.penalty : null;
+
+  return (
+    (existing.sp_head ?? null) !== spHead ||
+    (existing.sp_body ?? null) !== spBody ||
+    (existing.is_head ?? null) !== isHead ||
+    (existing.is_body ?? null) !== isBody ||
+    (existing.is_shield ?? null) !== isShield ||
+    (existing.shield_hp ?? null) !== shieldHp ||
+    (existing.penalty ?? null) !== penalty
+  );
+}
+
+function isCyberwareDiff(
+  sqlite: Database.Database,
+  itemId: string,
+  sys: Record<string, any>,
+): boolean {
+  const existing = sqlite
+    .prepare('SELECT * FROM cyberwares WHERE item_id = ?')
+    .get(itemId) as Record<string, any> | undefined;
+  if (!existing) return true;
+
+  const cwType = sys.type || null;
+  const installLocation = sys.installLocation || null;
+  const humanityLossRoll = sys.humanityLoss?.roll || null;
+  const humanityLossStatic =
+    typeof sys.humanityLoss?.static === 'number' ? sys.humanityLoss.static : null;
+  const isCore = sys.core ? 1 : 0;
+  const slotSize = typeof sys.size === 'number' ? sys.size : null;
+
+  return (
+    (existing.cw_type ?? null) !== cwType ||
+    (existing.install_location ?? null) !== installLocation ||
+    (existing.humanity_loss_roll ?? null) !== humanityLossRoll ||
+    (existing.humanity_loss_static ?? null) !== humanityLossStatic ||
+    (existing.is_core ?? null) !== isCore ||
+    (existing.slot_size ?? null) !== slotSize
+  );
+}
+
+function isSubtableDiff(
+  sqlite: Database.Database,
+  itemId: string,
+  kind: string,
+  doc: FvttItemDoc,
+): boolean {
+  const sys = doc.system || {};
+  if (kind === 'weapon') return isWeaponDiff(sqlite, itemId, sys);
+  if (kind === 'armor') return isArmorDiff(sqlite, itemId, sys);
+  if (kind === 'cyberware') return isCyberwareDiff(sqlite, itemId, sys);
+  return false;
+}
+
 function insertOrUpdateSubtables(
   sqlite: Database.Database,
   itemId: string,
@@ -761,6 +884,7 @@ function insertOrUpdateSubtables(
     const dvTableKey = sys.dvTable || null;
     const ammoTypes = Array.isArray(sys.ammoVariety) ? JSON.stringify(sys.ammoVariety) : null;
     const isRanged = sys.isRanged ? 1 : 0;
+    const suppressive = sys.fireModes?.suppressiveFire ? 1 : 0;
     const ignoreArmorPercent = typeof sys.ignoreArmorPercent === 'number' ? sys.ignoreArmorPercent : null;
 
     const existing = sqlite.prepare('SELECT item_id FROM weapons WHERE item_id = ?').get(itemId);
@@ -769,8 +893,8 @@ function insertOrUpdateSubtables(
         .prepare(
           `INSERT INTO weapons (
             item_id, weapon_type, skill, damage, rof, magazine_max, hands,
-            concealable, quality, autofire, crit_fail_effect, dv_table_key, ammo_types, is_ranged, ignore_armor_percent
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            concealable, quality, autofire, crit_fail_effect, dv_table_key, ammo_types, is_ranged, suppressive, ignore_armor_percent
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           itemId,
@@ -787,6 +911,7 @@ function insertOrUpdateSubtables(
           dvTableKey,
           ammoTypes,
           isRanged,
+          suppressive,
           ignoreArmorPercent,
         );
     } else {
@@ -794,7 +919,7 @@ function insertOrUpdateSubtables(
         .prepare(
           `UPDATE weapons SET
             weapon_type = ?, skill = ?, damage = ?, rof = ?, magazine_max = ?, hands = ?,
-            concealable = ?, quality = ?, autofire = ?, crit_fail_effect = ?, dv_table_key = ?, ammo_types = ?, is_ranged = ?, ignore_armor_percent = ?
+            concealable = ?, quality = ?, autofire = ?, crit_fail_effect = ?, dv_table_key = ?, ammo_types = ?, is_ranged = ?, suppressive = ?, ignore_armor_percent = ?
           WHERE item_id = ?`,
         )
         .run(
@@ -811,6 +936,7 @@ function insertOrUpdateSubtables(
           dvTableKey,
           ammoTypes,
           isRanged,
+          suppressive,
           ignoreArmorPercent,
           itemId,
         );
