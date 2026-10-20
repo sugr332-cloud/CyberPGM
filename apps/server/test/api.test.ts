@@ -6,6 +6,7 @@ import { db } from '../src/db/client.js';
 import { characters, devices, images } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { runDemoSeed } from '../src/db/seed-demo.js';
+import { resetGmRateLimits } from '../src/routes/auth.js';
 
 describe('API routes (phase 2 §4 & §9)', () => {
   beforeAll(() => {
@@ -15,6 +16,7 @@ describe('API routes (phase 2 §4 & §9)', () => {
   beforeEach(() => {
     // Reset devices before each test to ensure clean state
     db.delete(devices).run();
+    resetGmRateLimits();
   });
 
   it('handles GM login with PIN', async () => {
@@ -38,6 +40,84 @@ describe('API routes (phase 2 §4 & §9)', () => {
     const data = await successRes.json();
     expect(data.token).toBeDefined();
     expect(data.role).toBe('gm');
+  });
+
+  it('rate limits GM PIN brute-force attempts after 5 consecutive failures', async () => {
+    const { pin } = getOrCreateGmPin();
+    const testIp = '192.168.1.100';
+
+    // 5 consecutive failed attempts
+    for (let i = 0; i < 5; i++) {
+      const res = await app.request('/api/auth/gm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Forwarded-For': testIp,
+        },
+        body: JSON.stringify({ pin: 'bad-pin-' + i }),
+      });
+      expect(res.status).toBe(401);
+    }
+
+    // 6th attempt (even with correct PIN) should be locked out with 429
+    const lockedRes = await app.request('/api/auth/gm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': testIp,
+      },
+      body: JSON.stringify({ pin }),
+    });
+    expect(lockedRes.status).toBe(429);
+    expect(lockedRes.headers.get('Retry-After')).toBeDefined();
+    const lockedBody = await lockedRes.json();
+    expect(lockedBody.error).toContain('Too many failed login attempts');
+
+    // A different IP is NOT locked out
+    const otherIpRes = await app.request('/api/auth/gm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '192.168.1.200',
+      },
+      body: JSON.stringify({ pin }),
+    });
+    expect(otherIpRes.status).toBe(200);
+
+    // Consecutive failure counter resets on successful login
+    const resetIp = '192.168.1.101';
+    for (let i = 0; i < 4; i++) {
+      const res = await app.request('/api/auth/gm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Forwarded-For': resetIp,
+        },
+        body: JSON.stringify({ pin: 'bad-pin' }),
+      });
+      expect(res.status).toBe(401);
+    }
+    // 5th attempt succeeds with right PIN
+    const okRes = await app.request('/api/auth/gm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': resetIp,
+      },
+      body: JSON.stringify({ pin }),
+    });
+    expect(okRes.status).toBe(200);
+
+    // Subsequent failure starts from 1, not locked
+    const nextFailRes = await app.request('/api/auth/gm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': resetIp,
+      },
+      body: JSON.stringify({ pin: 'bad-pin-again' }),
+    });
+    expect(nextFailRes.status).toBe(401);
   });
 
   it('handles player join and character claim', async () => {

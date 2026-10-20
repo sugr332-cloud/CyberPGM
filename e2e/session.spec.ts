@@ -32,6 +32,10 @@ test('GM login, player QR join, and real-time fund notification flow', async ({ 
   // Verify GM Dashboard loaded
   await expect(gmPage.getByText('CYBERPGM').first()).toBeVisible();
   await expect(gmPage.getByText('ヴァイパー').first()).toBeVisible();
+  await expect(gmPage.getByRole('button', { name: '参加用 QR' })).toBeVisible();
+  await expect(gmPage.getByRole('button', { name: '保存・読み込み' })).toBeVisible();
+  await expect(gmPage.getByText(/Homebrew Content Policy of R. Talsorian Games/i)).toBeVisible();
+  await expect(gmPage.getByText(/Cyberpunk RED - Core/i)).toBeVisible();
 
   // Take Screenshot: GM PC Management
   await gmPage.screenshot({
@@ -91,6 +95,8 @@ test('GM login, player QR join, and real-time fund notification flow', async ({ 
   await expect(playerPage.getByRole('heading', { name: 'ヴァイパー' })).toBeVisible();
   await expect(playerPage.getByText(/ソロ/i)).toBeVisible();
   await expect(playerPage.getByText(/HP/i)).toBeVisible();
+  await expect(playerPage.getByText('拳銃')).toBeVisible();
+  await expect(playerPage.getByText('回避')).toBeVisible();
 
   // Take Screenshot: Player Character Sheet
   await playerPage.screenshot({

@@ -1,4 +1,9 @@
 import React from 'react';
+import {
+  RTG_DISCLAIMER_EN,
+  FVTT_CREDITS_JA,
+  UNOFFICIAL_FAN_NOTE_JA,
+} from '@cyberpgm/shared';
 
 export const Footer: React.FC = () => {
   return (
@@ -10,14 +15,12 @@ export const Footer: React.FC = () => {
         color: 'var(--color-text-muted)',
         textAlign: 'center',
         marginTop: 'auto',
+        lineHeight: 1.5,
       }}
     >
-      <p style={{ marginBottom: '4px' }}>
-        Cyberpunk RED is a trademark of R. Talsorian Games, Inc. and used with permission.
-      </p>
-      <p>
-        本ツールは非公式のファン作成ツールです。公式のルールブックおよび最新データをご参照ください。
-      </p>
+      <p style={{ marginBottom: '4px' }}>{RTG_DISCLAIMER_EN}</p>
+      <p style={{ marginBottom: '4px' }}>{FVTT_CREDITS_JA}</p>
+      <p>{UNOFFICIAL_FAN_NOTE_JA}</p>
     </footer>
   );
 };

@@ -544,7 +544,7 @@ export const GmPage: React.FC = () => {
               gap: '6px',
             }}
           >
-            📱 参加用 QR
+            参加用 QR
           </button>
           <button
             onClick={handleOpenSaves}
@@ -562,7 +562,7 @@ export const GmPage: React.FC = () => {
               gap: '6px',
             }}
           >
-            💾 保存・読み込み
+            保存・読み込み
           </button>
           <button
             onClick={() => {
@@ -1316,7 +1316,7 @@ export const GmPage: React.FC = () => {
                       fontSize: '0.85rem',
                     }}
                   >
-                    📂 ファイルを選択 (.cpgm-save)
+                    ファイルを選択 (.cpgm-save)
                     <input
                       type="file"
                       accept=".cpgm-save,.json"

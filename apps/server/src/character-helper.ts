@@ -7,6 +7,8 @@ import {
   CharacterSheetSkillItem,
   CharacterStats,
   CyberwareEntry,
+  formatSkillName,
+  getSkillDef,
 } from '@cyberpgm/shared';
 import { maxHumanity, currentEmp, woundState, woundPenalty } from '@cyberpgm/rules';
 
@@ -131,12 +133,13 @@ export function calculateCharacterSheet(char: Character): CharacterSheet {
   };
 
   const skillsList: CharacterSheetSkillItem[] = Object.entries(char.skills).map(([key, level]) => {
-    const statKey = skillStatMap[key.toLowerCase()] ?? 'int';
+    const skillDef = getSkillDef(key);
+    const statKey = (skillDef?.stat as keyof CharacterStats) ?? skillStatMap[key.toLowerCase()] ?? 'int';
     const statValue = statKey === 'emp' ? calculatedCurrentEmp : char.stats[statKey];
     const base = Math.max(0, statValue + level + calculatedWoundPenalty); // wound penalty is negative or 0
     return {
       key,
-      name: key,
+      name: formatSkillName(key),
       statKey,
       statValue,
       level,

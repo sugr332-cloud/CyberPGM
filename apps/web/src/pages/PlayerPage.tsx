@@ -4,6 +4,7 @@ import {
   CharacterSheet,
   CharLogEntry,
   WsNotifyPayload,
+  formatSkillName,
 } from '@cyberpgm/shared';
 import {
   api,
@@ -676,7 +677,7 @@ export const PlayerPage: React.FC = () => {
                     fontSize: '0.85rem',
                   }}
                 >
-                  <span>{sk.name}</span>
+                  <span>{formatSkillName(sk.name || sk.key)}</span>
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                     <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                       Lv.{sk.level}
