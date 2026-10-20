@@ -14,6 +14,9 @@ import {
   transactions,
   character_submissions,
   skill_notes,
+  combats,
+  combat_participants,
+  combat_log,
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
@@ -69,10 +72,13 @@ export function buildSaveData(name: string): SaveFile {
   }));
   const subRows = db.select().from(character_submissions).all();
   const notesRows = db.select().from(skill_notes).all();
+  const combatRows = db.select().from(combats).all();
+  const participantRows = db.select().from(combat_participants).all();
+  const logRows = db.select().from(combat_log).all();
 
   return {
     format: 'cpgm-save',
-    version: 2,
+    version: 3,
     savedAt: Date.now(),
     name,
     characters: chars,
@@ -84,6 +90,9 @@ export function buildSaveData(name: string): SaveFile {
     transactions: txRows.map((t) => ({ ...t, kind: t.kind as 'buy' | 'sell' })),
     character_submissions: subRows,
     skill_notes: notesRows,
+    combats: combatRows,
+    combat_participants: participantRows,
+    combat_log: logRows,
   };
 }
 
@@ -405,6 +414,77 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
       `);
       for (const sn of data.skill_notes as any[]) {
         insertNote.run(sn.key, sn.text, sn.updated_at);
+      }
+    }
+
+    // Restore combat tables (version 3)
+    sqlite.prepare('DELETE FROM combat_log').run();
+    sqlite.prepare('DELETE FROM combat_participants').run();
+    sqlite.prepare('DELETE FROM combats').run();
+
+    if (data.combats && data.combats.length > 0) {
+      const insertCombat = sqlite.prepare(`
+        INSERT INTO combats (id, status, round, turn_index, settings, created_at, ended_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const cb of data.combats as any[]) {
+        insertCombat.run(
+          cb.id,
+          cb.status,
+          cb.round,
+          cb.turn_index,
+          typeof cb.settings === 'string' ? cb.settings : JSON.stringify(cb.settings || {}),
+          cb.created_at,
+          cb.ended_at ?? null,
+        );
+      }
+    }
+
+    if (data.combat_participants && data.combat_participants.length > 0) {
+      const insertPart = sqlite.prepare(`
+        INSERT INTO combat_participants (
+          id, combat_id, character_id, side, name, initiative, initiative_roll,
+          order_index, active, out, move_used, action_used, state
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const cp of data.combat_participants as any[]) {
+        insertPart.run(
+          cp.id,
+          cp.combat_id,
+          cp.character_id ?? null,
+          cp.side,
+          cp.name,
+          cp.initiative,
+          typeof cp.initiative_roll === 'string' ? cp.initiative_roll : JSON.stringify(cp.initiative_roll || {}),
+          cp.order_index,
+          cp.active ? 1 : 0,
+          cp.out ? 1 : 0,
+          cp.move_used ? 1 : 0,
+          cp.action_used ? 1 : 0,
+          typeof cp.state === 'string' ? cp.state : JSON.stringify(cp.state || {}),
+        );
+      }
+    }
+
+    if (data.combat_log && data.combat_log.length > 0) {
+      const insertLog = sqlite.prepare(`
+        INSERT INTO combat_log (
+          id, combat_id, round, actor_id, action_key, input, breakdown, changes, undone, at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const cl of data.combat_log as any[]) {
+        insertLog.run(
+          cl.id,
+          cl.combat_id,
+          cl.round,
+          cl.actor_id,
+          cl.action_key,
+          typeof cl.input === 'string' ? cl.input : JSON.stringify(cl.input || {}),
+          typeof cl.breakdown === 'string' ? cl.breakdown : JSON.stringify(cl.breakdown || {}),
+          typeof cl.changes === 'string' ? cl.changes : JSON.stringify(cl.changes || []),
+          cl.undone ? 1 : 0,
+          cl.at,
+        );
       }
     }
   });

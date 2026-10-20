@@ -36,17 +36,62 @@ export const PlayerPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'sheet' | 'act'>('sheet');
   const [banner, setBanner] = useState<WsNotifyPayload | null>(null);
 
+  // Combat state for player
+  const [currentCombat, setCurrentCombat] = useState<any | null>(null);
+  const [combatTurnInfo, setCombatTurnInfo] = useState<{
+    combat_id: string;
+    round: number;
+    turn_index: number;
+    actor_id: string;
+    actor_name: string;
+    is_my_turn: boolean;
+  } | null>(null);
+  const [combatResultNotification, setCombatResultNotification] = useState<{
+    title: string;
+    summary: string;
+    changes: any[];
+    is_victim?: boolean;
+  } | null>(null);
+
+  // Dice pad state
+  const [showDicePad, setShowDicePad] = useState(false);
+  const [padRollType, setPadRollType] = useState<'initiative' | 'attack' | 'defense'>('attack');
+  const [padFirstRoll, setPadFirstRoll] = useState<number | null>(null);
+  const [padExtraRoll, setPadExtraRoll] = useState<number | null>(null);
+  const [needsExtraRoll, setNeedsExtraRoll] = useState(false);
+  const [chosenActionLabel, setChosenActionLabel] = useState<string>('');
+
   // WebSocket message handler
   const handleWsMessage = useCallback((type: string, payload: unknown) => {
     if (type === 'me:update') {
       setSheet(payload as CharacterSheet);
+    } else if (type === 'combat:turn') {
+      const p = payload as any;
+      setCombatTurnInfo(p);
+      api.getCurrentCombat(token).then((res) => setCurrentCombat(res.combat)).catch(() => {});
+    } else if (type === 'combat:result') {
+      const p = payload as any;
+      setCombatResultNotification(p);
+      setTimeout(() => {
+        setCombatResultNotification((prev) => (prev === p ? null : prev));
+      }, 8000);
+      if (p.summary) {
+        setLogs((prev) => [
+          {
+            id: Date.now().toString(),
+            character_id: sheet?.id || '',
+            text: `${p.title}: ${p.summary}`,
+            at: Date.now(),
+          },
+          ...prev,
+        ]);
+      }
     } else if (type === 'notify') {
       const p = payload as WsNotifyPayload;
       setBanner(p);
       setTimeout(() => {
         setBanner((prev) => (prev === p ? null : prev));
       }, 5000);
-      // Also add to logs
       setLogs((prev) => [
         {
           id: Date.now().toString(),
@@ -57,14 +102,14 @@ export const PlayerPage: React.FC = () => {
         ...prev,
       ]);
     }
-  }, [sheet?.id]);
+  }, [sheet?.id, token]);
 
-  const { isReconnecting } = useWebSocket({
+  const { isReconnecting, sendMessage } = useWebSocket({
     token,
     onMessage: handleWsMessage,
   });
 
-  // Load initial sheet if token exists
+  // Load initial sheet & combat if token exists
   useEffect(() => {
     if (!token) return;
 
@@ -78,6 +123,12 @@ export const PlayerPage: React.FC = () => {
         removePlayerToken();
         setToken(null);
       });
+
+    api.getCurrentCombat(token)
+      .then((res) => {
+        setCurrentCombat(res.combat);
+      })
+      .catch(() => {});
   }, [token]);
 
   // Handle Join Code submit
@@ -427,11 +478,56 @@ export const PlayerPage: React.FC = () => {
               background: 'none',
               border: 'none',
               fontSize: '1rem',
-              fontWeight: 700,
+              color: '#000',
               cursor: 'pointer',
+              fontWeight: 700,
             }}
           >
-            ✕
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Combat Result / Damage Notification */}
+      {combatResultNotification && (
+        <div
+          data-testid="combat-result-banner"
+          style={{
+            backgroundColor: combatResultNotification.is_victim ? 'rgba(235, 75, 75, 0.95)' : 'rgba(79, 182, 227, 0.95)',
+            color: '#fff',
+            padding: '12px 16px',
+            fontSize: '0.9rem',
+            fontWeight: 700,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            borderBottom: combatResultNotification.is_victim ? '2px solid #ff0000' : '2px solid var(--color-ally)',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: '0.95rem' }}>{combatResultNotification.title}</div>
+            <div style={{ fontSize: '0.85rem', fontWeight: 500, marginTop: '2px' }}>
+              {combatResultNotification.summary}
+            </div>
+            {combatResultNotification.changes && combatResultNotification.changes.length > 0 && (
+              <div style={{ fontSize: '0.8rem', fontWeight: 400, opacity: 0.9, marginTop: '4px' }}>
+                {combatResultNotification.changes.map((c: any) => c.desc).join(' / ')}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => setCombatResultNotification(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '1.2rem',
+              color: '#fff',
+              cursor: 'pointer',
+              padding: '4px 8px',
+            }}
+          >
+            ×
           </button>
         </div>
       )}
@@ -881,23 +977,495 @@ export const PlayerPage: React.FC = () => {
           </div>
         </div>
       ) : (
-        /* Action Tab (Phase 4 placeholder) */
-        <div
-          style={{
-            padding: '32px 16px',
-            textAlign: 'center',
-            color: 'var(--color-text-muted)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '12px',
-          }}
-        >
-          <div style={{ fontSize: '2rem' }}>⚔️</div>
-          <h2 style={{ fontSize: '1.1rem', color: 'var(--color-text)' }}>行動（アクション）</h2>
-          <p style={{ fontSize: '0.875rem', maxWidth: '300px' }}>
-            戦闘やストーリーの場面で使えるようになります（Phase 4 で実装）。
-          </p>
+        /* Action Tab (Phase 4a) */
+        <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {!currentCombat || currentCombat.status === 'ended' ? (
+            <div
+              style={{
+                padding: '32px 16px',
+                textAlign: 'center',
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                color: 'var(--color-text-muted)',
+              }}
+            >
+              <h2 style={{ fontSize: '1.1rem', color: 'var(--color-text)', margin: '0 0 8px' }}>現在は戦闘中ではありません</h2>
+              <p style={{ fontSize: '0.85rem', margin: 0 }}>
+                GMが戦闘を開始すると、手番に応じた行動ボタンや出目パッドが表示されます。
+              </p>
+            </div>
+          ) : currentCombat.status === 'setup' ? (
+            <div
+              style={{
+                padding: '20px',
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                textAlign: 'center',
+              }}
+            >
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>戦闘準備中（参加者チェック）</h2>
+              <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                イニシアチブ（行動順）の出目（1d10）を入力してGMに送信してください。
+              </p>
+              <button
+                onClick={() => {
+                  setPadRollType('initiative');
+                  setShowDicePad(true);
+                  setPadFirstRoll(null);
+                  setPadExtraRoll(null);
+                  setNeedsExtraRoll(false);
+                }}
+                style={{
+                  backgroundColor: 'var(--color-ally)',
+                  color: '#000',
+                  border: 'none',
+                  padding: '12px',
+                  borderRadius: '6px',
+                  fontWeight: 800,
+                  fontSize: '1rem',
+                  cursor: 'pointer',
+                  marginTop: '8px',
+                }}
+              >
+                イニシアチブの出目を入力
+              </button>
+            </div>
+          ) : (
+            /* Active Combat Action Interface */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Turn Status Banner */}
+              {(() => {
+                const activePart = currentCombat.participants[currentCombat.turn_index];
+                const isMyTurn = Boolean(
+                  combatTurnInfo?.is_my_turn ?? (activePart && activePart.character_id === sheet.id),
+                );
+                const turnName = combatTurnInfo?.actor_name || activePart?.name || '—';
+
+                return (
+                  <div
+                    style={{
+                      padding: '14px',
+                      borderRadius: '8px',
+                      backgroundColor: isMyTurn ? 'rgba(79, 182, 227, 0.15)' : 'var(--color-surface)',
+                      border: isMyTurn ? '2px solid var(--color-ally)' : '1px solid var(--color-border)',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                      ラウンド {currentCombat.round}
+                    </div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: '2px', color: isMyTurn ? 'var(--color-ally)' : 'var(--color-text)' }}>
+                      {isMyTurn ? `あなた（${sheet.name}）の手番です` : `${turnName} の手番です`}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Action Buttons (Only clickable if my turn) */}
+              {(() => {
+                const activePart = currentCombat.participants[currentCombat.turn_index];
+                const isMyTurn = Boolean(
+                  combatTurnInfo?.is_my_turn ?? (activePart && activePart.character_id === sheet.id),
+                );
+
+                const refVal = sheet.stats.ref;
+                const dexVal = sheet.stats.dex;
+                const handgunSkill = sheet.skills['Handgun'] ?? sheet.skills['ハンドガン'] ?? 0;
+                const meleeSkill = sheet.skills['Melee Weapon'] ?? sheet.skills['近接武器'] ?? 0;
+                const evasionSkill = sheet.skills['Evasion'] ?? sheet.skills['回避'] ?? 0;
+                const woundPen = sheet.woundPenalty;
+
+                const attackBaseHandgun = refVal + handgunSkill + woundPen;
+                const attackBaseMelee = dexVal + meleeSkill + woundPen;
+                const dodgeBase = dexVal + evasionSkill + woundPen;
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                      {isMyTurn ? '行動を選択:' : '手番外の行動:'}
+                    </div>
+
+                    {isMyTurn && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <button
+                          onClick={() => {
+                            setChosenActionLabel('移動');
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'move' } });
+                          }}
+                          style={{
+                            padding: '12px 10px',
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border-light)',
+                            borderRadius: '6px',
+                            color: 'var(--color-text)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>移動</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                            MOVE {sheet.stats.move}マス (2m/マス)
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setChosenActionLabel('射撃');
+                            setPadRollType('attack');
+                            setShowDicePad(true);
+                            setPadFirstRoll(null);
+                            setPadExtraRoll(null);
+                            setNeedsExtraRoll(false);
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'ranged' } });
+                          }}
+                          style={{
+                            padding: '12px 10px',
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border-light)',
+                            borderRadius: '6px',
+                            color: 'var(--color-text)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>射撃</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                            基準値 {attackBaseHandgun} + 1d10
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setChosenActionLabel('照準射撃');
+                            setPadRollType('attack');
+                            setShowDicePad(true);
+                            setPadFirstRoll(null);
+                            setPadExtraRoll(null);
+                            setNeedsExtraRoll(false);
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'aimed' } });
+                          }}
+                          style={{
+                            padding: '12px 10px',
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border-light)',
+                            borderRadius: '6px',
+                            color: 'var(--color-text)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>照準射撃</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                            基準値 {attackBaseHandgun - 8} + 1d10
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setChosenActionLabel('オートファイア');
+                            setPadRollType('attack');
+                            setShowDicePad(true);
+                            setPadFirstRoll(null);
+                            setPadExtraRoll(null);
+                            setNeedsExtraRoll(false);
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'autofire' } });
+                          }}
+                          style={{
+                            padding: '12px 10px',
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border-light)',
+                            borderRadius: '6px',
+                            color: 'var(--color-text)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>オートファイア</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                            基準値 {attackBaseHandgun} + 1d10
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setChosenActionLabel('近接攻撃');
+                            setPadRollType('attack');
+                            setShowDicePad(true);
+                            setPadFirstRoll(null);
+                            setPadExtraRoll(null);
+                            setNeedsExtraRoll(false);
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'melee' } });
+                          }}
+                          style={{
+                            padding: '12px 10px',
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border-light)',
+                            borderRadius: '6px',
+                            color: 'var(--color-text)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>近接攻撃</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                            基準値 {attackBaseMelee} + 1d10 (SP半減)
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setChosenActionLabel('リロード');
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'reload' } });
+                          }}
+                          style={{
+                            padding: '12px 10px',
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border-light)',
+                            borderRadius: '6px',
+                            color: 'var(--color-text)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>リロード</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                            弾を満タンにする
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setChosenActionLabel('走る');
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'run' } });
+                          }}
+                          style={{
+                            padding: '12px 10px',
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border-light)',
+                            borderRadius: '6px',
+                            color: 'var(--color-text)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>走る</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                            さらに MOVE 分移動
+                          </div>
+                        </button>
+
+                        {sheet.woundState === 'mortally' && (
+                          <button
+                            onClick={() => {
+                              setChosenActionLabel('死亡セーブ');
+                              setPadRollType('defense');
+                              setShowDicePad(true);
+                              setPadFirstRoll(null);
+                              setPadExtraRoll(null);
+                              setNeedsExtraRoll(false);
+                              sendMessage({ type: 'combat:choose', payload: { action_key: 'death_save' } });
+                            }}
+                            style={{
+                              padding: '12px 10px',
+                              backgroundColor: 'rgba(235, 75, 75, 0.2)',
+                              border: '1px solid var(--color-danger)',
+                              borderRadius: '6px',
+                              color: 'var(--color-danger)',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                              fontWeight: 700,
+                            }}
+                          >
+                            <div>死亡セーブ</div>
+                            <div style={{ fontSize: '0.75rem', marginTop: '2px' }}>
+                              BODY {sheet.stats.body} 未満
+                            </div>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Dodge Button (always accessible) */}
+                    <div style={{ marginTop: '8px' }}>
+                      <button
+                        onClick={() => {
+                          setChosenActionLabel('回避');
+                          setPadRollType('defense');
+                          setShowDicePad(true);
+                          setPadFirstRoll(null);
+                          setPadExtraRoll(null);
+                          setNeedsExtraRoll(false);
+                          sendMessage({ type: 'combat:choose', payload: { action_key: 'dodge' } });
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '12px',
+                          backgroundColor: 'var(--color-surface)',
+                          border: '1px solid var(--color-warning)',
+                          borderRadius: '6px',
+                          color: 'var(--color-warning)',
+                          fontWeight: 700,
+                          fontSize: '0.95rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span>回避（GMに言われたとき）</span>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                          基準値 {dodgeBase} + 1d10
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Dice Pad (Single hand optimized) */}
+              {showDicePad && (
+                <div
+                  style={{
+                    backgroundColor: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    marginTop: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                      出目パッド: {chosenActionLabel || padRollType}
+                    </div>
+                    <button
+                      onClick={() => setShowDicePad(false)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--color-text-muted)',
+                        fontSize: '1.1rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  {/* Selected Roll Display */}
+                  <div
+                    style={{
+                      padding: '10px',
+                      backgroundColor: 'var(--color-bg)',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                      fontSize: '1.2rem',
+                      fontWeight: 800,
+                    }}
+                  >
+                    {padFirstRoll !== null ? (
+                      <span>
+                        出目: {padFirstRoll}
+                        {needsExtraRoll && (
+                          <span style={{ color: 'var(--color-warning)', marginLeft: '8px' }}>
+                            {padExtraRoll !== null ? `+ 追加出目 ${padExtraRoll}` : '(追加出目をタップ)'}
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+                        数字をタップして出目を決定
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 10-Key Pad (1 - 10) */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(5, 1fr)',
+                      gap: '8px',
+                    }}
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
+                      const isSelected = (!needsExtraRoll && padFirstRoll === num) || (needsExtraRoll && padExtraRoll === num);
+                      return (
+                        <button
+                          key={num}
+                          onClick={() => {
+                            if (!needsExtraRoll) {
+                              setPadFirstRoll(num);
+                              if (num === 10 || num === 1) {
+                                setNeedsExtraRoll(true);
+                              } else {
+                                setNeedsExtraRoll(false);
+                                setPadExtraRoll(null);
+                              }
+                            } else {
+                              setPadExtraRoll(num);
+                            }
+                          }}
+                          style={{
+                            height: '52px',
+                            backgroundColor: isSelected ? 'var(--color-ally)' : 'var(--color-surface-elevated)',
+                            color: isSelected ? '#000' : 'var(--color-text)',
+                            border: '1px solid var(--color-border-light)',
+                            borderRadius: '6px',
+                            fontSize: '1.2rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {num}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Submit Roll Button */}
+                  <button
+                    onClick={() => {
+                      if (padFirstRoll === null) return;
+                      sendMessage({
+                        type: 'combat:roll',
+                        payload: {
+                          roll_type: padRollType,
+                          first: padFirstRoll,
+                          extra: padExtraRoll ?? undefined,
+                        },
+                      });
+                      setShowDicePad(false);
+                      setPadFirstRoll(null);
+                      setPadExtraRoll(null);
+                      setNeedsExtraRoll(false);
+                    }}
+                    disabled={padFirstRoll === null || (needsExtraRoll && padExtraRoll === null)}
+                    style={{
+                      padding: '12px',
+                      backgroundColor: 'var(--color-ally)',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontWeight: 800,
+                      fontSize: '1rem',
+                      cursor: padFirstRoll !== null ? 'pointer' : 'not-allowed',
+                      opacity: padFirstRoll !== null ? 1 : 0.5,
+                      marginTop: '6px',
+                    }}
+                  >
+                    GM に出目を送信
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

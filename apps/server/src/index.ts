@@ -16,8 +16,10 @@ import { shopsRoutes } from './routes/shops.js';
 import { commerceRoutes } from './routes/commerce.js';
 import { characterCreationRoutes } from './routes/character-creation.js';
 import { skillNotesRoutes } from './routes/skill-notes.js';
+import { combatRoutes, getCurrentCombat } from './routes/combat.js';
 import { db } from './db/client.js';
 import { initPhase3bData } from './db/init-phase3b.js';
+import { initPhase4aData } from './db/init-phase4a.js';
 import { verifyToken, authMiddleware } from './auth.js';
 import { sessionManager } from './session.js';
 import { createDailyBackup } from './config.js';
@@ -48,9 +50,13 @@ app.route('/api/shops', shopsRoutes);
 app.route('/api', commerceRoutes);
 app.route('/api', characterCreationRoutes);
 app.route('/api', skillNotesRoutes);
+app.route('/api', combatRoutes);
 
 // Initialize Phase 3b data (skill notes, creation method)
 initPhase3bData(db);
+
+// Initialize Phase 4a data (combat actions)
+initPhase4aData(db);
 
 // WebSocket endpoint
 app.get(
@@ -85,6 +91,27 @@ app.get(
           const data = JSON.parse(evt.data.toString());
           if (data && data.type === 'ping') {
             ws.send(JSON.stringify({ type: 'pong' }));
+          } else if (data && data.type === 'combat:choose') {
+            if (device.role === 'player' && device.characterId) {
+              const current = getCurrentCombat();
+              if (current && current.status === 'active') {
+                const activePart = current.participants[current.turn_index];
+                const isDodge = data.payload?.action_key === 'dodge';
+                if (isDodge || (activePart && activePart.character_id === device.characterId)) {
+                  sessionManager.forwardCombatChooseToGm({
+                    ...data.payload,
+                    character_id: device.characterId,
+                  });
+                }
+              }
+            }
+          } else if (data && data.type === 'combat:roll') {
+            if (device.role === 'player' && device.characterId) {
+              sessionManager.forwardCombatRollToGm({
+                ...data.payload,
+                character_id: device.characterId,
+              });
+            }
           }
         } catch {
           // ignore malformed messages

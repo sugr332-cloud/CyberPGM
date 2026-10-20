@@ -394,4 +394,63 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(cpgmData),
     }, getGmToken()),
+
+  // Combat API (Phase 4a)
+  getCombatActions: () =>
+    request<{ actions: any[] }>('/api/combat-actions'),
+
+  getCurrentCombat: (token?: string | null) =>
+    request<{ combat: any | null }>('/api/combats/current', {}, token !== undefined ? token : getGmToken()),
+
+  createCombat: (settings?: any) =>
+    request<{ combat: any }>('/api/combats', {
+      method: 'POST',
+      body: JSON.stringify({ settings }),
+    }, getGmToken()),
+
+  addParticipant: (combatId: string, participant: { character_id?: string | null; name: string; side: 'ally' | 'enemy'; count?: number }) =>
+    request<{ combat: any }>(`/api/combats/${combatId}/participants`, {
+      method: 'POST',
+      body: JSON.stringify(participant),
+    }, getGmToken()),
+
+  updateParticipant: (combatId: string, pid: string, data: any) =>
+    request<{ combat: any }>(`/api/combats/${combatId}/participants/${pid}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  deleteParticipant: (combatId: string, pid: string) =>
+    request<{ combat: any }>(`/api/combats/${combatId}/participants/${pid}`, {
+      method: 'DELETE',
+    }, getGmToken()),
+
+  setCombatInitiative: (combatId: string, participants: any[]) =>
+    request<{ combat: any }>(`/api/combats/${combatId}/initiative`, {
+      method: 'POST',
+      body: JSON.stringify({ participants }),
+    }, getGmToken()),
+
+  updateCombat: (combatId: string, data: { action?: string; settings?: any; deleteMooks?: boolean }) =>
+    request<{ combat: any }>(`/api/combats/${combatId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  resolveCombatAction: (combatId: string, data: any) =>
+    request<{ result: any }>(`/api/combats/${combatId}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  applyCombatAction: (combatId: string, data: any) =>
+    request<{ result: any; combat: any }>(`/api/combats/${combatId}/apply`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  undoCombatAction: (combatId: string) =>
+    request<{ success: boolean; undoneLogId: string; combat: any }>(`/api/combats/${combatId}/undo`, {
+      method: 'POST',
+    }, getGmToken()),
 };

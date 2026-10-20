@@ -17,6 +17,7 @@ import { Footer } from '../components/Footer.js';
 import { ShopView } from '../components/ShopView.js';
 import { SkillsView } from '../components/SkillsView.js';
 import { CharacterReceptionView } from '../components/CharacterReceptionView.js';
+import { CombatView } from '../components/CombatView.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -144,9 +145,57 @@ export const GmPage: React.FC = () => {
 
   // Claim Request Alert from other devices
   const [pendingClaim, setPendingClaim] = useState<WsClaimRequestPayload | null>(null);
+  const [latestWsMessage, setLatestWsMessage] = useState<{ type: string; payload: any } | null>(null);
+
+  // NPC / Mook creation state
+  const [showNpcModal, setShowNpcModal] = useState(false);
+  const [npcKind, setNpcKind] = useState<'npc' | 'mook'>('mook');
+  const [npcName, setNpcName] = useState('');
+  const [npcRole, setNpcRole] = useState('Ganger');
+  const [npcHp, setNpcHp] = useState('25');
+  const [npcSpHead, setNpcSpHead] = useState('4');
+  const [npcSpBody, setNpcSpBody] = useState('7');
+  const [npcRef, setNpcRef] = useState('5');
+  const [npcDex, setNpcDex] = useState('5');
+  const [npcBody, setNpcBody] = useState('6');
+
+  const handleSaveNpc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!npcName.trim()) return;
+    const hpVal = Number(npcHp) || 25;
+    const spHVal = Number(npcSpHead) || 0;
+    const spBVal = Number(npcSpBody) || 0;
+    const refVal = Number(npcRef) || 5;
+    const dexVal = Number(npcDex) || 5;
+    const bodyVal = Number(npcBody) || 6;
+
+    try {
+      await api.createCharacter({
+        kind: npcKind,
+        name: npcName.trim(),
+        role: npcRole.trim(),
+        hp: hpVal,
+        hp_max: hpVal,
+        sp_head: spHVal,
+        sp_body: spBVal,
+        eb: 0,
+        stats: { int: 4, ref: refVal, dex: dexVal, tech: 3, cool: 4, will: 4, luck: 0, move: 5, body: bodyVal, emp: 3 },
+        skills: { Handgun: 4, Evasion: 4, Brawling: 4, 'Melee Weapon': 4 },
+        humanity: 30,
+        emp_max: 3,
+      });
+      setShowNpcModal(false);
+      setNpcName('');
+      refreshAllData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`NPC/モブの作成に失敗しました: ${msg}`);
+    }
+  };
 
   // WebSocket Message Handler
   const handleWsMessage = useCallback((type: string, payload: unknown) => {
+    setLatestWsMessage({ type, payload });
     if (type === 'gm:presence') {
       const p = payload as { devices: DeviceInfo[] };
       setDevices(p.devices);
@@ -778,6 +827,22 @@ export const GmPage: React.FC = () => {
                 >
                   ＋ PC追加
                 </button>
+                <button
+                  onClick={() => setShowNpcModal(true)}
+                  style={{
+                    backgroundColor: 'var(--color-enemy)',
+                    border: 'none',
+                    color: '#000',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    marginLeft: '8px',
+                  }}
+                >
+                  ＋ NPC/モブ追加
+                </button>
               </div>
             </div>
 
@@ -1007,6 +1072,13 @@ export const GmPage: React.FC = () => {
             </div>
           )}
           </div>
+        ) : activeTab === 'combat' ? (
+          <CombatView
+            characters={characters}
+            onRefreshCharacters={refreshAllData}
+            token={token}
+            wsMessage={latestWsMessage}
+          />
         ) : activeTab === 'shop' ? (
           <ShopView characters={characters} onRefreshCharacters={refreshAllData} />
         ) : activeTab === 'skills' ? (
@@ -1024,7 +1096,6 @@ export const GmPage: React.FC = () => {
             }}
           >
             <h2 style={{ fontSize: '1.25rem', color: 'var(--color-text)', marginBottom: '8px' }}>
-              {activeTab === 'combat' && '戦闘タブ（Phase 4 で実装）'}
               {activeTab === 'scenario' && 'シナリオタブ（Phase 5 で実装）'}
               {activeTab === 'db' && 'DBタブ（Phase 3 で実装）'}
             </h2>
@@ -1428,6 +1499,263 @@ export const GmPage: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* NPC / Mook Add Modal */}
+      {showNpcModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '24px',
+          }}
+        >
+          <form
+            onSubmit={handleSaveNpc}
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '480px',
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>
+                新規 NPC / モブ追加
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowNpcModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-text-muted)',
+                  fontSize: '1.2rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.9rem' }}>
+                <input
+                  type="radio"
+                  name="npcKind"
+                  checked={npcKind === 'mook'}
+                  onChange={() => setNpcKind('mook')}
+                />
+                モブ（戦闘で複数体複製可能）
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.9rem' }}>
+                <input
+                  type="radio"
+                  name="npcKind"
+                  checked={npcKind === 'npc'}
+                  onChange={() => setNpcKind('npc')}
+                />
+                単体 NPC
+              </label>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
+                名前:
+              </label>
+              <input
+                type="text"
+                required
+                value={npcName}
+                onChange={(e) => setNpcName(e.target.value)}
+                placeholder="例: ガンガー"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  backgroundColor: 'var(--color-bg)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  color: 'var(--color-text)',
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
+                ロール / 役割:
+              </label>
+              <input
+                type="text"
+                value={npcRole}
+                onChange={(e) => setNpcRole(e.target.value)}
+                placeholder="例: Ganger, Solo"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  backgroundColor: 'var(--color-bg)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  color: 'var(--color-text)',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
+                  HP 最大:
+                </label>
+                <input
+                  type="number"
+                  value={npcHp}
+                  onChange={(e) => setNpcHp(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
+                  SP 頭:
+                </label>
+                <input
+                  type="number"
+                  value={npcSpHead}
+                  onChange={(e) => setNpcSpHead(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
+                  SP 胴:
+                </label>
+                <input
+                  type="number"
+                  value={npcSpBody}
+                  onChange={(e) => setNpcSpBody(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
+                  REF:
+                </label>
+                <input
+                  type="number"
+                  value={npcRef}
+                  onChange={(e) => setNpcRef(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
+                  DEX:
+                </label>
+                <input
+                  type="number"
+                  value={npcDex}
+                  onChange={(e) => setNpcDex(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
+                  BODY:
+                </label>
+                <input
+                  type="number"
+                  value={npcBody}
+                  onChange={(e) => setNpcBody(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setShowNpcModal(false)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'transparent',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  color: 'var(--color-text)',
+                  cursor: 'pointer',
+                }}
+              >
+                キャンセル
+              </button>
+              <button
+                type="submit"
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'var(--color-enemy)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: '#000',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                保存する
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
