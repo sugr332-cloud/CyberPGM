@@ -43,3 +43,5 @@ export function ulid(seedTime: number = Date.now()): string {
 
   return timeStr + randStr;
 }
+
+export const generateUlid = ulid;

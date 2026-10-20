@@ -253,7 +253,7 @@ export interface CharacterSheetSkillItem {
 export interface CharacterSheet extends Character {
   maxHumanity: number;
   currentEmp: number;
-  woundState: 'ok' | 'seriously' | 'mortally';
+  woundState: 'ok' | 'seriously' | 'mortally' | 'dead';
   woundPenalty: number;
   skillsList: CharacterSheetSkillItem[];
 }
