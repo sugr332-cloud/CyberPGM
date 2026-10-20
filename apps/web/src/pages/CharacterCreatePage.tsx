@@ -1632,9 +1632,9 @@ export const CharacterCreatePage: React.FC = () => {
                       合計 {validationResults.stats.total} pt (未設定のためチェックなし)
                     </span>
                   ) : validationResults.stats.remaining! >= 0 ? (
-                    <span style={{ color: 'var(--color-ally)' }}>✓ 残り {validationResults.stats.remaining} pt</span>
+                    <span style={{ color: 'var(--color-ally)' }}>残り {validationResults.stats.remaining} pt</span>
                   ) : (
-                    <span style={{ color: 'var(--color-accent)' }}>⚠ {Math.abs(validationResults.stats.remaining!)} pt 超過</span>
+                    <span style={{ color: 'var(--color-accent)' }}>{Math.abs(validationResults.stats.remaining!)} pt 超過</span>
                   )}
                 </span>
               </div>
@@ -1648,9 +1648,9 @@ export const CharacterCreatePage: React.FC = () => {
                       消費 {validationResults.skills.totalSpent} pt (未設定のためチェックなし)
                     </span>
                   ) : validationResults.skills.remaining! >= 0 ? (
-                    <span style={{ color: 'var(--color-ally)' }}>✓ 残り {validationResults.skills.remaining} pt</span>
+                    <span style={{ color: 'var(--color-ally)' }}>残り {validationResults.skills.remaining} pt</span>
                   ) : (
-                    <span style={{ color: 'var(--color-accent)' }}>⚠ {Math.abs(validationResults.skills.remaining!)} pt 超過</span>
+                    <span style={{ color: 'var(--color-accent)' }}>{Math.abs(validationResults.skills.remaining!)} pt 超過</span>
                   )}
                 </span>
               </div>
@@ -1664,9 +1664,9 @@ export const CharacterCreatePage: React.FC = () => {
                       使用 {validationResults.funds.totalSpent.toLocaleString()} eb (未設定のためチェックなし)
                     </span>
                   ) : validationResults.funds.remaining! >= 0 ? (
-                    <span style={{ color: 'var(--color-ally)' }}>✓ 残り {validationResults.funds.remaining!.toLocaleString()} eb</span>
+                    <span style={{ color: 'var(--color-ally)' }}>残り {validationResults.funds.remaining!.toLocaleString()} eb</span>
                   ) : (
-                    <span style={{ color: 'var(--color-accent)' }}>⚠ {Math.abs(validationResults.funds.remaining!).toLocaleString()} eb 超過</span>
+                    <span style={{ color: 'var(--color-accent)' }}>{Math.abs(validationResults.funds.remaining!).toLocaleString()} eb 超過</span>
                   )}
                 </span>
               </div>

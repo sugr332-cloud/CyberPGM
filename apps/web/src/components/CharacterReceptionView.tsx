@@ -187,7 +187,6 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
                   gap: '6px',
                 }}
               >
-                <span>📱</span>
                 <span>自宅 Wi-Fi 用の QR を表示</span>
               </button>
             )}
@@ -503,7 +502,7 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
                               fontWeight: 600,
                             }}
                           >
-                            ⚠ 超過・警告 ({errorCount})
+                            超過・警告 ({errorCount})
                           </span>
                         ) : (
                           <span
@@ -516,7 +515,7 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
                               fontWeight: 600,
                             }}
                           >
-                            ✓ チェックOK
+                            チェックOK
                           </span>
                         )}
                       </div>
@@ -706,11 +705,11 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
               {viewingSub.validation_results?.errors?.length ? (
                 viewingSub.validation_results.errors.map((err, idx) => (
                   <div key={idx} style={{ color: 'var(--color-accent)' }}>
-                    ⚠ {err}
+                    ・ {err}
                   </div>
                 ))
               ) : (
-                <div style={{ color: 'var(--color-ally)' }}>✓ すべてのルール条件を満たしています</div>
+                <div style={{ color: 'var(--color-ally)' }}>すべてのルール条件を満たしています</div>
               )}
             </div>
 
