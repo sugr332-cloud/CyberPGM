@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import Database from 'better-sqlite3';
-import { runImport } from '../src/importer.js';
+import { runImport, findAttribution } from '../src/importer.js';
 
 describe('FVTT Importer', () => {
   const testDbPath = path.resolve(process.cwd(), 'data/test_import.db');
@@ -112,6 +112,7 @@ describe('FVTT Importer', () => {
     expect(imageRecord).toBeDefined();
     expect(imageRecord.path).toBe('fvtt/compendium/weapons/test_pistol.svg');
     expect(imageRecord.origin).toBe('fvtt_icon');
+    expect(imageRecord.visibility).toBe('players');
     expect(imageRecord.attribution).toContain('TestAuthor');
 
     sqlite.close();
@@ -183,5 +184,11 @@ describe('FVTT Importer', () => {
     expect(editedItem.notes).toBe('GM用メモテキスト');
 
     sqlite2.close();
+  });
+
+  it('sets license = unknown and attribution = see CREDITS.md when icon has no matching credits entry', () => {
+    const result = findAttribution('src/icons/compendium/unknown/uncredited.svg', []);
+    expect(result.license).toBe('unknown');
+    expect(result.attribution).toBe('see CREDITS.md');
   });
 });

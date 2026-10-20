@@ -28,7 +28,7 @@ imagesRouter.get('/:id', async (c) => {
   const filePath = path.resolve(baseDir, imageRecord.path);
 
   // Prevent path traversal
-  if (!filePath.startsWith(baseDir)) {
+  if (!filePath.startsWith(baseDir + path.sep)) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
@@ -51,5 +51,9 @@ imagesRouter.get('/:id', async (c) => {
 
   c.header('Content-Type', contentType);
   c.header('Cache-Control', 'public, max-age=86400');
+  c.header('X-Content-Type-Options', 'nosniff');
+  if (ext === '.svg') {
+    c.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
+  }
   return c.body(fileBuffer);
 });
