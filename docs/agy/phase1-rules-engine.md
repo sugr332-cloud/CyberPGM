@@ -88,7 +88,8 @@ export const DEFAULT_RULES: RuleConstants = { ... };
 
 武器データは Phase 0 の `weapons` テーブルの列（`weapon_type`, `skill`, `damage`, `rof`, `autofire`, `dv_table_key`, `is_ranged` ほか）を、`packages/shared` に型として定義して受け取る。
 
-- `rangedDv(dvTable: DvTable, distanceM: number): number | null` — 距離帯から難易度を引く。範囲外は null。DvTable は rule_constants `dv_table.<key>`（Phase 0 で取り込んだ形）
+- `rangedDv(dvTable: DvTable, distanceM: number): number | null` — 距離帯から難易度を引く。DvTable は rule_constants `dv_table.<key>`（Phase 0 で取り込んだ形: `[{ range: [0, 6], dv: 13 }, …, { range: [201, 400], dv: "N/A" }]`）。`dv` が `"N/A"` の帯と、どの帯にも入らない距離は null（撃てない）。帯の境界は両端を含む。距離が小数（斜めなど）のときは切り上げてから引く
+  - テスト: `DV Pistol` で 6m → 13、7m → 15、8m → 15、50m → 25、300m → null
 - `attackBase({ stat, skillLevel, woundPenalty, aimed, situational }, rules)` — 照準なら `aimedShotPenalty` を足す
 - `canDodgeRanged(targetRef, rules)` — `targetRef >= rangedDodgeMinRef`
 - `attacksPerAction(weapon)` — ROF の値（射撃・近接の単発攻撃を何回できるか）
@@ -128,7 +129,7 @@ resolveDamage({
 7. `critBonus = critical ? critBonusDamage : 0`。**SP で減らず、貫通していなくても入り、頭部でも 2 倍にしない**
 8. `hpLoss = penetrating + critBonus`、`criticalInjuryTable = critical ? location : null`
 
-致命傷表の結果（どの致命傷か）は出目を受け取って rule_constants `critical_injury.<table>` から引く関数 `lookupCriticalInjury(table, roll2d6)` にする。効果の適用は Phase 4（戦闘）で行う。
+致命傷表の結果（どの致命傷か）は出目を受け取って rule_constants `critical_injury.<table>` から引く関数 `lookupCriticalInjury(table, roll2d6)` にする。取り込んだ形は `[{ range: [2, 2], name, summary, quickFix: { dvFirstAid, dvParamedic, type }, treatment: { dvParamedic, dvSurgery, type }, sources }]`。戻り値に応急処置と治療の難易度も含める（画面と治療の手順で使う。Issue #9）。`summary` は英語の HTML なので、rules では加工せずそのまま返す。効果の適用は Phase 4（戦闘）で行う。
 
 ## 8. 負傷（wounds.ts）
 
