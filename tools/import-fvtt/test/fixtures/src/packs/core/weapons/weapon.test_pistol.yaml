@@ -16,6 +16,7 @@ system:
   quality: standard
   fireModes:
     autoFire: 0
+    suppressiveFire: true
   critFailEffect: jammed
   dvTable: DV Pistol
   ammoVariety:

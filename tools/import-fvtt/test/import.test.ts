@@ -86,6 +86,7 @@ describe('FVTT Importer', () => {
     expect(weaponSub.rof).toBe(2);
     expect(weaponSub.magazine_max).toBe(12);
     expect(weaponSub.is_ranged).toBe(1);
+    expect(weaponSub.suppressive).toBe(1);
     expect(weaponSub.ignore_armor_percent).toBeNull();
 
     // Verify melee weapon ignore_armor_percent
@@ -98,6 +99,7 @@ describe('FVTT Importer', () => {
       .get(meleeItem.id as string) as Record<string, unknown>;
     expect(meleeSub).toBeDefined();
     expect(meleeSub.ignore_armor_percent).toBe(50);
+    expect(meleeSub.suppressive).toBe(0);
 
     // Verify armor
     const armorItem = sqlite
@@ -239,5 +241,51 @@ describe('FVTT Importer', () => {
     const result = findAttribution('src/icons/compendium/unknown/uncredited.svg', []);
     expect(result.license).toBe('unknown');
     expect(result.attribution).toBe('see CREDITS.md');
+  });
+
+  it('updates subtable columns when suppressive or ignore_armor_percent is null (migration update) and is unchanged on subsequent run (§13)', () => {
+    // 1. Initial import
+    runImport({
+      srcDir: fixtureSrcDir,
+      dbPath: testDbPath,
+    });
+
+    const sqlite = new Database(testDbPath);
+    // Simulate old DB where new columns were null
+    sqlite.prepare('UPDATE weapons SET suppressive = NULL, ignore_armor_percent = NULL').run();
+    sqlite.close();
+
+    // 2. Re-import: diff detected on subtables, values updated
+    const report2 = runImport({
+      srcDir: fixtureSrcDir,
+      dbPath: testDbPath,
+    });
+    expect(report2.total.added).toBe(0);
+    expect(report2.counts_by_kind.weapon.updated).toBe(2);
+    expect(report2.total.updated).toBe(2);
+    expect(report2.total.unchanged).toBe(2);
+
+    const sqlite2 = new Database(testDbPath);
+    const melee = sqlite2
+      .prepare('SELECT * FROM weapons WHERE item_id = (SELECT id FROM items WHERE fvtt_id = ?)')
+      .get('testWeapon000002') as Record<string, unknown>;
+    expect(melee.ignore_armor_percent).toBe(50);
+    expect(melee.suppressive).toBe(0);
+
+    const pistol = sqlite2
+      .prepare('SELECT * FROM weapons WHERE item_id = (SELECT id FROM items WHERE fvtt_id = ?)')
+      .get('testWeapon000001') as Record<string, unknown>;
+    expect(pistol.suppressive).toBe(1);
+    expect(pistol.ignore_armor_percent).toBeNull();
+    sqlite2.close();
+
+    // 3. Subsequent import: no diff, all unchanged
+    const report3 = runImport({
+      srcDir: fixtureSrcDir,
+      dbPath: testDbPath,
+    });
+    expect(report3.total.added).toBe(0);
+    expect(report3.total.updated).toBe(0);
+    expect(report3.total.unchanged).toBe(4);
   });
 });
