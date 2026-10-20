@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx apps/server/src/db/migrate.ts",
     "seed:demo": "tsx apps/server/src/db/seed-demo.ts",

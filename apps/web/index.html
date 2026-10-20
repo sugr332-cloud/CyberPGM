@@ -4,6 +4,45 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CyberPGM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --color-bg: #0D0E11;
+        --color-surface: #16181D;
+        --color-surface-elevated: #1F2229;
+        --color-border: #2A2D35;
+        --color-border-light: #3D414D;
+        --color-text: #ECEAE4;
+        --color-text-muted: #9A9DA6;
+        --color-ally: #4FB6E3;
+        --color-enemy: #F28C38;
+        --color-accent: #FF5A5F;
+        --color-success: #7EE2A8;
+        --color-warning: #F2C94C;
+        --font-display: "Chakra Petch", sans-serif;
+        --font-body: "IBM Plex Sans JP", sans-serif;
+        --font-mono: "JetBrains Mono", monospace;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background-color: var(--color-bg);
+        color: var(--color-text);
+        font-family: var(--font-body);
+        -webkit-font-smoothing: antialiased;
+      }
+      input, button, select, textarea {
+        font-family: inherit;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
