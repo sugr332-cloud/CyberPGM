@@ -216,5 +216,23 @@ describe('movement module (RULES_CHECK §2, cpr-actor.js walk/run, Issue #10)', 
       };
       expect(checkLineOfSight(shooter, target, [brokenCrate]).status).toBe('clear');
     });
+
+    it('accurately finds reachable squares with alternate diagonal rule respecting diagonal parity (§12.6)', () => {
+      const start = { x: 0, y: 0 };
+      const reachable = findReachableSquares({
+        start,
+        maxSquares: 4,
+        isPassable: () => true,
+        bounds: { cols: 10, rows: 10 },
+        diagonalRule: 'alternate',
+      });
+      const keySet = new Set(reachable.map((p) => `${p.x},${p.y}`));
+      expect(keySet.has('3,2')).toBe(true);
+
+      for (const pt of reachable) {
+        const d = gridDistance(start, pt, { ...DEFAULT_RULES, diagonalRule: 'alternate' });
+        expect(d).toBeLessThanOrEqual(4);
+      }
+    });
   });
 });

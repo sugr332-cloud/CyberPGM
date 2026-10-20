@@ -424,6 +424,51 @@ describe('Phase 4b: Board API, Combat Integration & TV Broadcast (§1, §2, §3,
     crateInDb = db.select().from(board_objects).where(eq(board_objects.id, crateObj.id)).get()!;
     expect(crateInDb.cover_hp).toBe(20);
     expect(crateInDb.blocks_los).toBe('partial');
+
+    // Test 3: When cover has cover_hp = null, resolver requires GM to provide cover_current_hp and does NOT treat it as 0 (§12.7)
+    db.update(board_objects).set({ cover_hp: null }).where(eq(board_objects.id, crateObj.id)).run();
+
+    // 3a. Without cover_current_hp -> fails with missing input
+    const resolveNullCover = await app.request(`/api/combats/${combat.id}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gmToken}` },
+      body: JSON.stringify({
+        action_key: 'ranged',
+        actor_id: viperPart.id,
+        target_id: gangerPart.id,
+        weapon_id: 'w-pistol-1',
+        hit_cover: true,
+        cover_object_id: crateObj.id,
+        cover_damage: 5,
+        attack_roll: { first: 9 },
+      }),
+    });
+    const nullCoverData = await resolveNullCover.json();
+    expect(nullCoverData.result.success).toBe(false);
+    expect(nullCoverData.result.missing_inputs).toContain('遮蔽物の HP を入力してください');
+
+    // 3b. With GM-provided cover_current_hp = 30 -> inflicts 5 damage, new HP = 25 (not destroyed!)
+    const resolveWithCoverHp = await app.request(`/api/combats/${combat.id}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gmToken}` },
+      body: JSON.stringify({
+        action_key: 'ranged',
+        actor_id: viperPart.id,
+        target_id: gangerPart.id,
+        weapon_id: 'w-pistol-1',
+        hit_cover: true,
+        cover_object_id: crateObj.id,
+        cover_current_hp: 30,
+        cover_damage: 5,
+        attack_roll: { first: 9 },
+      }),
+    });
+    const withCoverHpData = await resolveWithCoverHp.json();
+    expect(withCoverHpData.result.success).toBe(true);
+    const coverChange = withCoverHpData.result.changes.find((c: any) => c.field === 'cover_hp');
+    expect(coverChange).toBeDefined();
+    expect(coverChange.after.cover_hp).toBe(25);
+    expect(coverChange.after.blocks_los).toBe('partial');
   });
 
   it('rejects melee attack when target distance > 1 square (Phase 4b §4, §9)', async () => {
@@ -688,6 +733,11 @@ describe('Phase 4b: Board API, Combat Integration & TV Broadcast (§1, §2, §3,
     const tvTokens = screenPayload.board.tokens;
     expect(tvTokens).toHaveLength(1);
     expect(tvTokens[0].character_id).toBe(viperCharId);
+    expect(tvTokens[0].name).toBe('ヴァイパー');
+    expect(tvTokens[0].side).toBe('ally');
+    expect(tvTokens[0].wound_state).toBe('ok');
+    expect(tvTokens[0].hp).toBe(40);
+    expect(tvTokens[0].hp_max).toBe(40);
     expect(tvTokens.some((t: any) => t.gm_only)).toBe(false);
     expect(tvTokens.some((t: any) => t.character_id === gangerCharId)).toBe(false);
   });

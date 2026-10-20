@@ -14,6 +14,7 @@ import {
   checkLineOfSight,
   gridDistance,
   BoardObstacle,
+  DEFAULT_RULES,
 } from '@cyberpgm/rules';
 import {
   CombatChange,
@@ -68,6 +69,7 @@ export function resolveCombatAction(
   targetPart?: CombatParticipant,
   allParticipants?: CombatParticipant[],
   boardId?: string | null,
+  combatSettings?: Record<string, any>,
 ): ResolveResult {
   if (!targetPart && input.target_id && allParticipants) {
     targetPart = allParticipants.find((p) => p.id === input.target_id);
@@ -84,6 +86,11 @@ export function resolveCombatAction(
 
   const actorWound = woundState(actorChar.hp, actorChar.hp_max);
   const actorWoundPen = woundPenalty(actorWound);
+
+  const rules = {
+    ...DEFAULT_RULES,
+    diagonalRule: (combatSettings?.diagonalRule as 'chebyshev' | 'alternate') || 'chebyshev',
+  };
 
   // Helper to load rule_constant JSON
   const getRuleConstant = <T>(key: string): T | null => {
@@ -191,6 +198,7 @@ export function resolveCombatAction(
       isPassable,
       canStop,
       bounds,
+      diagonalRule: rules.diagonalRule,
     });
 
     const isOk = reachable.some(
@@ -531,7 +539,7 @@ export function resolveCombatAction(
       : null;
 
     if (actorToken) {
-      const dist = gridDistance({ x: actorToken.x, y: actorToken.y }, { x: drop.x, y: drop.y });
+      const dist = gridDistance({ x: actorToken.x, y: actorToken.y }, { x: drop.x, y: drop.y }, rules);
       if (dist > 1) {
         return {
           action_key: 'pickup',
@@ -604,7 +612,7 @@ export function resolveCombatAction(
       .where(and(eq(board_tokens.board_id, boardId), eq(board_tokens.character_id, targetPart.character_id)))
       .get();
     if (actorToken && targetToken) {
-      const dist = gridDistance({ x: actorToken.x, y: actorToken.y }, { x: targetToken.x, y: targetToken.y });
+      const dist = gridDistance({ x: actorToken.x, y: actorToken.y }, { x: targetToken.x, y: targetToken.y }, rules);
       if (dist > 1) {
         return {
           action_key: 'brawl',
@@ -742,6 +750,7 @@ export function resolveCombatAction(
           { x: actorToken.x, y: actorToken.y },
           { x: targetToken.x, y: targetToken.y },
           boardObs as unknown as BoardObstacle[],
+          rules,
         );
 
         if (input.distance_m === undefined || input.distance_m === null) {
@@ -755,8 +764,18 @@ export function resolveCombatAction(
           if (input.hit_cover && input.cover_object_id) {
             const coverObj = boardObs.find((o) => o.id === input.cover_object_id);
             if (coverObj) {
-              if (input.cover_damage !== undefined && input.cover_damage !== null) {
-                const curHp = coverObj.cover_hp ?? 0;
+              const curHp =
+                coverObj.cover_hp !== null && coverObj.cover_hp !== undefined
+                  ? coverObj.cover_hp
+                  : (input.cover_current_hp !== undefined && input.cover_current_hp !== null
+                      ? input.cover_current_hp
+                      : null);
+
+              if (curHp === null) {
+                missing_inputs.push('遮蔽物の HP を入力してください');
+              } else if (input.cover_damage === undefined || input.cover_damage === null) {
+                missing_inputs.push('遮蔽物に与えるダメージを入力してください');
+              } else {
                 const newHp = Math.max(0, curHp - input.cover_damage);
                 const newBlocksLos = newHp === 0 ? 'none' : coverObj.blocks_los;
                 coverChanges.push({
@@ -765,10 +784,8 @@ export function resolveCombatAction(
                   field: 'cover_hp',
                   before: { cover_hp: coverObj.cover_hp, blocks_los: coverObj.blocks_los },
                   after: { cover_hp: newHp, blocks_los: newBlocksLos },
-                  desc: `${coverObj.label || '遮蔽物'} に ${input.cover_damage} ダメージ (HP ${coverObj.cover_hp ?? '不明'} → ${newHp}${newHp === 0 ? '、破壊' : ''})`,
+                  desc: `${coverObj.label || '遮蔽物'} に ${input.cover_damage} ダメージ (HP ${curHp} → ${newHp}${newHp === 0 ? '、破壊' : ''})`,
                 });
-              } else {
-                missing_inputs.push('遮蔽物に与えるダメージを入力してください');
               }
             }
           }
@@ -1266,7 +1283,7 @@ export function resolveCombatAction(
           )
           .get();
         if (actorToken && targetToken) {
-          const dist = gridDistance({ x: actorToken.x, y: actorToken.y }, { x: targetToken.x, y: targetToken.y });
+          const dist = gridDistance({ x: actorToken.x, y: actorToken.y }, { x: targetToken.x, y: targetToken.y }, rules);
           if (dist > 1) {
             missing_inputs.push(`近接攻撃は隣接（1マス）の対象のみ可能です (現在: ${dist}マス)`);
           }

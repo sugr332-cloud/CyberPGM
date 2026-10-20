@@ -275,6 +275,7 @@ export class SessionManager {
       if (p.side === 'ally') {
         return {
           id: p.id,
+          character_id: p.character_id,
           name: p.name,
           side: p.side,
           initiative: p.initiative,
@@ -301,21 +302,32 @@ export class SessionManager {
       // Enemy: ONLY name, image_path, wound state, status, crit_injuries.
       // NO hp, hp_max, sp_head, sp_body numbers!
       let woundLabel = '健康';
+      let woundCode: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
       if (p.character) {
         const state = woundState(p.character.hp, p.character.hp_max);
-        if (state === 'dead' || p.character.hp <= 0) woundLabel = '死亡';
-        else if (state === 'mortally') woundLabel = '瀕死';
-        else if (state === 'seriously') woundLabel = '重傷';
+        if (state === 'dead' || p.character.hp <= 0) {
+          woundLabel = '死亡';
+          woundCode = 'dead';
+        } else if (state === 'mortally') {
+          woundLabel = '瀕死';
+          woundCode = 'mortally';
+        } else if (state === 'seriously') {
+          woundLabel = '重傷';
+          woundCode = 'seriously';
+        }
       }
 
       return {
         id: p.id,
+        character_id: p.character_id,
         name: p.name,
         side: p.side,
         initiative: p.initiative,
         order_index: p.order_index,
         active: p.active,
         out: p.out,
+        wound_state: woundLabel,
+        wound_code: woundCode,
         character: p.character
           ? {
               id: p.character.id,
@@ -345,12 +357,61 @@ export class SessionManager {
           }
         }
 
-        // Filter tokens: omit gm_only and hidden enemies
-        const filteredTokens = (b.tokens || []).filter((t: any) => {
-          if (t.gm_only) return false;
-          if (t.character_id && hiddenEnemyCharIds.has(t.character_id)) return false;
-          return true;
-        });
+        // Filter tokens: omit gm_only and hidden enemies, and enrich with name/side/wound_state
+        const filteredTokens = (b.tokens || [])
+          .filter((t: any) => {
+            if (t.gm_only) return false;
+            if (t.character_id && hiddenEnemyCharIds.has(t.character_id)) return false;
+            return true;
+          })
+          .map((t: any) => {
+            const part = (combat.participants || []).find(
+              (p: any) =>
+                (p.character_id && p.character_id === t.character_id) ||
+                p.id === t.character_id,
+            );
+            if (!part) {
+              return {
+                ...t,
+                name: t.character_id ? '不明' : '—',
+                side: null,
+                wound_state: null,
+                hp: null,
+                hp_max: null,
+              };
+            }
+
+            let woundCode: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
+            if (part.character) {
+              const hp = part.character.hp;
+              const maxHp = part.character.hp_max;
+              if (hp <= 0) woundCode = 'dead';
+              else woundCode = woundState(hp, maxHp);
+            }
+
+            if (part.side === 'ally') {
+              return {
+                ...t,
+                character_id: part.character_id,
+                name: part.name,
+                side: 'ally',
+                wound_state: woundCode,
+                hp: part.character?.hp ?? null,
+                hp_max: part.character?.hp_max ?? null,
+              };
+            }
+
+            // Enemy token: ONLY name, side, wound_state (NO hp / hp_max!)
+            return {
+              ...t,
+              character_id: part.character_id,
+              name: part.name,
+              side: 'enemy',
+              wound_state: woundCode,
+              hp: null,
+              hp_max: null,
+            };
+          });
 
         sanitizedBoard = {
           ...b,

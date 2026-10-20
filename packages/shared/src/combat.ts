@@ -283,6 +283,7 @@ export const ResolveActionInputSchema = z.object({
   los_override: z.enum(['clear', 'cover', 'blocked']).optional(),
   hit_cover: z.boolean().optional(),
   cover_object_id: z.string().optional(),
+  cover_current_hp: z.number().int().nonnegative().nullable().optional(),
   cover_damage: z.number().optional(),
   pickup_drop_id: z.string().optional(),
   weapon_id: z.string().optional(),

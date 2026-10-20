@@ -66,7 +66,9 @@ export function findReachableSquares(options: ReachableOptions): GridPoint[] {
   if (maxSquares <= 0) return [];
 
   const key = (x: number, y: number) => `${x},${y}`;
-  const visited = new Map<string, number>(); // key -> minCost
+  const stateKey = (x: number, y: number, parity: number) =>
+    diagonalRule === 'alternate' ? `${x},${y},${parity}` : `${x},${y}`;
+  const visited = new Map<string, number>(); // stateKey -> minCost
 
   interface Node {
     x: number;
@@ -76,7 +78,7 @@ export function findReachableSquares(options: ReachableOptions): GridPoint[] {
   }
 
   const queue: Node[] = [{ x: start.x, y: start.y, cost: 0, diagonals: 0 }];
-  visited.set(key(start.x, start.y), 0);
+  visited.set(stateKey(start.x, start.y, 0), 0);
 
   const reachableMap = new Map<string, GridPoint>();
 
@@ -127,18 +129,19 @@ export function findReachableSquares(options: ReachableOptions): GridPoint[] {
         continue;
       }
 
-      const nKey = key(nx, ny);
-      const prevCost = visited.get(nKey);
+      const parity = nextDiagonals % 2;
+      const sKey = stateKey(nx, ny, parity);
+      const prevCost = visited.get(sKey);
       if (prevCost !== undefined && prevCost <= nextCost) {
         continue;
       }
 
-      visited.set(nKey, nextCost);
+      visited.set(sKey, nextCost);
       queue.push({ x: nx, y: ny, cost: nextCost, diagonals: nextDiagonals });
 
       // Check if can stop on this square
       if (!canStop || canStop({ x: nx, y: ny })) {
-        reachableMap.set(nKey, { x: nx, y: ny });
+        reachableMap.set(key(nx, ny), { x: nx, y: ny });
       }
     }
   }

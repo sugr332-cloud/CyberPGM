@@ -114,9 +114,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
   // Map participant by token
   const getParticipantForToken = useCallback(
     (token: BoardToken): CombatParticipant | undefined => {
-      if (!combat) return undefined;
+      if (!combat || !token.character_id) return undefined;
       return combat.participants.find(
-        (p) => p.character_id === token.character_id || p.id === token.character_id
+        (p) =>
+          (p.character_id && p.character_id === token.character_id) ||
+          (p.id && p.id === token.character_id)
       );
     },
     [combat]
@@ -197,38 +199,66 @@ export const BoardView: React.FC<BoardViewProps> = ({
     >
       {/* Board Toolbar (hidden in Screen view) */}
       {!isScreen && (
-        <div className="w-full flex flex-wrap items-center justify-between p-2 bg-slate-900 border-b border-slate-800 text-xs gap-2">
-          <div className="flex items-center gap-3">
-            <span className="font-semibold text-slate-300">
+        <div
+          style={{
+            width: '100%',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 12px',
+            backgroundColor: 'var(--color-surface)',
+            borderBottom: '1px solid var(--color-border)',
+            fontSize: '0.85rem',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>
               盤面: {board.name} ({cols}x{rows}マス / 1マス {grid.cell_m}m)
             </span>
-            <label className="flex items-center gap-1 cursor-pointer">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
               <input
                 type="checkbox"
                 checked={showGrid}
                 onChange={(e) => setShowGrid(e.target.checked)}
-                className="rounded border-slate-700 text-cyan-500 focus:ring-0"
               />
               <span>グリッド表示</span>
             </label>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={() => setScale((s) => Math.max(0.5, s - 0.1))}
-              className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-200 border border-slate-700"
+              style={{
+                padding: '4px 8px',
+                backgroundColor: 'var(--color-surface-elevated)',
+                border: '1px solid var(--color-border-light)',
+                borderRadius: '4px',
+                color: 'var(--color-text)',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+              }}
               title="縮小"
             >
               -
             </button>
-            <span className="w-12 text-center text-slate-400 font-mono">
+            <span style={{ minWidth: '45px', textAlign: 'center', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
               {Math.round(scale * 100)}%
             </span>
             <button
               type="button"
               onClick={() => setScale((s) => Math.min(2.0, s + 0.1))}
-              className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-200 border border-slate-700"
+              style={{
+                padding: '4px 8px',
+                backgroundColor: 'var(--color-surface-elevated)',
+                border: '1px solid var(--color-border-light)',
+                borderRadius: '4px',
+                color: 'var(--color-text)',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+              }}
               title="拡大"
             >
               +
@@ -236,7 +266,15 @@ export const BoardView: React.FC<BoardViewProps> = ({
             <button
               type="button"
               onClick={() => setScale(1)}
-              className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-200 border border-slate-700"
+              style={{
+                padding: '4px 8px',
+                backgroundColor: 'var(--color-surface-elevated)',
+                border: '1px solid var(--color-border-light)',
+                borderRadius: '4px',
+                color: 'var(--color-text)',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+              }}
               title="リセット"
             >
               100%
@@ -244,7 +282,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
           </div>
 
           {isGm && combat?.status !== 'active' && (
-            <div className="flex items-center gap-2">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() =>
@@ -262,7 +300,15 @@ export const BoardView: React.FC<BoardViewProps> = ({
                     cover_hp_max: null,
                   })
                 }
-                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-200 border border-slate-600"
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  color: 'var(--color-text)',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                }}
               >
                 + 壁追加
               </button>
@@ -283,7 +329,15 @@ export const BoardView: React.FC<BoardViewProps> = ({
                     cover_hp_max: 20,
                   })
                 }
-                className="px-2 py-1 bg-amber-900/60 hover:bg-amber-800/80 rounded text-amber-200 border border-amber-700"
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: 'rgba(235, 179, 58, 0.15)',
+                  border: '1px solid var(--color-warning)',
+                  borderRadius: '4px',
+                  color: 'var(--color-warning)',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                }}
               >
                 + 木箱追加
               </button>
@@ -626,22 +680,52 @@ export const BoardView: React.FC<BoardViewProps> = ({
               const r = cellPx * 0.38;
 
               const part = getParticipantForToken(tok);
-              const isAlly = part?.side === 'ally';
-              const sideColor = isAlly ? '#4FB6E3' : '#F28C38';
+              const char = part?.character;
+              const hasChar = Boolean(tok.character_id && (part || char || tok.hp !== undefined));
+              const isAlly = tok.side ? tok.side === 'ally' : part ? part.side === 'ally' : false;
+              const sideColor = tok.gm_only
+                ? '#A855F7'
+                : hasChar
+                ? isAlly
+                  ? '#4FB6E3'
+                  : '#F28C38'
+                : '#94A3B8';
 
               const isActive = part && part.id === activeParticipantId;
               const isTarget = part && part.id === targetParticipantId;
 
-              const char = part?.character;
-              const currentHp = char?.hp ?? 0;
-              const maxHp = char?.hp_max ?? 1;
-              const isDead = currentHp <= 0;
+              // HP and wound status
+              let currentHp = 0;
+              let maxHp = 1;
+              let wound: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
 
-              // Wound state for screen or badges
-              const wound = woundState(currentHp, maxHp);
+              if (hasChar) {
+                if (tok.hp !== null && tok.hp !== undefined) {
+                  currentHp = tok.hp;
+                  maxHp = tok.hp_max ?? Math.max(1, currentHp);
+                } else if (char?.hp !== null && char?.hp !== undefined) {
+                  currentHp = char.hp;
+                  maxHp = char.hp_max ?? Math.max(1, currentHp);
+                }
 
-              const name = part?.name || char?.name || (isAlly ? '味方' : '敵');
-              const initial = name.slice(0, 1);
+                if (tok.wound_state) {
+                  wound = tok.wound_state;
+                } else if ((char as any)?.wound_state) {
+                  const ws = (char as any).wound_state;
+                  if (ws === '死亡') wound = 'dead';
+                  else if (ws === '瀕死') wound = 'mortally';
+                  else if (ws === '重傷') wound = 'seriously';
+                  else if (ws === '健康') wound = 'ok';
+                  else wound = ws;
+                } else if (char?.hp !== undefined) {
+                  wound = currentHp <= 0 ? 'dead' : woundState(currentHp, maxHp);
+                }
+              }
+
+              const isDead = hasChar && (currentHp <= 0 || wound === 'dead');
+
+              const name = tok.name || part?.name || char?.name || (tok.gm_only ? 'GM' : '—');
+              const initial = tok.gm_only ? 'GM' : name.slice(0, 1);
 
               return (
                 <g
@@ -718,7 +802,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                       x={tx}
                       y={ty}
                       fill={sideColor}
-                      fontSize={cellPx * 0.4}
+                      fontSize={initial.length > 1 ? cellPx * 0.28 : cellPx * 0.4}
                       fontWeight="bold"
                       textAnchor="middle"
                       dominantBaseline="middle"
@@ -769,81 +853,83 @@ export const BoardView: React.FC<BoardViewProps> = ({
                   </text>
 
                   {/* HP Bar or Wound State */}
-                  {/* Case 1: TV Screen and Enemy -> ONLY wound status badge, NO numbers! */}
-                  {isScreen && !isAlly ? (
-                    <g transform={`translate(${tx - 16}, ${ty + r + 14})`}>
-                      <rect
-                        width={32}
-                        height={10}
-                        rx={2}
-                        fill={
-                          wound === 'ok'
-                            ? '#15803D'
-                            : wound === 'seriously'
-                            ? '#B45309'
-                            : wound === 'mortally'
-                            ? '#B91C1C'
-                            : '#475569'
-                        }
-                      />
-                      <text
-                        x={16}
-                        y={7}
-                        fill="#FFFFFF"
-                        fontSize={7}
-                        fontWeight="bold"
-                        textAnchor="middle"
-                      >
-                        {wound === 'ok'
-                          ? '健康'
-                          : wound === 'seriously'
-                          ? '重傷'
-                          : wound === 'mortally'
-                          ? '瀕死'
-                          : '死亡'}
-                      </text>
-                    </g>
-                  ) : (
-                    /* Case 2: Ally, or GM view -> HP bar with numbers */
-                    <g transform={`translate(${tx - r}, ${ty + r + 13})`}>
-                      {/* Bar Background */}
-                      <rect
-                        width={r * 2}
-                        height={5}
-                        fill="#334155"
-                        rx={2}
-                        stroke="#0F172A"
-                        strokeWidth={0.5}
-                      />
-                      {/* Bar Fill */}
-                      <rect
-                        width={Math.max(0, Math.min(r * 2, (r * 2 * currentHp) / maxHp))}
-                        height={5}
-                        fill={
-                          currentHp <= 0
-                            ? '#64748B'
-                            : currentHp <= maxHp / 2
-                            ? '#EAB308'
-                            : sideColor
-                        }
-                        rx={2}
-                      />
-                      {/* Numeric HP text (not in TV screen for enemy) */}
-                      {!isScreen && (
-                        <text
-                          x={r}
-                          y={11}
-                          fill="#CBD5E1"
-                          fontSize={8}
-                          textAnchor="middle"
-                          stroke="#090D16"
-                          strokeWidth={1.5}
-                          paintOrder="stroke fill"
-                        >
-                          {currentHp}/{maxHp}
-                        </text>
+                  {hasChar && (
+                    <>
+                      {/* Case 1: TV Screen and Enemy -> ONLY wound status badge if wounded (wound !== 'ok'), NO numbers! */}
+                      {isScreen && !isAlly ? (
+                        wound !== 'ok' && (
+                          <g transform={`translate(${tx - 16}, ${ty + r + 14})`}>
+                            <rect
+                              width={32}
+                              height={10}
+                              rx={2}
+                              fill={
+                                wound === 'seriously'
+                                  ? '#B45309'
+                                  : wound === 'mortally'
+                                  ? '#B91C1C'
+                                  : '#475569'
+                              }
+                            />
+                            <text
+                              x={16}
+                              y={7}
+                              fill="#FFFFFF"
+                              fontSize={7}
+                              fontWeight="bold"
+                              textAnchor="middle"
+                            >
+                              {wound === 'seriously'
+                                ? '重傷'
+                                : wound === 'mortally'
+                                ? '瀕死'
+                                : '死亡'}
+                            </text>
+                          </g>
+                        )
+                      ) : (
+                        /* Case 2: Ally, or GM view -> HP bar with numbers */
+                        <g transform={`translate(${tx - r}, ${ty + r + 13})`}>
+                          {/* Bar Background */}
+                          <rect
+                            width={r * 2}
+                            height={5}
+                            fill="#334155"
+                            rx={2}
+                            stroke="#0F172A"
+                            strokeWidth={0.5}
+                          />
+                          {/* Bar Fill */}
+                          <rect
+                            width={Math.max(0, Math.min(r * 2, (r * 2 * currentHp) / maxHp))}
+                            height={5}
+                            fill={
+                              currentHp <= 0
+                                ? '#64748B'
+                                : currentHp <= maxHp / 2
+                                ? '#EAB308'
+                                : sideColor
+                            }
+                            rx={2}
+                          />
+                          {/* Numeric HP text (only if numbers exist and allowed) */}
+                          {(isAlly || !isScreen) && (
+                            <text
+                              x={r}
+                              y={11}
+                              fill="#CBD5E1"
+                              fontSize={8}
+                              textAnchor="middle"
+                              stroke="#090D16"
+                              strokeWidth={1.5}
+                              paintOrder="stroke fill"
+                            >
+                              {currentHp}/{maxHp}
+                            </text>
+                          )}
+                        </g>
                       )}
-                    </g>
+                    </>
                   )}
                 </g>
               );

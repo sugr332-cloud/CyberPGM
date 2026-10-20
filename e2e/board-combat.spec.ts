@@ -279,6 +279,12 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
   const reachableCells = gmPage.locator('.reachable-cells rect');
   await expect(reachableCells.first()).toBeVisible();
 
+  // Scroll to top and capture Movement Range screenshot (1440px)
+  await gmPage.evaluate(() => window.scrollTo(0, 0));
+  await gmPage.screenshot({
+    path: 'docs/agy/reports/img/phase4b-board-combat-move-1440.png',
+  });
+
   // Select destination (3, 2)
   await gmPage.locator('.reachable-cells rect[data-cell="3,2"]').click();
 
@@ -299,7 +305,8 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
   await expect(gmPage.getByText(/射線: △ 遮蔽越し/).first()).toBeVisible();
   await expect(gmPage.getByText(/遮蔽物に当てるかは GM が決める/i)).toBeVisible();
 
-  // Screenshot 1: 盤面つきの戦闘画面で移動範囲と射線（1440px）
+  // Scroll to top and capture Shooting LoS screenshot (1440px)
+  await gmPage.evaluate(() => window.scrollTo(0, 0));
   await gmPage.screenshot({
     path: 'docs/agy/reports/img/phase4b-board-combat-1440.png',
   });
@@ -328,7 +335,13 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
   await expect(windowPage.locator('.board-view-container')).toBeVisible();
   await expect(windowPage.getByText(/E2E市街戦盤面/i).first()).toBeVisible();
 
+  // GM token does NOT show fake "0/1" HP
+  await expect(windowPage.locator('.token-group', { hasText: '0/1' })).not.toBeVisible();
+  await expect(windowPage.locator('.board-tokens text', { hasText: '0/1' })).not.toBeVisible();
+  await expect(windowPage.locator('.gm-token-badge')).toBeVisible();
+
   // Screenshot 2: 別ウィンドウ（1280px）
+  await windowPage.evaluate(() => window.scrollTo(0, 0));
   await windowPage.screenshot({
     path: 'docs/agy/reports/img/phase4b-board-window-1280.png',
   });
@@ -344,10 +357,22 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
   await expect(tvPage.getByText(/CyberPGM/i)).toBeVisible();
   await expect(tvPage.locator('.board-view-container')).toBeVisible();
 
-  // Ally shows numeric HP
+  // TV tokens: Ally token (Viper) shows ally name and numeric HP
+  const viperTvToken = tvPage.locator('.token-group', { hasText: 'ヴァイパー' });
+  await expect(viperTvToken).toBeVisible();
+  await expect(viperTvToken.locator('text', { hasText: '35/35' })).toBeVisible();
+
+  // TV tokens: Enemy token (Ganger) shows name but NO wound badge when healthy
+  const gangerTvToken = tvPage.locator('.token-group', { hasText: 'ガンガー' });
+  await expect(gangerTvToken).toBeVisible();
+  await expect(gangerTvToken.locator('text', { hasText: '瀕死' })).not.toBeVisible();
+  await expect(gangerTvToken.locator('text', { hasText: '重傷' })).not.toBeVisible();
+  await expect(gangerTvToken.locator('text', { hasText: '死亡' })).not.toBeVisible();
+
+  // Ally sidebar shows numeric HP
   await expect(tvPage.getByText(/HP 35\/35/i)).toBeVisible();
 
-  // Enemy shows ONLY name and wound state badge ("健康" or "重傷") - NO numeric HP/SP!
+  // Enemy sidebar shows ONLY name and wound state badge ("健康") - NO numeric HP/SP!
   await expect(tvPage.getByText('ガンガー', { exact: true }).first()).toBeVisible();
   await expect(tvPage.getByText('健康').first()).toBeVisible();
   const enemyNumericHp = tvPage.getByText(/HP 25\/25/i);

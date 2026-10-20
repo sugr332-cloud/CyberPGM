@@ -709,7 +709,7 @@ combatRoutes.post('/combats/:id/resolve', requireGm, async (c) => {
     ? combat.participants.find((p) => p.id === targetId)
     : undefined;
 
-  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants, combat.board_id);
+  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants, combat.board_id, combat.settings);
   return c.json({ result });
 });
 
@@ -737,7 +737,7 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
     : undefined;
 
   // Re-resolve calculation on server
-  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants, combat.board_id);
+  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants, combat.board_id, combat.settings);
   const now = Date.now();
   const logId = generateUlid();
 

@@ -18,6 +18,7 @@ import {
   findReachableSquares,
   checkLineOfSight,
   gridDistance,
+  DEFAULT_RULES,
 } from '@cyberpgm/rules';
 import { BoardView } from './BoardView.js';
 
@@ -60,6 +61,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [losOverride, setLosOverride] = useState<'auto' | 'clear' | 'partial' | 'blocked'>('auto');
   const [hitCover, setHitCover] = useState<boolean>(false);
   const [coverDamageInput, setCoverDamageInput] = useState<string>('');
+  const [coverHpInput, setCoverHpInput] = useState<string>('');
   const [coverObjectId, setCoverObjectId] = useState<string | null>(null);
   const [pickupDropId, setPickupDropId] = useState<string | null>(null);
 
@@ -291,10 +293,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
       isPassable: (pt) => !blockedCells.has(`${pt.x},${pt.y}`),
       canStop: (pt) => !stoppingBlockedCells.has(`${pt.x},${pt.y}`),
       bounds,
+      diagonalRule: (combat?.settings?.diagonalRule as 'chebyshev' | 'alternate') || 'chebyshev',
     });
 
     return new Set(reachable.map((pt) => `${pt.x},${pt.y}`));
-  }, [boardData, activePart, selectedActionKey]);
+  }, [boardData, activePart, selectedActionKey, combat?.settings?.diagonalRule]);
 
   // LoS and Distance calculation
   const losInfo = useMemo(() => {
@@ -308,17 +311,25 @@ export const CombatView: React.FC<CombatViewProps> = ({
     );
     if (!shooterToken || !targetToken) return null;
 
+    const rules = {
+      ...DEFAULT_RULES,
+      diagonalRule: (combat?.settings?.diagonalRule as 'chebyshev' | 'alternate') || 'chebyshev',
+      metersPerSquare: boardData.board.grid?.cell_m || 2,
+    };
+
     const losResult = checkLineOfSight(
       { x: shooterToken.x, y: shooterToken.y },
       { x: targetToken.x, y: targetToken.y },
       boardData.objects,
+      rules,
     );
 
-    const distChebyshev = gridDistance(
+    const distSquares = gridDistance(
       { x: shooterToken.x, y: shooterToken.y },
       { x: targetToken.x, y: targetToken.y },
+      rules,
     );
-    const autoDistanceM = distChebyshev * (boardData.board.grid?.cell_m || 2);
+    const autoDistanceM = distSquares * (boardData.board.grid?.cell_m || rules.metersPerSquare);
 
     const effectiveStatus = losOverride !== 'auto' ? losOverride : losResult.status;
 
@@ -327,7 +338,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       y1: shooterToken.y,
       x2: targetToken.x,
       y2: targetToken.y,
-      distSquares: distChebyshev,
+      distSquares,
       autoDistanceM,
       status: effectiveStatus,
       rawStatus: losResult.status,
@@ -346,6 +357,15 @@ export const CombatView: React.FC<CombatViewProps> = ({
     if (losInfo && losInfo.distSquares > 1) return true;
     return false;
   }, [selectedActionKey, losInfo]);
+
+  const isCoverHpNeededAndMissing = useMemo(() => {
+    if (!hitCover) return false;
+    const coverId = coverObjectId || losInfo?.hitCoverObject?.id;
+    const activeObj = coverId ? boardData?.objects.find((o) => o.id === coverId) : losInfo?.hitCoverObject;
+    const hasObjHp = activeObj && activeObj.cover_hp !== null && activeObj.cover_hp !== undefined;
+    if (hasObjHp) return false;
+    return coverHpInput.trim() === '' || isNaN(Number(coverHpInput)) || Number(coverHpInput) <= 0;
+  }, [hitCover, coverObjectId, losInfo, boardData, coverHpInput]);
 
   const nearbyDrops = useMemo(() => {
     if (!boardData || !activePart) return [];
@@ -532,6 +552,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
     const activePart = combat.participants[combat.turn_index];
     if (!activePart) return;
 
+    if (isCoverHpNeededAndMissing) {
+      alert('遮蔽物のHPが未入力です。遮蔽物のHPを入力してください。');
+      return;
+    }
+
     setIsResolving(true);
     try {
       const damageDice = damageDiceStr
@@ -618,6 +643,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         los_override: losOverride !== 'auto' ? losOverride : undefined,
         hit_cover: hitCover,
         cover_object_id: hitCover && (losInfo?.hitCoverObject?.id || coverObjectId) ? (losInfo?.hitCoverObject?.id || coverObjectId) : undefined,
+        cover_current_hp: hitCover && coverHpInput !== '' ? Number(coverHpInput) : undefined,
         cover_damage: hitCover && coverDamageInput !== '' ? Number(coverDamageInput) : undefined,
         pickup_drop_id: selectedActionKey === 'pickup' ? pickupDropId || undefined : undefined,
       });
@@ -705,6 +731,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         los_override: losOverride !== 'auto' ? losOverride : undefined,
         hit_cover: hitCover,
         cover_object_id: hitCover && (losInfo?.hitCoverObject?.id || coverObjectId) ? (losInfo?.hitCoverObject?.id || coverObjectId) : undefined,
+        cover_current_hp: hitCover && coverHpInput !== '' ? Number(coverHpInput) : undefined,
         cover_damage: hitCover && coverDamageInput !== '' ? Number(coverDamageInput) : undefined,
         pickup_drop_id: selectedActionKey === 'pickup' ? pickupDropId || undefined : undefined,
       });
@@ -1191,18 +1218,19 @@ export const CombatView: React.FC<CombatViewProps> = ({
           gap: '12px',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <span
               style={{
                 fontSize: '1.2rem',
                 fontWeight: 800,
                 color: 'var(--color-ally)',
+                whiteSpace: 'nowrap',
               }}
             >
               ラウンド {combat.round}
             </span>
-            <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+            <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
               手番: <strong>{activePart ? activePart.name : '—'}</strong>
             </span>
           </div>
@@ -1996,13 +2024,22 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                 遮蔽物に当てる
                               </label>
                               {hitCover && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                  {boardData && boardData.objects.some((o) => o.cover_hp !== null) && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  {boardData && (
                                     <select
                                       value={coverObjectId || losInfo?.hitCoverObject?.id || ''}
-                                      onChange={(e) => setCoverObjectId(e.target.value || null)}
+                                      onChange={(e) => {
+                                        const selId = e.target.value || null;
+                                        setCoverObjectId(selId);
+                                        const obj = boardData.objects.find((o) => o.id === selId);
+                                        if (obj?.cover_hp !== null && obj?.cover_hp !== undefined) {
+                                          setCoverHpInput(String(obj.cover_hp));
+                                        } else {
+                                          setCoverHpInput('');
+                                        }
+                                      }}
                                       style={{
-                                        padding: '3px 6px',
+                                        padding: '4px 8px',
                                         backgroundColor: 'var(--color-bg)',
                                         border: '1px solid var(--color-border-light)',
                                         borderRadius: '4px',
@@ -2012,30 +2049,63 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                     >
                                       <option value="">(対象遮蔽物)</option>
                                       {boardData.objects
-                                        .filter((o) => o.cover_hp !== null)
+                                        .filter((o) => o.blocks_los === 'partial' || o.cover_hp !== null)
                                         .map((o) => (
                                           <option key={o.id} value={o.id}>
-                                            {o.label || '遮蔽物'} (HP: {o.cover_hp})
+                                            {o.label || '遮蔽物'} (HP: {o.cover_hp ?? '不明'})
                                           </option>
                                         ))}
                                     </select>
                                   )}
-                                  <span>遮蔽物へのダメージ:</span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    placeholder="ダメージ値"
-                                    value={coverDamageInput}
-                                    onChange={(e) => setCoverDamageInput(e.target.value)}
-                                    style={{
-                                      width: '70px',
-                                      padding: '3px 6px',
-                                      backgroundColor: 'var(--color-bg)',
-                                      border: '1px solid var(--color-border-light)',
-                                      borderRadius: '4px',
-                                      color: 'var(--color-text)',
-                                    }}
-                                  />
+
+                                  {(() => {
+                                    const activeObj =
+                                      (coverObjectId && boardData?.objects.find((o) => o.id === coverObjectId)) ||
+                                      losInfo?.hitCoverObject;
+                                    const isHpEmpty = !activeObj || activeObj.cover_hp === null || activeObj.cover_hp === undefined;
+                                    return isHpEmpty ? (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <span style={{ fontSize: '0.85rem', color: 'var(--color-warning)' }}>
+                                          遮蔽物のHP:
+                                        </span>
+                                        <input
+                                          type="number"
+                                          min={1}
+                                          placeholder="遮蔽物HP"
+                                          value={coverHpInput}
+                                          onChange={(e) => setCoverHpInput(e.target.value)}
+                                          style={{
+                                            width: '70px',
+                                            padding: '3px 6px',
+                                            backgroundColor: 'var(--color-bg)',
+                                            border: '1px solid var(--color-warning)',
+                                            borderRadius: '4px',
+                                            color: 'var(--color-text)',
+                                            fontSize: '0.85rem',
+                                          }}
+                                        />
+                                      </div>
+                                    ) : null;
+                                  })()}
+
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <span style={{ fontSize: '0.85rem' }}>遮蔽物へのダメージ:</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      placeholder="ダメージ値"
+                                      value={coverDamageInput}
+                                      onChange={(e) => setCoverDamageInput(e.target.value)}
+                                      style={{
+                                        width: '70px',
+                                        padding: '3px 6px',
+                                        backgroundColor: 'var(--color-bg)',
+                                        border: '1px solid var(--color-border-light)',
+                                        borderRadius: '4px',
+                                        color: 'var(--color-text)',
+                                      }}
+                                    />
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -2397,19 +2467,26 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   {/* Calculate preview button */}
                   <button
                     onClick={handleCalculateAction}
-                    disabled={isResolving}
+                    disabled={isResolving || isCoverHpNeededAndMissing}
+                    title={isCoverHpNeededAndMissing ? '遮蔽物のHPを入力するまで計算できません' : undefined}
                     style={{
                       backgroundColor: 'var(--color-surface)',
                       border: '1px solid var(--color-ally)',
-                      color: 'var(--color-ally)',
+                      color: isCoverHpNeededAndMissing ? 'var(--color-text-muted)' : 'var(--color-ally)',
+                      opacity: isCoverHpNeededAndMissing ? 0.6 : 1,
                       padding: '8px',
                       borderRadius: '4px',
                       fontWeight: 700,
-                      cursor: 'pointer',
+                      cursor: isCoverHpNeededAndMissing ? 'not-allowed' : 'pointer',
                     }}
                   >
                     {isResolving ? '計算中...' : '判定と反映内容を計算'}
                   </button>
+                  {isCoverHpNeededAndMissing && (
+                    <div style={{ color: 'var(--color-warning)', fontSize: '0.8rem', marginTop: '4px' }}>
+                      ※ 遮蔽物のHPを入力するまで計算できません
+                    </div>
+                  )}
 
                   {/* Preview of changes */}
                   {previewResult && (
@@ -2548,9 +2625,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
   function renderParticipantCard(p: CombatParticipant, isCurrentTurn: boolean) {
     const char = p.character;
     const isAlly = p.side === 'ally';
+    const hasHp = char?.hp !== undefined && char?.hp !== null;
     const hp = char?.hp ?? 0;
     const hpMax = char?.hp_max ?? 1;
-    const hpPercent = Math.min(100, Math.max(0, (hp / hpMax) * 100));
+    const hpPercent = hasHp ? Math.min(100, Math.max(0, (hp / hpMax) * 100)) : 0;
 
     let hpColor = isAlly ? 'var(--color-ally)' : 'var(--color-enemy)';
     if (hp < hpMax / 2 && hp > 0) hpColor = 'var(--color-warning)';
@@ -2606,25 +2684,27 @@ export const CombatView: React.FC<CombatViewProps> = ({
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '2px' }}>
             <span>HP</span>
-            <span>{hp} / {hpMax}</span>
+            <span>{hasHp ? `${hp} / ${hpMax}` : '—'}</span>
           </div>
-          <div
-            style={{
-              height: '6px',
-              backgroundColor: 'var(--color-surface-elevated)',
-              borderRadius: '3px',
-              overflow: 'hidden',
-            }}
-          >
+          {hasHp && (
             <div
               style={{
-                width: `${hpPercent}%`,
-                height: '100%',
-                backgroundColor: hpColor,
-                transition: 'width 0.3s ease',
+                height: '6px',
+                backgroundColor: 'var(--color-surface-elevated)',
+                borderRadius: '3px',
+                overflow: 'hidden',
               }}
-            />
-          </div>
+            >
+              <div
+                style={{
+                  width: `${hpPercent}%`,
+                  height: '100%',
+                  backgroundColor: hpColor,
+                  transition: 'width 0.3s ease',
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* SP & Ammo */}

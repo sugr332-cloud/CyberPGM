@@ -62,6 +62,11 @@ export interface BoardToken {
   x: number;
   y: number;
   gm_only: boolean;
+  name?: string | null;
+  side?: 'ally' | 'enemy' | null;
+  wound_state?: 'ok' | 'seriously' | 'mortally' | 'dead' | null;
+  hp?: number | null;
+  hp_max?: number | null;
 }
 
 export const BoardTokenSchema = z.object({
@@ -71,6 +76,11 @@ export const BoardTokenSchema = z.object({
   x: z.number().int(),
   y: z.number().int(),
   gm_only: z.boolean().default(false),
+  name: z.string().nullable().optional(),
+  side: z.enum(['ally', 'enemy']).nullable().optional(),
+  wound_state: z.enum(['ok', 'seriously', 'mortally', 'dead']).nullable().optional(),
+  hp: z.number().int().nullable().optional(),
+  hp_max: z.number().int().nullable().optional(),
 });
 
 export interface BoardDrop {

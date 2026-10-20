@@ -35,10 +35,50 @@ export const ScreenPage: React.FC = () => {
 
   if (!sessionCode) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 max-w-md w-full shadow-2xl text-center">
-          <h1 className="text-2xl font-bold mb-4 text-cyan-400">TV 共有画面</h1>
-          <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+      <div
+        style={{
+          minHeight: '100vh',
+          backgroundColor: 'var(--color-bg)',
+          color: 'var(--color-text)',
+          fontFamily: 'var(--font-body)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+        }}
+      >
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: '12px',
+            padding: '32px',
+            maxWidth: '420px',
+            width: '100%',
+            textAlign: 'center',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+          }}
+        >
+          <h1
+            style={{
+              fontSize: '1.6rem',
+              fontWeight: 700,
+              fontFamily: 'var(--font-display)',
+              color: 'var(--color-ally)',
+              marginBottom: '12px',
+            }}
+          >
+            TV 共有画面
+          </h1>
+          <p
+            style={{
+              color: 'var(--color-text-muted)',
+              fontSize: '0.9rem',
+              lineHeight: 1.6,
+              marginBottom: '24px',
+            }}
+          >
             セッションコードを入力するか、GM画面の「TV共有URL」からアクセスしてください。
           </p>
           <form
@@ -47,18 +87,38 @@ export const ScreenPage: React.FC = () => {
               const input = (e.currentTarget.elements.namedItem('code') as HTMLInputElement)?.value;
               if (input) setSessionCode(input.trim().toUpperCase());
             }}
-            className="flex flex-col gap-4"
+            style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
           >
             <input
               name="code"
               type="text"
               placeholder="セッションコード (例: ABCD)"
-              className="px-4 py-3 bg-slate-950 border border-slate-700 rounded-lg text-center font-mono text-lg tracking-widest text-slate-100 focus:outline-none focus:border-cyan-500"
+              style={{
+                padding: '12px 16px',
+                backgroundColor: 'var(--color-bg)',
+                border: '1px solid var(--color-border-light)',
+                borderRadius: '6px',
+                textAlign: 'center',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '1.2rem',
+                letterSpacing: '0.2em',
+                color: 'var(--color-text)',
+                outline: 'none',
+              }}
               required
             />
             <button
               type="submit"
-              className="py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg transition-colors"
+              style={{
+                padding: '12px 20px',
+                backgroundColor: 'var(--color-ally)',
+                color: '#000',
+                border: 'none',
+                borderRadius: '6px',
+                fontWeight: 700,
+                fontSize: '0.95rem',
+                cursor: 'pointer',
+              }}
             >
               共有画面を表示
             </button>
@@ -79,18 +139,62 @@ export const ScreenPage: React.FC = () => {
   const enemies = combat?.participants?.filter((p) => p.side === 'enemy') || [];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div
+      style={{
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: 'var(--color-bg)',
+        color: 'var(--color-text)',
+        fontFamily: 'var(--font-body)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
       {/* Top TV Bar */}
-      <header className="px-6 py-3 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between backdrop-blur">
-        <div className="flex items-center gap-6">
-          <span className="text-xl font-black tracking-wider text-cyan-400">CyberPGM</span>
+      <header
+        style={{
+          height: '60px',
+          padding: '0 24px',
+          backgroundColor: 'var(--color-surface)',
+          borderBottom: '1px solid var(--color-border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '20px',
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexShrink: 0 }}>
+          <span
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: '1.4rem',
+              fontWeight: 800,
+              letterSpacing: '0.05em',
+              color: 'var(--color-ally)',
+            }}
+          >
+            CyberPGM
+          </span>
           {combat && combat.status === 'active' && (
-            <div className="flex items-center gap-4">
-              <span className="px-3 py-1 bg-cyan-950 border border-cyan-700 rounded-full text-cyan-300 font-bold text-sm">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span
+                style={{
+                  padding: '3px 12px',
+                  backgroundColor: 'rgba(79, 182, 227, 0.15)',
+                  border: '1px solid var(--color-ally)',
+                  borderRadius: '16px',
+                  color: 'var(--color-ally)',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  fontFamily: 'var(--font-display)',
+                }}
+              >
                 ラウンド {combat.round}
               </span>
-              <span className="text-slate-300 text-sm">
-                手番: <strong className="text-cyan-400 text-base">{activePart?.name || '—'}</strong>
+              <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+                手番: <strong style={{ color: 'var(--color-text)', fontSize: '1rem' }}>{activePart?.name || '—'}</strong>
               </span>
             </div>
           )}
@@ -98,27 +202,59 @@ export const ScreenPage: React.FC = () => {
 
         {/* Initiative Order Track */}
         {combat && combat.participants && combat.participants.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto max-w-xl py-1">
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              overflowX: 'auto',
+              padding: '4px 0',
+              flex: 1,
+              justifyContent: 'center',
+            }}
+          >
             {combat.participants.map((p, idx) => {
               const isTurn = idx === combat.turn_index;
               const isAlly = p.side === 'ally';
               return (
                 <div
                   key={p.id}
-                  className={`flex items-center gap-2 px-3 py-1 rounded-md border text-xs whitespace-nowrap transition-all ${
-                    isTurn
-                      ? 'bg-cyan-950/80 border-cyan-400 shadow-md ring-2 ring-cyan-500/50'
-                      : 'bg-slate-800/80 border-slate-700'
-                  }`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '4px 12px',
+                    borderRadius: '6px',
+                    border: isTurn ? '2px solid var(--color-ally)' : '1px solid var(--color-border-light)',
+                    backgroundColor: isTurn ? 'rgba(79, 182, 227, 0.2)' : 'var(--color-surface-elevated)',
+                    boxShadow: isTurn ? '0 0 10px rgba(79, 182, 227, 0.4)' : 'none',
+                    whiteSpace: 'nowrap',
+                  }}
                 >
-                  <span
-                    className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] ${
-                      isAlly ? 'bg-cyan-900 text-cyan-200' : 'bg-orange-900 text-orange-200'
-                    }`}
+                  <div
+                    style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 700,
+                      fontSize: '0.75rem',
+                      backgroundColor: isAlly ? 'rgba(79, 182, 227, 0.25)' : 'rgba(242, 140, 56, 0.25)',
+                      color: isAlly ? 'var(--color-ally)' : 'var(--color-enemy)',
+                      flexShrink: 0,
+                    }}
                   >
                     {p.name.slice(0, 1)}
-                  </span>
-                  <span className={`font-semibold ${isTurn ? 'text-white' : 'text-slate-300'}`}>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '0.85rem',
+                      fontWeight: isTurn ? 700 : 500,
+                      color: isTurn ? 'var(--color-text)' : 'var(--color-text-muted)',
+                    }}
+                  >
                     {p.name}
                   </span>
                 </div>
@@ -127,16 +263,53 @@ export const ScreenPage: React.FC = () => {
           </div>
         )}
 
-        <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
-          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.85rem',
+            color: 'var(--color-text-muted)',
+            fontFamily: 'var(--font-mono)',
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: isConnected ? 'var(--color-success)' : 'var(--color-warning)',
+            }}
+          />
           <span>コード: {sessionCode}</span>
         </div>
       </header>
 
       {/* Main TV Screen Content */}
-      <main className="flex-1 flex flex-col lg:flex-row p-4 gap-4 overflow-hidden">
+      <main
+        style={{
+          flex: 1,
+          display: 'flex',
+          overflow: 'hidden',
+          padding: '16px',
+          gap: '16px',
+        }}
+      >
         {/* Center: Board */}
-        <div className="flex-1 flex items-center justify-center bg-slate-900/40 rounded-xl border border-slate-800/80 p-2 overflow-auto">
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: '8px',
+            overflow: 'hidden',
+            position: 'relative',
+          }}
+        >
           {board ? (
             <BoardView
               board={board}
@@ -149,43 +322,103 @@ export const ScreenPage: React.FC = () => {
               style={{ width: '100%', height: '100%' }}
             />
           ) : (
-            <div className="text-slate-500 text-center p-12">
-              <p className="text-lg font-semibold mb-2">盤面が設定されていません</p>
-              <p className="text-sm">GMが戦闘タブで盤面を開始するのをお待ちください</p>
+            <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '48px' }}>
+              <p style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '8px' }}>盤面が設定されていません</p>
+              <p style={{ fontSize: '0.9rem' }}>GMが戦闘タブで盤面を開始するのをお待ちください</p>
             </div>
           )}
         </div>
 
         {/* Sidebar: Combatants summary */}
         {combat && combat.status === 'active' && (
-          <aside className="w-full lg:w-80 flex flex-col gap-4 overflow-y-auto">
+          <aside
+            style={{
+              width: '320px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              overflowY: 'auto',
+              flexShrink: 0,
+            }}
+          >
             {/* Allies section with full numeric HP */}
-            <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
-              <h3 className="text-sm font-bold text-cyan-400 flex items-center justify-between border-b border-slate-800 pb-2">
-                <span>味方</span>
-                <span className="text-xs text-slate-500 font-mono">{allies.length}名</span>
-              </h3>
-              <div className="flex flex-col gap-2">
+            <div
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  borderBottom: '1px solid var(--color-border)',
+                  paddingBottom: '8px',
+                }}
+              >
+                <span style={{ fontWeight: 700, color: 'var(--color-ally)', fontSize: '0.95rem' }}>味方</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
+                  {allies.length}名
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {allies.map((p) => {
                   const char = p.character;
                   const hp = char?.hp ?? 0;
                   const maxHp = char?.hp_max ?? 1;
                   const percent = Math.max(0, Math.min(100, (hp / maxHp) * 100));
+                  const isWounded = hp <= maxHp / 2;
+                  const isCritical = hp <= 0;
+                  const barColor = isCritical ? 'var(--color-text-muted)' : isWounded ? 'var(--color-warning)' : 'var(--color-ally)';
+
                   return (
                     <div
                       key={p.id}
-                      className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-2.5 flex flex-col gap-1.5"
+                      style={{
+                        backgroundColor: 'var(--color-surface-elevated)',
+                        border: '1px solid var(--color-border-light)',
+                        borderRadius: '6px',
+                        padding: '10px 12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                      }}
                     >
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-bold text-slate-200">{p.name}</span>
-                        <span className="font-mono text-cyan-300 font-semibold">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{p.name}</span>
+                        <span
+                          style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '0.85rem',
+                            fontWeight: 600,
+                            color: barColor,
+                          }}
+                        >
                           HP {hp}/{maxHp}
                         </span>
                       </div>
-                      <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '6px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                          borderRadius: '3px',
+                          overflow: 'hidden',
+                        }}
+                      >
                         <div
-                          className="h-full bg-cyan-500 transition-all"
-                          style={{ width: `${percent}%` }}
+                          style={{
+                            height: '100%',
+                            width: `${percent}%`,
+                            backgroundColor: barColor,
+                            transition: 'width 0.3s ease',
+                          }}
                         />
                       </div>
                     </div>
@@ -195,43 +428,74 @@ export const ScreenPage: React.FC = () => {
             </div>
 
             {/* Enemies section: ONLY name and wound state - NO numeric HP/SP! */}
-            <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
-              <h3 className="text-sm font-bold text-orange-400 flex items-center justify-between border-b border-slate-800 pb-2">
-                <span>敵</span>
-                <span className="text-xs text-slate-500 font-mono">{enemies.length}名</span>
-              </h3>
-              <div className="flex flex-col gap-2">
+            <div
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  borderBottom: '1px solid var(--color-border)',
+                  paddingBottom: '8px',
+                }}
+              >
+                <span style={{ fontWeight: 700, color: 'var(--color-enemy)', fontSize: '0.95rem' }}>敵</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
+                  {enemies.length}名
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {enemies.map((p) => {
-                  // wound_state is sent from server for enemies
-                  const woundState = (p as any).wound_state || 'healthy';
-                  const badgeColor =
-                    woundState === 'healthy'
-                      ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
-                      : woundState === 'seriously_wounded'
-                      ? 'bg-amber-950 text-amber-300 border-amber-800'
-                      : woundState === 'mortally_wounded'
-                      ? 'bg-red-950 text-red-300 border-red-800'
-                      : 'bg-slate-800 text-slate-400 border-slate-700';
+                  const woundState = (p as any).wound_state || (p.character as any)?.wound_state || '健康';
+                  let badgeBg = 'rgba(126, 226, 168, 0.15)';
+                  let badgeColor = 'var(--color-success)';
+                  let badgeBorder = 'var(--color-success)';
 
-                  const badgeText =
-                    woundState === 'healthy'
-                      ? '健康'
-                      : woundState === 'seriously_wounded'
-                      ? '重傷'
-                      : woundState === 'mortally_wounded'
-                      ? '瀕死'
-                      : '死亡';
+                  if (woundState === '重傷') {
+                    badgeBg = 'rgba(242, 201, 76, 0.15)';
+                    badgeColor = 'var(--color-warning)';
+                    badgeBorder = 'var(--color-warning)';
+                  } else if (woundState === '瀕死' || woundState === '死亡') {
+                    badgeBg = 'rgba(255, 90, 95, 0.15)';
+                    badgeColor = 'var(--color-accent)';
+                    badgeBorder = 'var(--color-accent)';
+                  }
 
                   return (
                     <div
                       key={p.id}
-                      className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-2.5 flex justify-between items-center text-xs"
+                      style={{
+                        backgroundColor: 'var(--color-surface-elevated)',
+                        border: '1px solid var(--color-border-light)',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
                     >
-                      <span className="font-bold text-slate-200">{p.name}</span>
+                      <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{p.name}</span>
                       <span
-                        className={`px-2.5 py-0.5 rounded text-[11px] font-bold border ${badgeColor}`}
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          backgroundColor: badgeBg,
+                          color: badgeColor,
+                          border: `1px solid ${badgeBorder}`,
+                        }}
                       >
-                        {badgeText}
+                        {woundState}
                       </span>
                     </div>
                   );
