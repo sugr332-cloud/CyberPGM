@@ -1,7 +1,7 @@
 # Phase 1 指示書: ルール計算エンジン（packages/rules）
 
 - 作成: 2026-10-20（Claude）
-- 作業ブランチ: `agy/phase1-rules-engine`（Phase 0 のマージ後に main から切る）
+- 作業ブランチ: `agy/phase1-rules-engine`（main から切る。Phase 0 はマージ済み）
 - 報告: `docs/agy/reports/phase1-rules-engine-<連番>.md`
 - 前提として読むもの: `docs/SPEC.md`（§5.0.1、§5.1、§5.5〜5.6、§7）、`docs/RULES_CHECK.md`（全部）、`docs/agy/README.md`
 
@@ -12,6 +12,18 @@
 - 乱数を使わない。ダイスの出目は必ず引数で受け取る（リアルダイスが既定のため）。アプリで振る機能は Phase 1 では作らない
 - ルールの数値で日本語版の確認が済んでいないもの（GitHub Issue のラベル `ルール確認`）は、**定数として外から渡せるようにする**。既定値はこの指示書の値を使い、コードに直書きしない
 - 武器ごとの違いは **武器・弾薬データの値で分岐する**。武器名で `if` を書かない（RULES_CHECK.md §4）
+
+## 0. Phase 0 レビューの指摘（最初に直す。commit は分ける）
+
+Phase 0 は main にマージ済み（f2b7e70）。Claude のレビューで次の 3 点を見つけた。
+
+1. **FVTT アイコンの公開範囲**: `images.visibility` が全件 `gm` になっている。SPEC §3 の「既定は GM のみ」は **本のスキャン画像** の話で、FVTT のアイコン（CC-BY など）は商店でプレイヤーにも見せる。取り込みで `origin = 'fvtt_icon'` の画像は `visibility = 'players'` にする。既存の行も、取り込みの再実行で `fvtt_icon` のものだけ直す（GM が変えた visibility は今後上書きしないよう、`fvtt_icon` で visibility が初期値のままのものに限る。判定できなければ報告に書いて止まる）
+2. **ライセンスの既定値**: `findAttribution` が CREDITS.md に当てはまらないアイコンにも `CC-BY 3.0` を入れている（37 件）。CREDITS.md によると SVG Repo 由来はパブリックドメインや別の CC ライセンスがありうるので、当てはまらないときは `license = 'unknown'`、`attribution = 'see CREDITS.md'` にする。テストも直す
+3. **画像 API の安全策**（`apps/server/src/routes/images.ts`）:
+   - パスの確認を `filePath.startsWith(baseDir + path.sep)` にする（`data/images-xxx` のような隣のフォルダを通さない）
+   - 応答に `X-Content-Type-Options: nosniff` を付け、SVG には `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'` を付ける（後のフェーズで GM・プレイヤーが画像を上げるため、SVG の中のスクリプトを動かさない）
+
+報告の「次にやること」に旧計画の「Phase 1 = 商店」が書かれていたが、計画は SPEC §10 のとおり変わった。Phase 1 はこの指示書（ルール計算エンジン）。
 
 ## 1. ファイル構成
 
