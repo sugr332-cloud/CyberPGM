@@ -1,0 +1,3113 @@
+{
+ "_note": "品目の説明の下書き（2026-10-21 Claude）。effect = 効果（FVTT の英語の効果説明を自分の言葉で日本語にしたもの。性能の数値は別の欄に出るので書かない）、flavor = 雰囲気の一文（Claude の自作。ルールブックの文は写していない）。どちらも下書きで、GM が書き換えられる（2026-10-21 ユーザー決定）。キーは FVTT の id。効果が空の品目は、性能の欄だけで特別な効果がないもの",
+ "notes": {
+  "QHpJ8EeoAnIWsFvZ": {
+   "name_ja": "矢（徹甲弾）",
+   "name_en": "Arrow (Armor-Piercing)",
+   "effect": "防具の SP を 2 削る（通常は 1）。",
+   "flavor": "装甲の上から、装甲ごと削っていく。"
+  },
+  "CTfIn76uMH5nGGqB": {
+   "name_ja": "矢（通常弾）",
+   "name_en": "Arrow (Basic)",
+   "effect": "特別な効果のない、ふつうの弾。",
+   "flavor": "いちばん安くて、いちばん多く撃たれている弾。"
+  },
+  "CNMadbNFM6dk2F6H": {
+   "name_ja": "矢（バイオトキシン弾）",
+   "name_en": "Arrow (Biotoxin)",
+   "effect": "当たってもすぐにはダメージがない。当たった相手は拷問・薬物への抵抗（難易度 15）を行い、失敗すると HP に 3d6 のダメージ。防具の SP を削らない。",
+   "flavor": "傷は小さい。問題は、そのあと体に回るもの。"
+  },
+  "048cmb4eS7HiAosc": {
+   "name_ja": "矢（ダムダム弾）",
+   "name_en": "Arrow (Expansive)",
+   "effect": "相手が致命傷「異物」を引いたら、さらに別の致命傷をもう 1 つ引く（2 つ目はボーナスダメージなし）。",
+   "flavor": "体の中で開いて、なかなか出てこない。"
+  },
+  "eRpD2JusdqIHCN7f": {
+   "name_ja": "矢（焼夷弾）",
+   "name_en": "Arrow (Incendiary)",
+   "effect": "ダメージを与えると相手に火がつく。相手は自分の手番の終わりに HP に 2 のダメージを受ける（アクションを使って消せば止まる）。重ならない。",
+   "flavor": "当たったあとも、燃えつづける。"
+  },
+  "1DmAuk2SsgDh0YqG": {
+   "name_ja": "矢（毒弾）",
+   "name_en": "Arrow (Poison)",
+   "effect": "当たってもすぐにはダメージがない。生身の相手は拷問・薬物への抵抗（難易度 13）を行い、失敗すると HP に 2d6 のダメージ。防具の SP を削らない。",
+   "flavor": "かすり傷でも、毒は入る。"
+  },
+  "tXkeWEPGKEJEgCPW": {
+   "name_ja": "矢（ゴム弾）",
+   "name_en": "Arrow (Rubber)",
+   "effect": "致命傷を与えず、防具の SP も削らない。相手の HP は 1 より下がらない。特殊な武器では通常弾として扱う。",
+   "flavor": "殺さずに黙らせるための弾。それでも、かなり痛い。"
+  },
+  "Yzo60c2pXKZ88QzM": {
+   "name_ja": "矢（睡眠弾）",
+   "name_en": "Arrow (Sleep)",
+   "effect": "ダメージはない。生身の相手は拷問・薬物への抵抗（難易度 13）を行い、失敗すると伏せ状態になり 1 分間気を失う。ダメージを受けるか、誰かがアクションを使って揺り起こせば目を覚ます。",
+   "flavor": "撃たれた相手は、その場で眠りこむ。"
+  },
+  "LUn1NLURJhyUcta3": {
+   "name_ja": "矢（スマート弾）",
+   "name_en": "Arrow (Smart)",
+   "effect": "サイバーウェアの照準スコープがないと撃てない。1 回の攻撃を 4 以下の差で外したら、同じ難易度で 1d10 + 10 の 2 回目の攻撃を行う（運を足せる）。相手は回避できるなら 2 回目も回避できる。",
+   "flavor": "外れた弾が、向きを変えて戻ってくる。"
+  },
+  "MfuoJ69NL1FiP7B8": {
+   "name_ja": "バッテリーパック",
+   "name_en": "Battery Pack",
+   "effect": "1 時間で充電できるバッテリー。特殊な武器でよく使う。8 発分。",
+   "flavor": "弾を買い足す代わりに、コンセントを探す。"
+  },
+  "tivSfxqoNYnBlNah": {
+   "name_ja": "グレネード（徹甲弾）",
+   "name_en": "Grenade (Armor-Piercing)",
+   "effect": "防具の SP を 2 削る（通常は 1）。",
+   "flavor": "装甲の上から、装甲ごと削っていく。"
+  },
+  "TOftCgogDvWvXV1z": {
+   "name_ja": "グレネード（バイオトキシン弾）",
+   "name_en": "Grenade (Biotoxin)",
+   "effect": "当たってもすぐにはダメージがない。当たった相手は拷問・薬物への抵抗（難易度 15）を行い、失敗すると HP に 3d6 のダメージ。防具の SP を削らない。",
+   "flavor": "傷は小さい。問題は、そのあと体に回るもの。"
+  },
+  "iAEhmFnY7U26bKvN": {
+   "name_ja": "グレネード（EMP弾）",
+   "name_en": "Grenade (EMP)",
+   "effect": "当たった相手はサイバーテックの判定（難易度 15）を行い、失敗するとサイバーウェアか持っている電子機器 2 つ（GM が選ぶ）が 1 分間止まる。サイバー義肢は、切り落とされた生身の腕のようにだらりと垂れる。",
+   "flavor": "クロームだらけの相手には、これが一番効く。"
+  },
+  "e8gDMbdK1oPKwhqW": {
+   "name_ja": "閃光音響グレネード",
+   "name_en": "Grenade (Flashbang)",
+   "effect": "ダメージはない。当たった相手は拷問・薬物への抵抗（難易度 15）を行い、失敗すると 1 分間、致命傷「目の損傷」と「耳の損傷」を負う。クリティカルのボーナスダメージはない。",
+   "flavor": "光と音で、部屋の中の全員を数秒だけ無力にする。"
+  },
+  "IJhN5QHmu4hAJxLo": {
+   "name_ja": "グレネード（焼夷弾）",
+   "name_en": "Grenade (Incendiary)",
+   "effect": "ダメージを与えると相手に火がつく。相手は自分の手番の終わりに HP に 2 のダメージを受ける（アクションを使って消せば止まる）。重ならない。",
+   "flavor": "当たったあとも、燃えつづける。"
+  },
+  "OufLzsBG6w0CUp81": {
+   "name_ja": "グレネード（毒弾）",
+   "name_en": "Grenade (Poison)",
+   "effect": "当たってもすぐにはダメージがない。生身の相手は拷問・薬物への抵抗（難易度 13）を行い、失敗すると HP に 2d6 のダメージ。防具の SP を削らない。",
+   "flavor": "かすり傷でも、毒は入る。"
+  },
+  "rjTyO2vXdd4T19Me": {
+   "name_ja": "グレネード（睡眠弾）",
+   "name_en": "Grenade (Sleep)",
+   "effect": "ダメージはない。生身の相手は拷問・薬物への抵抗（難易度 13）を行い、失敗すると伏せ状態になり 1 分間気を失う。ダメージを受けるか、誰かがアクションを使って揺り起こせば目を覚ます。",
+   "flavor": "撃たれた相手は、その場で眠りこむ。"
+  },
+  "7xhKxgwOELzaPyYr": {
+   "name_ja": "発煙グレネード",
+   "name_en": "Grenade (Smoke)",
+   "effect": "ダメージはない。10m × 10m を 1 分間煙で満たす。煙で見えにくい作業は −4。",
+   "flavor": "姿を隠すにも、逃げるにも使える。"
+  },
+  "3rtsVDMaB16lc5tY": {
+   "name_ja": "催涙ガス・グレネード",
+   "name_en": "Grenade (Teargas)",
+   "effect": "ダメージはない。生身の目の相手は拷問・薬物への抵抗（難易度 13）を行い、失敗すると 1 分間、致命傷「目の損傷」を負う。クリティカルのボーナスダメージはない。",
+   "flavor": "暴徒鎮圧の定番。涙と咳で、話にならなくなる。"
+  },
+  "67GcScXFPCzIGi4s": {
+   "name_ja": "大型拳銃（徹甲弾）",
+   "name_en": "Heavy Pistol (Armor-Piercing)",
+   "effect": "防具の SP を 2 削る（通常は 1）。",
+   "flavor": "装甲の上から、装甲ごと削っていく。"
+  },
+  "jmia1vHSv6bdQEVP": {
+   "name_ja": "大型拳銃（通常弾）",
+   "name_en": "Heavy Pistol (Basic)",
+   "effect": "特別な効果のない、ふつうの弾。",
+   "flavor": "いちばん安くて、いちばん多く撃たれている弾。"
+  },
+  "Iz3NKqODGVjxJqTY": {
+   "name_ja": "大型拳銃（ダムダム弾）",
+   "name_en": "Heavy Pistol (Expansive)",
+   "effect": "相手が致命傷「異物」を引いたら、さらに別の致命傷をもう 1 つ引く（2 つ目はボーナスダメージなし）。",
+   "flavor": "体の中で開いて、なかなか出てこない。"
+  },
+  "TcVJvGcbgK30TNUJ": {
+   "name_ja": "大型拳銃（焼夷弾）",
+   "name_en": "Heavy Pistol (Incendiary)",
+   "effect": "ダメージを与えると相手に火がつく。相手は自分の手番の終わりに HP に 2 のダメージを受ける（アクションを使って消せば止まる）。重ならない。",
+   "flavor": "当たったあとも、燃えつづける。"
+  },
+  "WOJD6hQVUVEK8AsJ": {
+   "name_ja": "大型拳銃（ゴム弾）",
+   "name_en": "Heavy Pistol (Rubber)",
+   "effect": "致命傷を与えず、防具の SP も削らない。相手の HP は 1 より下がらない。特殊な武器では通常弾として扱う。",
+   "flavor": "殺さずに黙らせるための弾。それでも、かなり痛い。"
+  },
+  "314PiB9i0ahRqfZv": {
+   "name_ja": "大型拳銃（スマート弾）",
+   "name_en": "Heavy Pistol (Smart)",
+   "effect": "サイバーウェアの照準スコープがないと撃てない。1 回の攻撃を 4 以下の差で外したら、同じ難易度で 1d10 + 10 の 2 回目の攻撃を行う（運を足せる）。相手は回避できるなら 2 回目も回避できる。",
+   "flavor": "外れた弾が、向きを変えて戻ってくる。"
+  },
+  "PBA9BUs49TQeLoDi": {
+   "name_ja": "中型拳銃（徹甲弾）",
+   "name_en": "Medium Pistol (Armor-Piercing)",
+   "effect": "防具の SP を 2 削る（通常は 1）。",
+   "flavor": "装甲の上から、装甲ごと削っていく。"
+  },
+  "6OdC9uNTwgQLFdto": {
+   "name_ja": "中型拳銃（通常弾）",
+   "name_en": "Medium Pistol (Basic)",
+   "effect": "特別な効果のない、ふつうの弾。",
+   "flavor": "いちばん安くて、いちばん多く撃たれている弾。"
+  },
+  "yEZOd9wbzrw30wKz": {
+   "name_ja": "中型拳銃（ダムダム弾）",
+   "name_en": "Medium Pistol (Expansive)",
+   "effect": "相手が致命傷「異物」を引いたら、さらに別の致命傷をもう 1 つ引く（2 つ目はボーナスダメージなし）。",
+   "flavor": "体の中で開いて、なかなか出てこない。"
+  },
+  "wTLwxLUvBBoM3yhM": {
+   "name_ja": "中型拳銃（焼夷弾）",
+   "name_en": "Medium Pistol (Incendiary)",
+   "effect": "ダメージを与えると相手に火がつく。相手は自分の手番の終わりに HP に 2 のダメージを受ける（アクションを使って消せば止まる）。重ならない。",
+   "flavor": "当たったあとも、燃えつづける。"
+  },
+  "n1vIKB6Mln9XgUXL": {
+   "name_ja": "中型拳銃（ゴム弾）",
+   "name_en": "Medium Pistol (Rubber)",
+   "effect": "致命傷を与えず、防具の SP も削らない。相手の HP は 1 より下がらない。特殊な武器では通常弾として扱う。",
+   "flavor": "殺さずに黙らせるための弾。それでも、かなり痛い。"
+  },
+  "6dwSiAhYho02ZtgL": {
+   "name_ja": "中型拳銃（スマート弾）",
+   "name_en": "Medium Pistol (Smart)",
+   "effect": "サイバーウェアの照準スコープがないと撃てない。1 回の攻撃を 4 以下の差で外したら、同じ難易度で 1d10 + 10 の 2 回目の攻撃を行う（運を足せる）。相手は回避できるなら 2 回目も回避できる。",
+   "flavor": "外れた弾が、向きを変えて戻ってくる。"
+  },
+  "CiskMOqNs2y5axDS": {
+   "name_ja": "ペイントボール (酸)",
+   "name_en": "Paintball (Acid)",
+   "effect": "酸の入ったペイント弾。ダメージはないが、当たると防具の SP を 1 削る（自動では計算しないので GM が手で減らす）。",
+   "flavor": "服も装甲も、じわじわ溶かす。"
+  },
+  "XrmjWt5BvX6meuUs": {
+   "name_ja": "ペイントボール（通常）",
+   "name_en": "Paintball (Basic)",
+   "effect": "ダメージのないふつうのペイント弾。ただし、うっとうしい。",
+   "flavor": "当たっても痛くない。色は落ちない。"
+  },
+  "BEj2oUj2UOKgBFDz": {
+   "name_ja": "ライフル（徹甲弾）",
+   "name_en": "Rifle (Armor-Piercing)",
+   "effect": "防具の SP を 2 削る（通常は 1）。",
+   "flavor": "装甲の上から、装甲ごと削っていく。"
+  },
+  "J3NfMgRdqoUwFDDs": {
+   "name_ja": "ライフル（通常弾）",
+   "name_en": "Rifle (Basic)",
+   "effect": "特別な効果のない、ふつうの弾。",
+   "flavor": "いちばん安くて、いちばん多く撃たれている弾。"
+  },
+  "mDk8gPTM1ENRcB0K": {
+   "name_ja": "ライフル（ダムダム弾）",
+   "name_en": "Rifle (Expansive)",
+   "effect": "相手が致命傷「異物」を引いたら、さらに別の致命傷をもう 1 つ引く（2 つ目はボーナスダメージなし）。",
+   "flavor": "体の中で開いて、なかなか出てこない。"
+  },
+  "U6VMjZRYgJMlMSsg": {
+   "name_ja": "ライフル（焼夷弾）",
+   "name_en": "Rifle (Incendiary)",
+   "effect": "ダメージを与えると相手に火がつく。相手は自分の手番の終わりに HP に 2 のダメージを受ける（アクションを使って消せば止まる）。重ならない。",
+   "flavor": "当たったあとも、燃えつづける。"
+  },
+  "qA9wmNHuGLsxBtRB": {
+   "name_ja": "ライフル（ゴム弾）",
+   "name_en": "Rifle (Rubber)",
+   "effect": "致命傷を与えず、防具の SP も削らない。相手の HP は 1 より下がらない。特殊な武器では通常弾として扱う。",
+   "flavor": "殺さずに黙らせるための弾。それでも、かなり痛い。"
+  },
+  "n3AunwSvl6L44MRF": {
+   "name_ja": "ライフル（スマート弾）",
+   "name_en": "Rifle (Smart)",
+   "effect": "サイバーウェアの照準スコープがないと撃てない。1 回の攻撃を 4 以下の差で外したら、同じ難易度で 1d10 + 10 の 2 回目の攻撃を行う（運を足せる）。相手は回避できるなら 2 回目も回避できる。",
+   "flavor": "外れた弾が、向きを変えて戻ってくる。"
+  },
+  "dHHTQLHUkd0IX8GI": {
+   "name_ja": "ロケット（徹甲弾）",
+   "name_en": "Rocket (Armor-Piercing)",
+   "effect": "防具の SP を 2 削る（通常は 1）。",
+   "flavor": "装甲の上から、装甲ごと削っていく。"
+  },
+  "e2w1oKiv8t68chiI": {
+   "name_ja": "ロケット（スマート弾）",
+   "name_en": "Rocket (Smart)",
+   "effect": "サイバーウェアの照準スコープがないと撃てない。1 回の攻撃を 4 以下の差で外したら、同じ難易度で 1d10 + 10 の 2 回目の攻撃を行う（運を足せる）。相手は回避できるなら 2 回目も回避できる。",
+   "flavor": "外れた弾が、向きを変えて戻ってくる。"
+  },
+  "mkI1KpjAOUz9PxRM": {
+   "name_ja": "ショットガンの散弾（通常弾）",
+   "name_en": "Shotgun Shell (Basic)",
+   "effect": "特別な効果のない、ふつうの弾。",
+   "flavor": "いちばん安くて、いちばん多く撃たれている弾。"
+  },
+  "MdA5gBfCKbBuHGof": {
+   "name_ja": "ショットガン（焼夷弾）",
+   "name_en": "Shotgun Shell (Incendiary)",
+   "effect": "ダメージを与えると相手に火がつく。相手は自分の手番の終わりに HP に 2 のダメージを受ける（アクションを使って消せば止まる）。重ならない。",
+   "flavor": "当たったあとも、燃えつづける。"
+  },
+  "YFtrIcr5qsT2zO9V": {
+   "name_ja": "ショットガンのスラッグ弾（徹甲弾）",
+   "name_en": "Shotgun Slug (Armor-Piercing)",
+   "effect": "防具の SP を 2 削る（通常は 1）。",
+   "flavor": "装甲の上から、装甲ごと削っていく。"
+  },
+  "YFnV9OetCCRru5Ky": {
+   "name_ja": "ショットガンのスラッグ弾（通常弾）",
+   "name_en": "Shotgun Slug (Basic)",
+   "effect": "特別な効果のない、ふつうの弾。",
+   "flavor": "いちばん安くて、いちばん多く撃たれている弾。"
+  },
+  "WjWIkjjjMW4j5Bzp": {
+   "name_ja": "ショットガンのスラッグ弾（ダムダム弾）",
+   "name_en": "Shotgun Slug (Expansive)",
+   "effect": "相手が致命傷「異物」を引いたら、さらに別の致命傷をもう 1 つ引く（2 つ目はボーナスダメージなし）。",
+   "flavor": "体の中で開いて、なかなか出てこない。"
+  },
+  "yxGinCJXUJjdsK0g": {
+   "name_ja": "ショットガンのスラッグ弾（焼夷弾）",
+   "name_en": "Shotgun Slug (Incendiary)",
+   "effect": "ダメージを与えると相手に火がつく。相手は自分の手番の終わりに HP に 2 のダメージを受ける（アクションを使って消せば止まる）。重ならない。",
+   "flavor": "当たったあとも、燃えつづける。"
+  },
+  "qRKLIX7yU2n83JKJ": {
+   "name_ja": "ショットガンのスラッグ弾（ゴム弾）",
+   "name_en": "Shotgun Slug (Rubber)",
+   "effect": "致命傷を与えず、防具の SP も削らない。相手の HP は 1 より下がらない。特殊な武器では通常弾として扱う。",
+   "flavor": "殺さずに黙らせるための弾。それでも、かなり痛い。"
+  },
+  "imYSBydexTxoHynu": {
+   "name_ja": "ショットガンのスラッグ弾（スマート弾）",
+   "name_en": "Shotgun Slug (Smart)",
+   "effect": "サイバーウェアの照準スコープがないと撃てない。1 回の攻撃を 4 以下の差で外したら、同じ難易度で 1d10 + 10 の 2 回目の攻撃を行う（運を足せる）。相手は回避できるなら 2 回目も回避できる。",
+   "flavor": "外れた弾が、向きを変えて戻ってくる。"
+  },
+  "oFcsVOL1UHu7MTnu": {
+   "name_ja": "超大型拳銃（徹甲弾）",
+   "name_en": "Very Heavy Pistol (Armor-Piercing)",
+   "effect": "防具の SP を 2 削る（通常は 1）。",
+   "flavor": "装甲の上から、装甲ごと削っていく。"
+  },
+  "NQP4I9heyv9fXj46": {
+   "name_ja": "超大型拳銃（通常弾）",
+   "name_en": "Very Heavy Pistol (Basic)",
+   "effect": "特別な効果のない、ふつうの弾。",
+   "flavor": "いちばん安くて、いちばん多く撃たれている弾。"
+  },
+  "6FCKkulioIa0IQOr": {
+   "name_ja": "超大型拳銃（ダムダム弾）",
+   "name_en": "Very Heavy Pistol (Expansive)",
+   "effect": "相手が致命傷「異物」を引いたら、さらに別の致命傷をもう 1 つ引く（2 つ目はボーナスダメージなし）。",
+   "flavor": "体の中で開いて、なかなか出てこない。"
+  },
+  "TIDzfziwhCxuIrnT": {
+   "name_ja": "超大型拳銃（焼夷弾）",
+   "name_en": "Very Heavy Pistol (Incendiary)",
+   "effect": "ダメージを与えると相手に火がつく。相手は自分の手番の終わりに HP に 2 のダメージを受ける（アクションを使って消せば止まる）。重ならない。",
+   "flavor": "当たったあとも、燃えつづける。"
+  },
+  "6ta0PBU9FFrkg97B": {
+   "name_ja": "超大型拳銃（ゴム弾）",
+   "name_en": "Very Heavy Pistol (Rubber)",
+   "effect": "致命傷を与えず、防具の SP も削らない。相手の HP は 1 より下がらない。特殊な武器では通常弾として扱う。",
+   "flavor": "殺さずに黙らせるための弾。それでも、かなり痛い。"
+  },
+  "FXatnNvunRDgqfbQ": {
+   "name_ja": "超大型拳銃（スマート弾）",
+   "name_en": "Very Heavy Pistol (Smart)",
+   "effect": "サイバーウェアの照準スコープがないと撃てない。1 回の攻撃を 4 以下の差で外したら、同じ難易度で 1d10 + 10 の 2 回目の攻撃を行う（運を足せる）。相手は回避できるなら 2 回目も回避できる。",
+   "flavor": "外れた弾が、向きを変えて戻ってくる。"
+  },
+  "hgYX1T8OCsSUL5zC": {
+   "name_ja": "ボディウェイトスーツ",
+   "name_en": "Bodyweight Suit",
+   "effect": "ネットランナー用の装甲スーツ。頭と胴の両方に着る（分けて買えない）。サイバーデッキを収納でき、インターフェイス・プラグに対応する。つないだサイバーデッキにハードウェア専用のスロットが 1 つ増える。防具ペナルティなし。",
+   "flavor": "肌に吸いつく薄い装甲。ネットに潜るあいだ、体を守る最後の殻。"
+  },
+  "Bg1YEeF25HhfrzOG": {
+   "name_ja": "防弾シールド",
+   "name_en": "Bullet Proof Shield",
+   "effect": "片腕で構える。盾の HP があり、受けたダメージで減っていく。",
+   "flavor": "撃ち合いの最前線で、いちばん頼りになる板。"
+  },
+  "wQXJTKA8KeEe2V2H": {
+   "name_ja": "フラック (身体)",
+   "name_en": "Flak (Body)",
+   "effect": "金属板で、強い攻撃にも耐える。REF・DEX・MOVE が −4。",
+   "flavor": "重くて暑くて動きにくい。それでも、生きて帰れる。"
+  },
+  "mSF1y5Kfye57SmWf": {
+   "name_ja": "フラック (頭)",
+   "name_en": "Flak (Head)",
+   "effect": "金属板で、強い攻撃にも耐える。REF・DEX・MOVE が −4。",
+   "flavor": "重くて暑くて動きにくい。それでも、生きて帰れる。"
+  },
+  "vYzDZIbfJ1RfCvi9": {
+   "name_ja": "重装アーマージャック(身体)",
+   "name_en": "Heavy Armorjack (Body)",
+   "effect": "アーマージャックの重装版。REF・DEX・MOVE が −2。",
+   "flavor": "動きやすさを少し手放して、守りを買う。"
+  },
+  "qLQYAFps9PrqMzUk": {
+   "name_ja": "重装アーマージャック(頭)",
+   "name_en": "Heavy Armorjack (Head)",
+   "effect": "アーマージャックの重装版。REF・DEX・MOVE が −2。",
+   "flavor": "動きやすさを少し手放して、守りを買う。"
+  },
+  "DbASrTymPy4wHNpX": {
+   "name_ja": "ケブラー®️ (身体)",
+   "name_en": "Kevlar® (Body)",
+   "effect": "標準的なケブラーの服。防具ペナルティなし。",
+   "flavor": "普段着に見える防弾服。ナイトシティの外出の基本。"
+  },
+  "n4nBTZca1I6bg9rs": {
+   "name_ja": "ケブラー®️ (頭)",
+   "name_en": "Kevlar® (Head)",
+   "effect": "標準的なケブラーの服。防具ペナルティなし。",
+   "flavor": "普段着に見える防弾服。ナイトシティの外出の基本。"
+  },
+  "2hwEBP93U98aRz4p": {
+   "name_ja": "レザー(身体)",
+   "name_en": "Leathers (Body)",
+   "effect": "簡単な革の防具。防具ペナルティなし。",
+   "flavor": "ないよりはまし。見た目は悪くない。"
+  },
+  "gCSiPGLnb78IGA1K": {
+   "name_ja": "レザー (頭)",
+   "name_en": "Leathers (Head)",
+   "effect": "簡単な革の防具。防具ペナルティなし。",
+   "flavor": "ないよりはまし。見た目は悪くない。"
+  },
+  "uaN9WukkezPfcutU": {
+   "name_ja": "軽装アーマージャック (身体)",
+   "name_en": "Light Armorjack (Body)",
+   "effect": "アーマージャックの軽装版。防具ペナルティなし。",
+   "flavor": "動きを邪魔しない、街で一番人気の装甲服。"
+  },
+  "Bsalv6m63PhmHkMm": {
+   "name_ja": "軽装アーマージャック (頭)",
+   "name_en": "Light Armorjack (Head)",
+   "effect": "アーマージャックの軽装版。防具ペナルティなし。",
+   "flavor": "動きを邪魔しない、街で一番人気の装甲服。"
+  },
+  "sV2rvaWBOntsxYvC": {
+   "name_ja": "中装アーマージャック (身体)",
+   "name_en": "Medium Armorjack (Body)",
+   "effect": "アーマージャックの中装版。REF・DEX・MOVE が −2。",
+   "flavor": "仕事の日に着る、少し重めの装甲服。"
+  },
+  "ReNlsir0b9jmxnPi": {
+   "name_ja": "中装アーマージャック (頭)",
+   "name_en": "Medium Armorjack (Head)",
+   "effect": "アーマージャックの中装版。REF・DEX・MOVE が −2。",
+   "flavor": "仕事の日に着る、少し重めの装甲服。"
+  },
+  "ANkaTbBKgBXwJy1Q": {
+   "name_ja": "メタルギア®️ (身体)",
+   "name_en": "Metalgear® (Body)",
+   "effect": "出回っている中でいちばん重く強い防具。REF・DEX・MOVE が −4。",
+   "flavor": "着ている人間より、着ている鎧のほうが目立つ。"
+  },
+  "zSjQKDoHe1cfcTkp": {
+   "name_ja": "メタルギア®️ (頭)",
+   "name_en": "Metalgear® (Head)",
+   "effect": "出回っている中でいちばん重く強い防具。REF・DEX・MOVE が −4。",
+   "flavor": "着ている人間より、着ている鎧のほうが目立つ。"
+  },
+  "DXavZyl7CTtgoZ6i": {
+   "name_ja": "皮膚編繊",
+   "name_en": "Skin Weave",
+   "effect": "サイバーウェア「皮膚編繊」で得られる防具。",
+   "flavor": "皮膚の下に織りこんだ繊維が、弾を止める。"
+  },
+  "M96Dfx18YqvhlIgb": {
+   "name_ja": "皮下アーマー",
+   "name_en": "Subdermal Armor",
+   "effect": "サイバーウェア「皮下アーマー」で得られる防具。",
+   "flavor": "脱ぐことのできない鎧。"
+  },
+  "yU8v6k5o1hbnsQnX": {
+   "name_ja": "アジアポップボトムス",
+   "name_en": "Asia Pop Bottoms",
+   "effect": "ファッションのスタイル「アジアポップ」のボトムス。",
+   "flavor": "アジアの流行を追う、色鮮やかで派手な服。人の目を引く。"
+  },
+  "DCKlDDJE2cSxhTzr": {
+   "name_ja": "アジアポップコンタクトレンズ",
+   "name_en": "Asia Pop Contact Lenses",
+   "effect": "ファッションのスタイル「アジアポップ」のコンタクトレンズ。",
+   "flavor": "アジアの流行を追う、色鮮やかで派手な服。人の目を引く。"
+  },
+  "zbGmb4qw3DWOX9c5": {
+   "name_ja": "アジアポップフットウェア",
+   "name_en": "Asia Pop Footwear",
+   "effect": "ファッションのスタイル「アジアポップ」の靴。",
+   "flavor": "アジアの流行を追う、色鮮やかで派手な服。人の目を引く。"
+  },
+  "JP2GQY2TWRuIWOmw": {
+   "name_ja": "アジアポップ眼鏡",
+   "name_en": "Asia Pop Glasses",
+   "effect": "ファッションのスタイル「アジアポップ」の眼鏡。",
+   "flavor": "アジアの流行を追う、色鮮やかで派手な服。人の目を引く。"
+  },
+  "b5wJC5AY37YLCGds": {
+   "name_ja": "アジアポップ帽子",
+   "name_en": "Asia Pop Hat",
+   "effect": "ファッションのスタイル「アジアポップ」の帽子。",
+   "flavor": "アジアの流行を追う、色鮮やかで派手な服。人の目を引く。"
+  },
+  "GeRARcHHEFINHOzz": {
+   "name_ja": "アジアポップジャケット",
+   "name_en": "Asia Pop Jacket",
+   "effect": "ファッションのスタイル「アジアポップ」のジャケット。",
+   "flavor": "アジアの流行を追う、色鮮やかで派手な服。人の目を引く。"
+  },
+  "97AeokKQvAdkafXo": {
+   "name_ja": "アジアポップジュエリー",
+   "name_en": "Asia Pop Jewelry",
+   "effect": "ファッションのスタイル「アジアポップ」のアクセサリー。",
+   "flavor": "アジアの流行を追う、色鮮やかで派手な服。人の目を引く。"
+  },
+  "eUitNUdtpaMrvxgl": {
+   "name_ja": "アジアポップミラーシェード",
+   "name_en": "Asia Pop Mirrorshades",
+   "effect": "ファッションのスタイル「アジアポップ」のミラーシェード。",
+   "flavor": "アジアの流行を追う、色鮮やかで派手な服。人の目を引く。"
+  },
+  "50Al0zACJwqGIfP9": {
+   "name_ja": "アジアポップトップス",
+   "name_en": "Asia Pop Top",
+   "effect": "ファッションのスタイル「アジアポップ」のトップス。",
+   "flavor": "アジアの流行を追う、色鮮やかで派手な服。人の目を引く。"
+  },
+  "RaaoLjnQAWDI1ovs": {
+   "name_ja": "バッグレディシックボトムス",
+   "name_en": "Bag Lady Chic Bottoms",
+   "effect": "ファッションのスタイル「バッグレディ・シック」のボトムス。",
+   "flavor": "破れて擦り切れた、路上暮らし風の服。わざとそう見せる人もいる。"
+  },
+  "OdeOEmoocJix2BbC": {
+   "name_ja": "バッグレディシックコンタクトレンズ",
+   "name_en": "Bag Lady Chic Contact Lenses",
+   "effect": "ファッションのスタイル「バッグレディ・シック」のコンタクトレンズ。",
+   "flavor": "破れて擦り切れた、路上暮らし風の服。わざとそう見せる人もいる。"
+  },
+  "Zvx0Pnn2kyammdnL": {
+   "name_ja": "バッグレディシックフットウェア",
+   "name_en": "Bag Lady Chic Footwear",
+   "effect": "ファッションのスタイル「バッグレディ・シック」の靴。",
+   "flavor": "破れて擦り切れた、路上暮らし風の服。わざとそう見せる人もいる。"
+  },
+  "j7uqIHY7bGmEL0Ma": {
+   "name_ja": "バッグレディシック眼鏡",
+   "name_en": "Bag Lady Chic Glasses",
+   "effect": "ファッションのスタイル「バッグレディ・シック」の眼鏡。",
+   "flavor": "破れて擦り切れた、路上暮らし風の服。わざとそう見せる人もいる。"
+  },
+  "jkQRu6sUEHd2d5Hp": {
+   "name_ja": "バッグレディシック帽子",
+   "name_en": "Bag Lady Chic Hat",
+   "effect": "ファッションのスタイル「バッグレディ・シック」の帽子。",
+   "flavor": "破れて擦り切れた、路上暮らし風の服。わざとそう見せる人もいる。"
+  },
+  "3g3tb3EuuakVaYgt": {
+   "name_ja": "バッグレディシックジャケット",
+   "name_en": "Bag Lady Chic Jacket",
+   "effect": "ファッションのスタイル「バッグレディ・シック」のジャケット。",
+   "flavor": "破れて擦り切れた、路上暮らし風の服。わざとそう見せる人もいる。"
+  },
+  "JDA2y7WMXXmAiB4f": {
+   "name_ja": "バッグレディシックジュエリー",
+   "name_en": "Bag Lady Chic Jewelry",
+   "effect": "ファッションのスタイル「バッグレディ・シック」のアクセサリー。",
+   "flavor": "破れて擦り切れた、路上暮らし風の服。わざとそう見せる人もいる。"
+  },
+  "L9M6cOzuRRjr5nzK": {
+   "name_ja": "バッグレディシックミラーシェード",
+   "name_en": "Bag Lady Chic Mirrorshades",
+   "effect": "ファッションのスタイル「バッグレディ・シック」のミラーシェード。",
+   "flavor": "破れて擦り切れた、路上暮らし風の服。わざとそう見せる人もいる。"
+  },
+  "lC8eVVZeNha8IVW3": {
+   "name_ja": "バッグレディシックトップス",
+   "name_en": "Bag Lady Chic Top",
+   "effect": "ファッションのスタイル「バッグレディ・シック」のトップス。",
+   "flavor": "破れて擦り切れた、路上暮らし風の服。わざとそう見せる人もいる。"
+  },
+  "vzfQwOODnGR0FmF0": {
+   "name_ja": "ボヘミアンボトムス",
+   "name_en": "Bohemian Bottoms",
+   "effect": "ファッションのスタイル「ボヘミアン」のボトムス。",
+   "flavor": "自由気ままな 70 年代のヒッピー風。"
+  },
+  "i519Cys4b0yd1Cr0": {
+   "name_ja": "ボヘミアンコンタクトレンズ",
+   "name_en": "Bohemian Contact Lenses",
+   "effect": "ファッションのスタイル「ボヘミアン」のコンタクトレンズ。",
+   "flavor": "自由気ままな 70 年代のヒッピー風。"
+  },
+  "gyknELQ6i5opCrix": {
+   "name_ja": "ボヘミアンフットウェア",
+   "name_en": "Bohemian Footwear",
+   "effect": "ファッションのスタイル「ボヘミアン」の靴。",
+   "flavor": "自由気ままな 70 年代のヒッピー風。"
+  },
+  "NLERUj14kVq8X2Ni": {
+   "name_ja": "ボヘミアン眼鏡",
+   "name_en": "Bohemian Glasses",
+   "effect": "ファッションのスタイル「ボヘミアン」の眼鏡。",
+   "flavor": "自由気ままな 70 年代のヒッピー風。"
+  },
+  "eWcG5hrHa4ZbExyd": {
+   "name_ja": "ボヘミアン帽子",
+   "name_en": "Bohemian Hat",
+   "effect": "ファッションのスタイル「ボヘミアン」の帽子。",
+   "flavor": "自由気ままな 70 年代のヒッピー風。"
+  },
+  "N2mtHxxCi3GZOKlA": {
+   "name_ja": "ボヘミアンジャケット",
+   "name_en": "Bohemian Jacket",
+   "effect": "ファッションのスタイル「ボヘミアン」のジャケット。",
+   "flavor": "自由気ままな 70 年代のヒッピー風。"
+  },
+  "e8XHcBePafMJsvEa": {
+   "name_ja": "ボヘミアンジュエリー",
+   "name_en": "Bohemian Jewelry",
+   "effect": "ファッションのスタイル「ボヘミアン」のアクセサリー。",
+   "flavor": "自由気ままな 70 年代のヒッピー風。"
+  },
+  "Xi3LUVQem3nBHgB1": {
+   "name_ja": "ボヘミアンミラーシェード",
+   "name_en": "Bohemian Mirrorshades",
+   "effect": "ファッションのスタイル「ボヘミアン」のミラーシェード。",
+   "flavor": "自由気ままな 70 年代のヒッピー風。"
+  },
+  "1H2rlvYXvDwoHpu2": {
+   "name_ja": "ボヘミアントップス",
+   "name_en": "Bohemian Top",
+   "effect": "ファッションのスタイル「ボヘミアン」のトップス。",
+   "flavor": "自由気ままな 70 年代のヒッピー風。"
+  },
+  "7R9YRIcp19dPV3eV": {
+   "name_ja": "ビジネスウェアボトムス",
+   "name_en": "Businesswear Bottoms",
+   "effect": "ファッションのスタイル「ビジネスウェア」のボトムス。",
+   "flavor": "企業人の定番。仕事で来ていることが一目でわかる。"
+  },
+  "CUIEsrA1cRWCwIcT": {
+   "name_ja": "ビジネスウェアコンタクトレンズ",
+   "name_en": "Businesswear Contact Lenses",
+   "effect": "ファッションのスタイル「ビジネスウェア」のコンタクトレンズ。",
+   "flavor": "企業人の定番。仕事で来ていることが一目でわかる。"
+  },
+  "snWlKhOmEC7nbAE6": {
+   "name_ja": "ビジネスウェアフットウェア",
+   "name_en": "Businesswear Footwear",
+   "effect": "ファッションのスタイル「ビジネスウェア」の靴。",
+   "flavor": "企業人の定番。仕事で来ていることが一目でわかる。"
+  },
+  "XHzLjyq4D1XSeX0f": {
+   "name_ja": "ビジネスウェア眼鏡",
+   "name_en": "Businesswear Glasses",
+   "effect": "ファッションのスタイル「ビジネスウェア」の眼鏡。",
+   "flavor": "企業人の定番。仕事で来ていることが一目でわかる。"
+  },
+  "QO0mHo3XjlRs8iyS": {
+   "name_ja": "ビジネスウェア帽子",
+   "name_en": "Businesswear Hat",
+   "effect": "ファッションのスタイル「ビジネスウェア」の帽子。",
+   "flavor": "企業人の定番。仕事で来ていることが一目でわかる。"
+  },
+  "2mb53u4D65ddOlNx": {
+   "name_ja": "ビジネスウェアジャケット",
+   "name_en": "Businesswear Jacket",
+   "effect": "ファッションのスタイル「ビジネスウェア」のジャケット。",
+   "flavor": "企業人の定番。仕事で来ていることが一目でわかる。"
+  },
+  "J0OQweZ1zPP9Izdc": {
+   "name_ja": "ビジネスウェアジュエリー",
+   "name_en": "Businesswear Jewelry",
+   "effect": "ファッションのスタイル「ビジネスウェア」のアクセサリー。",
+   "flavor": "企業人の定番。仕事で来ていることが一目でわかる。"
+  },
+  "OaYG5oUfDQ8VAT71": {
+   "name_ja": "ビジネスウェアミラーシェード",
+   "name_en": "Businesswear Mirrorshades",
+   "effect": "ファッションのスタイル「ビジネスウェア」のミラーシェード。",
+   "flavor": "企業人の定番。仕事で来ていることが一目でわかる。"
+  },
+  "0NrP4N71Kcvywx31": {
+   "name_ja": "ビジネスウェアトップス",
+   "name_en": "Businesswear Top",
+   "effect": "ファッションのスタイル「ビジネスウェア」のトップス。",
+   "flavor": "企業人の定番。仕事で来ていることが一目でわかる。"
+  },
+  "cSpS0OVoCyH7Fy35": {
+   "name_ja": "ギャングカラーボトムス",
+   "name_en": "Gang Colors Bottoms",
+   "effect": "ファッションのスタイル「ギャングカラー」のボトムス。",
+   "flavor": "どのギャングに属しているかを、色で示す服。"
+  },
+  "wkB34RhKmRQdjsxi": {
+   "name_ja": "ギャングカラーコンタクトレンズ",
+   "name_en": "Gang Colors Contact Lenses",
+   "effect": "ファッションのスタイル「ギャングカラー」のコンタクトレンズ。",
+   "flavor": "どのギャングに属しているかを、色で示す服。"
+  },
+  "vTV6oSFUewadZRrZ": {
+   "name_ja": "ギャングカラーフットウェア",
+   "name_en": "Gang Colors Footwear",
+   "effect": "ファッションのスタイル「ギャングカラー」の靴。",
+   "flavor": "どのギャングに属しているかを、色で示す服。"
+  },
+  "PGK96hSYe39toOam": {
+   "name_ja": "ギャングカラーメガネ",
+   "name_en": "Gang Colors Glasses",
+   "effect": "ファッションのスタイル「ギャングカラー」の眼鏡。",
+   "flavor": "どのギャングに属しているかを、色で示す服。"
+  },
+  "WtKsSJYtOlqhoLAp": {
+   "name_ja": "ギャングカラー帽子",
+   "name_en": "Gang Colors Hat",
+   "effect": "ファッションのスタイル「ギャングカラー」の帽子。",
+   "flavor": "どのギャングに属しているかを、色で示す服。"
+  },
+  "BGTQ3MinP72azZ8C": {
+   "name_ja": "ギャングカラージャケット",
+   "name_en": "Gang Colors Jacket",
+   "effect": "ファッションのスタイル「ギャングカラー」のジャケット。",
+   "flavor": "どのギャングに属しているかを、色で示す服。"
+  },
+  "Ya6Zu2KQ1u5SC6Xj": {
+   "name_ja": "ギャングカラージュエリー",
+   "name_en": "Gang Colors Jewelry",
+   "effect": "ファッションのスタイル「ギャングカラー」のアクセサリー。",
+   "flavor": "どのギャングに属しているかを、色で示す服。"
+  },
+  "Q3Cd7mARIdnaDH6o": {
+   "name_ja": "ギャングカラーミラーシェード",
+   "name_en": "Gang Colors Mirrorshades",
+   "effect": "ファッションのスタイル「ギャングカラー」のミラーシェード。",
+   "flavor": "どのギャングに属しているかを、色で示す服。"
+  },
+  "sWcT0Dw2kpW172Al": {
+   "name_ja": "ギャングカラートップス",
+   "name_en": "Gang Colors Top",
+   "effect": "ファッションのスタイル「ギャングカラー」のトップス。",
+   "flavor": "どのギャングに属しているかを、色で示す服。"
+  },
+  "pBeQLCw69Zbb11gc": {
+   "name_ja": "ジェネリックシックボトムス",
+   "name_en": "Generic Chic Bottoms",
+   "effect": "ファッションのスタイル「ジェネリック・シック」のボトムス。",
+   "flavor": "巨大ショッピングモールで売っている、ありふれた服。人混みに紛れたいときに。"
+  },
+  "uElnJYV2LregEulH": {
+   "name_ja": "ジェネリックシックコンタクトレンズ",
+   "name_en": "Generic Chic Contact Lenses",
+   "effect": "ファッションのスタイル「ジェネリック・シック」のコンタクトレンズ。",
+   "flavor": "巨大ショッピングモールで売っている、ありふれた服。人混みに紛れたいときに。"
+  },
+  "U0wWSqKmvGPtipyp": {
+   "name_ja": "ジェネリックシックフットウェア",
+   "name_en": "Generic Chic Footwear",
+   "effect": "ファッションのスタイル「ジェネリック・シック」の靴。",
+   "flavor": "巨大ショッピングモールで売っている、ありふれた服。人混みに紛れたいときに。"
+  },
+  "M8voGXTG2a8S1CzV": {
+   "name_ja": "ジェネリックシック眼鏡",
+   "name_en": "Generic Chic Glasses",
+   "effect": "ファッションのスタイル「ジェネリック・シック」の眼鏡。",
+   "flavor": "巨大ショッピングモールで売っている、ありふれた服。人混みに紛れたいときに。"
+  },
+  "HVP2iZPeOjhXbPrE": {
+   "name_ja": "ジェネリックシック帽子",
+   "name_en": "Generic Chic Hat",
+   "effect": "ファッションのスタイル「ジェネリック・シック」の帽子。",
+   "flavor": "巨大ショッピングモールで売っている、ありふれた服。人混みに紛れたいときに。"
+  },
+  "YVSKLAkTxhNRnap2": {
+   "name_ja": "ジェネリックシックジャケット",
+   "name_en": "Generic Chic Jacket",
+   "effect": "ファッションのスタイル「ジェネリック・シック」のジャケット。",
+   "flavor": "巨大ショッピングモールで売っている、ありふれた服。人混みに紛れたいときに。"
+  },
+  "dpOkYM9UIo4oQ0iy": {
+   "name_ja": "ジェネリックシックジュエリー",
+   "name_en": "Generic Chic Jewelry",
+   "effect": "ファッションのスタイル「ジェネリック・シック」のアクセサリー。",
+   "flavor": "巨大ショッピングモールで売っている、ありふれた服。人混みに紛れたいときに。"
+  },
+  "Ubp6Vdc9NjCpW1as": {
+   "name_ja": "ジェネリックシックミラーシェード",
+   "name_en": "Generic Chic Mirrorshades",
+   "effect": "ファッションのスタイル「ジェネリック・シック」のミラーシェード。",
+   "flavor": "巨大ショッピングモールで売っている、ありふれた服。人混みに紛れたいときに。"
+  },
+  "ZfvZg3yRrs9mHEqT": {
+   "name_ja": "ジェネリックシックトップス",
+   "name_en": "Generic Chic Top",
+   "effect": "ファッションのスタイル「ジェネリック・シック」のトップス。",
+   "flavor": "巨大ショッピングモールで売っている、ありふれた服。人混みに紛れたいときに。"
+  },
+  "jw1y8Cznu8PPD8Vk": {
+   "name_ja": "ハイファッションボトムス",
+   "name_en": "High Fashion Bottoms",
+   "effect": "ファッションのスタイル「ハイファッション」のボトムス。",
+   "flavor": "最高級の素材と一流のブランド。成り上がった人が着る服。"
+  },
+  "ZJJEcMX3RdfsRFMK": {
+   "name_ja": "ハイファッションコンタクトレンズ",
+   "name_en": "High Fashion Contact Lenses",
+   "effect": "ファッションのスタイル「ハイファッション」のコンタクトレンズ。",
+   "flavor": "最高級の素材と一流のブランド。成り上がった人が着る服。"
+  },
+  "KrtzKNCfYvzuV4Vm": {
+   "name_ja": "ハイファッションフットウェア",
+   "name_en": "High Fashion Footwear",
+   "effect": "ファッションのスタイル「ハイファッション」の靴。",
+   "flavor": "最高級の素材と一流のブランド。成り上がった人が着る服。"
+  },
+  "H8pEV5gEnaBWoDE4": {
+   "name_ja": "ハイファッション眼鏡",
+   "name_en": "High Fashion Glasses",
+   "effect": "ファッションのスタイル「ハイファッション」の眼鏡。",
+   "flavor": "最高級の素材と一流のブランド。成り上がった人が着る服。"
+  },
+  "GVQ1Q3Zi4d8IOLSB": {
+   "name_ja": "ハイファッション帽子",
+   "name_en": "High Fashion Hat",
+   "effect": "ファッションのスタイル「ハイファッション」の帽子。",
+   "flavor": "最高級の素材と一流のブランド。成り上がった人が着る服。"
+  },
+  "z2Gfkljp1A65Onoo": {
+   "name_ja": "ハイファッションジャケット",
+   "name_en": "High Fashion Jacket",
+   "effect": "ファッションのスタイル「ハイファッション」のジャケット。",
+   "flavor": "最高級の素材と一流のブランド。成り上がった人が着る服。"
+  },
+  "v6QgCemk6DInkpZJ": {
+   "name_ja": "ハイファッションジュエリー",
+   "name_en": "High Fashion Jewelry",
+   "effect": "ファッションのスタイル「ハイファッション」のアクセサリー。",
+   "flavor": "最高級の素材と一流のブランド。成り上がった人が着る服。"
+  },
+  "TYQQDKiVA8NWE4Rp": {
+   "name_ja": "ハイファッションミラーシェード",
+   "name_en": "High Fashion Mirrorshades",
+   "effect": "ファッションのスタイル「ハイファッション」のミラーシェード。",
+   "flavor": "最高級の素材と一流のブランド。成り上がった人が着る服。"
+  },
+  "DFAw9OL3K2Msi4lv": {
+   "name_ja": "ハイファッショントップス",
+   "name_en": "High Fashion Top",
+   "effect": "ファッションのスタイル「ハイファッション」のトップス。",
+   "flavor": "最高級の素材と一流のブランド。成り上がった人が着る服。"
+  },
+  "7vOAIJh1UcjUjnek": {
+   "name_ja": "レジャーウェアボトムス",
+   "name_en": "Leisurewear Bottoms",
+   "effect": "ファッションのスタイル「レジャーウェア」のボトムス。",
+   "flavor": "ごくふつうの運動着。走るにも、家でくつろぐにも。"
+  },
+  "CWjTYdVe0wQmVcaT": {
+   "name_ja": "レジャーウェアコンタクトレンズ",
+   "name_en": "Leisurewear Contact Lenses",
+   "effect": "ファッションのスタイル「レジャーウェア」のコンタクトレンズ。",
+   "flavor": "ごくふつうの運動着。走るにも、家でくつろぐにも。"
+  },
+  "4XMXfUzsDo3y14nw": {
+   "name_ja": "レジャーウェアフットウェア",
+   "name_en": "Leisurewear Footwear",
+   "effect": "ファッションのスタイル「レジャーウェア」の靴。",
+   "flavor": "ごくふつうの運動着。走るにも、家でくつろぐにも。"
+  },
+  "5su6o5CwmT0dNdZ7": {
+   "name_ja": "レジャーウェア眼鏡",
+   "name_en": "Leisurewear Glasses",
+   "effect": "ファッションのスタイル「レジャーウェア」の眼鏡。",
+   "flavor": "ごくふつうの運動着。走るにも、家でくつろぐにも。"
+  },
+  "8wOCTUwRwIWMdbEH": {
+   "name_ja": "レジャーウェア帽子",
+   "name_en": "Leisurewear Hat",
+   "effect": "ファッションのスタイル「レジャーウェア」の帽子。",
+   "flavor": "ごくふつうの運動着。走るにも、家でくつろぐにも。"
+  },
+  "Yxw3WxrFc8yIz2Vh": {
+   "name_ja": "レジャーウェアジャケット",
+   "name_en": "Leisurewear Jacket",
+   "effect": "ファッションのスタイル「レジャーウェア」のジャケット。",
+   "flavor": "ごくふつうの運動着。走るにも、家でくつろぐにも。"
+  },
+  "Q7LFdojJFEIRaLlN": {
+   "name_ja": "レジャーウェアジュエリー",
+   "name_en": "Leisurewear Jewelry",
+   "effect": "ファッションのスタイル「レジャーウェア」のアクセサリー。",
+   "flavor": "ごくふつうの運動着。走るにも、家でくつろぐにも。"
+  },
+  "f9Wfqq0Pda55uhxv": {
+   "name_ja": "レジャーウェアミラーシェード",
+   "name_en": "Leisurewear Mirrorshades",
+   "effect": "ファッションのスタイル「レジャーウェア」のミラーシェード。",
+   "flavor": "ごくふつうの運動着。走るにも、家でくつろぐにも。"
+  },
+  "2FdvqlQU1RTvefq6": {
+   "name_ja": "レジャーウェアトップス",
+   "name_en": "Leisurewear Top",
+   "effect": "ファッションのスタイル「レジャーウェア」のトップス。",
+   "flavor": "ごくふつうの運動着。走るにも、家でくつろぐにも。"
+  },
+  "dPKmuX8WliDFZxT0": {
+   "name_ja": "ノーマッドレザーボトムス",
+   "name_en": "Nomad Leathers Bottoms",
+   "effect": "ファッションのスタイル「ノーマッド・レザー」のボトムス。",
+   "flavor": "クロームで飾ったカウボーイのような、ノーマッド風の革の服。"
+  },
+  "cmgqzHg3KxyJx7LP": {
+   "name_ja": "ノーマッドレザーコンタクトレンズ",
+   "name_en": "Nomad Leathers Contact Lenses",
+   "effect": "ファッションのスタイル「ノーマッド・レザー」のコンタクトレンズ。",
+   "flavor": "クロームで飾ったカウボーイのような、ノーマッド風の革の服。"
+  },
+  "CcIZ23rub5QtcOHJ": {
+   "name_ja": "ノーマッドレザーフットウェア",
+   "name_en": "Nomad Leathers Footwear",
+   "effect": "ファッションのスタイル「ノーマッド・レザー」の靴。",
+   "flavor": "クロームで飾ったカウボーイのような、ノーマッド風の革の服。"
+  },
+  "qz3mGN6hZXCzdl6d": {
+   "name_ja": "ノーマッドレザー眼鏡",
+   "name_en": "Nomad Leathers Glasses",
+   "effect": "ファッションのスタイル「ノーマッド・レザー」の眼鏡。",
+   "flavor": "クロームで飾ったカウボーイのような、ノーマッド風の革の服。"
+  },
+  "AEwopHOgEL32MM1h": {
+   "name_ja": "ノーマッドレザー帽子",
+   "name_en": "Nomad Leathers Hat",
+   "effect": "ファッションのスタイル「ノーマッド・レザー」の帽子。",
+   "flavor": "クロームで飾ったカウボーイのような、ノーマッド風の革の服。"
+  },
+  "5ieeaIfU392bw34p": {
+   "name_ja": "ノーマッドレザージャケット",
+   "name_en": "Nomad Leathers Jacket",
+   "effect": "ファッションのスタイル「ノーマッド・レザー」のジャケット。",
+   "flavor": "クロームで飾ったカウボーイのような、ノーマッド風の革の服。"
+  },
+  "bT9GZSkMTG1Flubj": {
+   "name_ja": "ノーマッドレザージュエリー",
+   "name_en": "Nomad Leathers Jewelry",
+   "effect": "ファッションのスタイル「ノーマッド・レザー」のアクセサリー。",
+   "flavor": "クロームで飾ったカウボーイのような、ノーマッド風の革の服。"
+  },
+  "VxOL6dzFySRECegA": {
+   "name_ja": "ノーマッドレザーミラーシェード",
+   "name_en": "Nomad Leathers Mirrorshades",
+   "effect": "ファッションのスタイル「ノーマッド・レザー」のミラーシェード。",
+   "flavor": "クロームで飾ったカウボーイのような、ノーマッド風の革の服。"
+  },
+  "7JZ0haq31YU8GUOr": {
+   "name_ja": "ノーマッドレザートップス",
+   "name_en": "Nomad Leathers Top",
+   "effect": "ファッションのスタイル「ノーマッド・レザー」のトップス。",
+   "flavor": "クロームで飾ったカウボーイのような、ノーマッド風の革の服。"
+  },
+  "6VsqiX9SBrnhmObd": {
+   "name_ja": "アーバンフラッシュボトムス",
+   "name_en": "Urban Flash Bottoms",
+   "effect": "ファッションのスタイル「アーバン・フラッシュ」のボトムス。",
+   "flavor": "レッドの時代でいちばんハイテクで派手な服。"
+  },
+  "tbSiwiQcgojrOWdn": {
+   "name_ja": "アーバンフラッシュコンタクトレンズ",
+   "name_en": "Urban Flash Contact Lenses",
+   "effect": "ファッションのスタイル「アーバン・フラッシュ」のコンタクトレンズ。",
+   "flavor": "レッドの時代でいちばんハイテクで派手な服。"
+  },
+  "qwQVhWkGL2hJ2H1q": {
+   "name_ja": "アーバンフラッシュフットウェア",
+   "name_en": "Urban Flash Footwear",
+   "effect": "ファッションのスタイル「アーバン・フラッシュ」の靴。",
+   "flavor": "レッドの時代でいちばんハイテクで派手な服。"
+  },
+  "lNAutq2C1if6vjlT": {
+   "name_ja": "アーバンフラッシュ眼鏡",
+   "name_en": "Urban Flash Glasses",
+   "effect": "ファッションのスタイル「アーバン・フラッシュ」の眼鏡。",
+   "flavor": "レッドの時代でいちばんハイテクで派手な服。"
+  },
+  "ltqjJsZ9XSRxUvHs": {
+   "name_ja": "アーバンフラッシュ帽子",
+   "name_en": "Urban Flash Hat",
+   "effect": "ファッションのスタイル「アーバン・フラッシュ」の帽子。",
+   "flavor": "レッドの時代でいちばんハイテクで派手な服。"
+  },
+  "y3Ij43Eg3b0tq16F": {
+   "name_ja": "アーバンフラッシュジャケット",
+   "name_en": "Urban Flash Jacket",
+   "effect": "ファッションのスタイル「アーバン・フラッシュ」のジャケット。",
+   "flavor": "レッドの時代でいちばんハイテクで派手な服。"
+  },
+  "iwf7yiZyvmhW3rPj": {
+   "name_ja": "アーバンフラッシュジュエリー",
+   "name_en": "Urban Flash Jewelry",
+   "effect": "ファッションのスタイル「アーバン・フラッシュ」のアクセサリー。",
+   "flavor": "レッドの時代でいちばんハイテクで派手な服。"
+  },
+  "jhwXtXIbJFgwirQO": {
+   "name_ja": "アーバンフラッシュミラーシェード",
+   "name_en": "Urban Flash Mirrorshades",
+   "effect": "ファッションのスタイル「アーバン・フラッシュ」のミラーシェード。",
+   "flavor": "レッドの時代でいちばんハイテクで派手な服。"
+  },
+  "7RWqk1fmaZdfddaT": {
+   "name_ja": "アーバンフラッシュトップス",
+   "name_en": "Urban Flash Top",
+   "effect": "ファッションのスタイル「アーバン・フラッシュ」のトップス。",
+   "flavor": "レッドの時代でいちばんハイテクで派手な服。"
+  },
+  "0T5Yjy0asGttmbXP": {
+   "name_ja": "サイバーデッキ",
+   "name_en": "Cyberdeck",
+   "effect": "ネットランナー用のデッキ。スロット 7（高品質 9、低品質 5）。",
+   "flavor": "ネットへの入口。性能より、持ち主の腕がものを言う。"
+  },
+  "AUMkHYqfODTjgtMD": {
+   "name_ja": "サイバーデッキ(高品質)",
+   "name_en": "Cyberdeck (Excellent)",
+   "effect": "ネットランナー用のデッキ。スロット 7（高品質 9、低品質 5）。",
+   "flavor": "ネットへの入口。性能より、持ち主の腕がものを言う。"
+  },
+  "DsO5c0MS5tZ0bh1B": {
+   "name_ja": "サイバーデッキ(低品質)",
+   "name_en": "Cyberdeck (Poor)",
+   "effect": "ネットランナー用のデッキ。スロット 7（高品質 9、低品質 5）。",
+   "flavor": "ネットへの入口。性能より、持ち主の腕がものを言う。"
+  },
+  "9pZMYMlVFeWDS56L": {
+   "name_ja": "聴覚強化",
+   "name_en": "Amplified Hearing",
+   "effect": "耳を使う知覚の判定に +2。",
+   "flavor": "壁の向こうのささやきまで拾う。"
+  },
+  "3JmrxH1mrD592Hxa": {
+   "name_ja": "対閃光",
+   "name_en": "Anti-Dazzle",
+   "effect": "両目に入れる必要がある。閃光（閃光音響グレネードなど）で目がくらまない。",
+   "flavor": "まぶしい光の中でも、相手の顔が見える。"
+  },
+  "lqyjkgvm1kvILvuw": {
+   "name_ja": "追加肩マウント",
+   "name_en": "Artificial Shoulder Mount",
+   "effect": "サイバーアームをもう 1 組付けられるようにする。追加の腕は別に買って取り付ける。",
+   "flavor": "腕が 4 本あれば、できることも倍になる。人間らしさは半分になる。"
+  },
+  "3LDuErXOiN3nkRl2": {
+   "name_ja": "オーディオ・レコーダー",
+   "name_en": "Audio Recorder",
+   "effect": "音を録る。チップやエージェントにつなげる。",
+   "flavor": "聞いたことを、そのまま証拠にできる。"
+  },
+  "oSCkXo6VZXIwjWhL": {
+   "name_ja": "オーディオ・ヴォックス",
+   "name_en": "AudioVox",
+   "effect": "声を補正するシンセサイザー。演技と楽器演奏の判定に +2。",
+   "flavor": "どんな声でも、狙った音程で出せる。"
+  },
+  "aXls5W8VKJMNT2Cm": {
+   "name_ja": "バトルグローブ",
+   "name_en": "Battleglove",
+   "effect": "手と前腕を覆う特殊な重い籠手。オプションの枠が 3 つある。",
+   "flavor": "籠手そのものが、もう一つの道具箱。"
+  },
+  "6xKxgXAGcxK05CqM": {
+   "name_ja": "ビッグ・ナック",
+   "name_en": "Big Knucks",
+   "effect": "装甲の拳。近接武器として使える。",
+   "flavor": "殴られた側は、拳が金属だと遅れて気づく。"
+  },
+  "0d2bEozOFhfPgkUP": {
+   "name_ja": "バイオモニタ",
+   "name_en": "Biomonitor",
+   "effect": "体の状態を LED で表示する。エージェントにつなげる。",
+   "flavor": "自分の脈を、皮膚の上で確かめられる。"
+  },
+  "U4RT0J4GJLz7gmby": {
+   "name_ja": "ブレインダンス・レコーダー",
+   "name_en": "Braindance Recorder",
+   "effect": "記憶をブレインダンスとして記録する。メディアに向く。",
+   "flavor": "見たもの、感じたもの、全部が売り物になる。"
+  },
+  "k2Q1XVCKESAYAi0c": {
+   "name_ja": "盗聴器検出器",
+   "name_en": "Bug Detector",
+   "effect": "2m 以内の盗聴器や盗聴を知らせる。",
+   "flavor": "耳の奥で、警告音が鳴る。"
+  },
+  "UzJBUdhSbGW6wzA2": {
+   "name_ja": "化学物質分析器",
+   "name_en": "Chemical Analyzer",
+   "effect": "チップウェア。物の化学成分を調べる。",
+   "flavor": "舌に乗せる前に、中身がわかる。"
+  },
+  "6jicmuwJKrB98O1R": {
+   "name_ja": "ケムスキン",
+   "name_en": "Chemskin",
+   "effect": "肌の色を変える。テックヘアと一緒に使うと身だしなみの判定に +2。",
+   "flavor": "その日の気分で、肌の色を選ぶ。"
+  },
+  "IJarQGKk5rPayoLT": {
+   "name_ja": "チップウェア・ソケット",
+   "name_en": "Chipware Socket",
+   "effect": "チップウェアを 1 つ差して抜けるソケット。",
+   "flavor": "首の後ろに開いた、技能の差込口。"
+  },
+  "pYFotQ9V3dtVO4ks": {
+   "name_ja": "カイロン",
+   "name_en": "Chyron",
+   "effect": "目の中の小さな画面。退屈なときに別の映像を重ねて見られる。",
+   "flavor": "退屈な会議の最中も、目の端でニュースを流せる。"
+  },
+  "jAdhAAhK6fHHTEU2": {
+   "name_ja": "光彩変色",
+   "name_en": "Color Shift",
+   "effect": "目の色と模様を自由に変えられる。",
+   "flavor": "瞳の色が、いつでも変えられる。"
+  },
+  "t1h3krjph5M3TwQa": {
+   "name_ja": "避妊インプラント",
+   "name_en": "Contraceptive Implant",
+   "effect": "望まない妊娠を防ぐ。",
+   "flavor": "誰にも気づかれない、小さな安心。"
+  },
+  "RT4NU0EbvmkgoSpZ": {
+   "name_ja": "サイバーアーム",
+   "name_en": "Cyberarm",
+   "effect": "機械の義手。手が 1 つ付いてくる。",
+   "flavor": "生身より強く、壊れても替えがきく腕。"
+  },
+  "hsoSD662cLKvHKZJ": {
+   "name_ja": "サイバー聴覚基本システム",
+   "name_en": "Cyberaudio Suite",
+   "effect": "聴覚の強化を取り付けるための基本の装置。",
+   "flavor": "耳の中に、機械の土台を組みこむ。"
+  },
+  "eZg3gGGEJ7r2K9ng": {
+   "name_ja": "サイバーデッキ",
+   "name_en": "Cyberdeck (Hardwired)",
+   "effect": "体に組みこんだサイバーデッキ。いつでも使える。",
+   "flavor": "デッキを忘れて出かけることは、もうない。"
+  },
+  "aC234RUXPPUb08cO": {
+   "name_ja": "サイバーアイ",
+   "name_en": "Cybereye",
+   "effect": "人工の目。",
+   "flavor": "生まれ持った目より、よく見える。見えすぎることもある。"
+  },
+  "APmOX0zOhga6Z1e6": {
+   "name_ja": "サイバーレッグ",
+   "name_en": "Cyberleg",
+   "effect": "機械の義足。足が 1 つ付いてくる。",
+   "flavor": "疲れを知らない脚。"
+  },
+  "YPujgoyVf2ZBR1hK": {
+   "name_ja": "サイバースネーク",
+   "name_en": "Cybersnake",
+   "effect": "喉に仕込んだ蛇。超大型近接武器として使える。",
+   "flavor": "口を開けた瞬間、相手は二度と忘れられない光景を見る。"
+  },
+  "IdSRZEcuCutjFB1D": {
+   "name_ja": "ダーツガン",
+   "name_en": "Dartgun",
+   "effect": "隠せる単発の武器。",
+   "flavor": "目から撃つ一発。誰も予想していない。"
+  },
+  "BE35FKj9lWvxAxb0": {
+   "name_ja": "スキルチップ(×2)",
+   "name_en": "Difficult Skill Chip",
+   "effect": "チップウェア。差しているあいだ、特定の ×2 の技能が 3 になる（すでに 3 以上なら変わらない）。",
+   "flavor": "難しい技術も、チップ一枚で人並みに。"
+  },
+  "vdMfxKJPmAvcpojJ": {
+   "name_ja": "EMPスレッディング",
+   "name_en": "EMP Threading",
+   "effect": "肌に回路基板の模様を出す。",
+   "flavor": "体に回路が走っているように見せる、流行りの飾り。"
+  },
+  "hQzMZYd3Tt0SIE1v": {
+   "name_ja": "強化抗体",
+   "name_en": "Enhanced Antibodies",
+   "effect": "休んでいるあいだの自然治癒を 2 倍にする。",
+   "flavor": "寝ているうちに、傷が早くふさがる。"
+  },
+  "SbWFgD5rlVtQoadd": {
+   "name_ja": "Exposed Covering (Cyber Arm)",
+   "name_en": "Exposed Covering (Cyber Arm)",
+   "effect": "覆いのない、機械がむき出しの状態。",
+   "flavor": "金属の骨組みがそのまま見える腕。"
+  },
+  "Sr9OA45oTqAPn9X0": {
+   "name_ja": "Exposed Covering (Cyber Leg)",
+   "name_en": "Exposed Covering (Cyber Leg)",
+   "effect": "覆いのない、機械がむき出しの状態。",
+   "flavor": "金属の骨組みがそのまま見える脚。"
+  },
+  "Y0ILjIs1E1o0SRUV": {
+   "name_ja": "えら",
+   "name_en": "Gills",
+   "effect": "水の中で呼吸できる。",
+   "flavor": "沈められても、溺れない。"
+  },
+  "Lx9FSNDEIxLZ7Pyh": {
+   "name_ja": "強化移植筋肉&骨膜編織",
+   "name_en": "Grafted Muscle and Bone Lace",
+   "effect": "BODY を 2 上げる（関係する値も変わる）。重ねられるが BODY は 10 まで。",
+   "flavor": "移植した筋肉と骨の補強で、体が一回り大きくなる。"
+  },
+  "v69jYqL7RMbs9PW4": {
+   "name_ja": "グラップル・ハンド",
+   "name_en": "Grapple Hand",
+   "effect": "手に仕込んだ引っこめられる鉤縄。",
+   "flavor": "指を伸ばせば、屋上に届く。"
+  },
+  "aEG91CA3amfU0Q8U": {
+   "name_ja": "グリップ・フット",
+   "name_en": "Grip Foot",
+   "effect": "両足に入れる必要がある。垂直な壁を登れる足場をつかむ。",
+   "flavor": "壁も天井も、歩ける場所になる。"
+  },
+  "nXAn2Sc66US0a7pg": {
+   "name_ja": "ハードンド・シールディング(サイバーアーム)",
+   "name_en": "Hardened Shielding (Cyber Arm)",
+   "effect": "腕と取り付けたオプションが EMP の効果を受けない。",
+   "flavor": "電磁パルスの中でも、腕は動きつづける。"
+  },
+  "RRXm4nt2yOVqtcZV": {
+   "name_ja": "ハードンド・シールディング(サイバーレッグ)",
+   "name_en": "Hardened Shielding (Cyber Leg)",
+   "effect": "脚と取り付けたオプションが EMP の効果を受けない。",
+   "flavor": "電磁パルスの中でも、脚は止まらない。"
+  },
+  "WDAHvqIooCSGWnCz": {
+   "name_ja": "隠しホルスター",
+   "name_en": "Hidden Holster",
+   "effect": "体の中に隠したホルスター。",
+   "flavor": "身体検査では、何も出てこない。"
+  },
+  "o3lADTIXaa3eLryF": {
+   "name_ja": "追跡装置",
+   "name_en": "Homing Tracer",
+   "effect": "1 マイル先まで追跡子を音で追える。追跡子は別売り。",
+   "flavor": "耳の奥で、標的の位置が鳴りつづける。"
+  },
+  "YRR8D6hUfq55KnoR": {
+   "name_ja": "画像強調",
+   "name_en": "Image Enhance",
+   "effect": "両目に入れる必要がある。目を使う知覚・読唇・物を隠す・見つけるの判定に +2。",
+   "flavor": "細かいところまで、くっきり見える。"
+  },
+  "6JMYrnxIsTgSmbFi": {
+   "name_ja": "埋込型リニア・フレームβ(ベータ)",
+   "name_en": "Implanted Linear Frame β (Beta)",
+   "effect": "BODY 8 と強化移植筋肉&骨膜編織 2 つが必要。BODY が 14 になる（HP・負傷の境目・死亡セーブも変わる）。",
+   "flavor": "体の中に、重機の骨格を埋めこむ。"
+  },
+  "2XhNJ80rCSvxAenP": {
+   "name_ja": "埋込型リニア・フレームΣ(シグマ)",
+   "name_en": "Implanted Linear Frame ∑ (Sigma)",
+   "effect": "BODY 6 と強化移植筋肉&骨膜編織が必要。BODY が 12 になる（HP・負傷の境目・死亡セーブも変わる）。",
+   "flavor": "体の中に、補強の骨格を埋めこむ。"
+  },
+  "FAeFRF71yjUlR3nk": {
+   "name_ja": "独立空気補給",
+   "name_en": "Independent Air Supply",
+   "effect": "30 分ぶんの空気。補充できる。",
+   "flavor": "息を止める必要は、もうない。"
+  },
+  "KofoAolDFb3rvpbL": {
+   "name_ja": "インターフェイス・プラグ",
+   "name_en": "Interface Plugs",
+   "effect": "手首か頭のプラグで、手を使わずに機械やシステムにつなげる。",
+   "flavor": "機械と直接つながる、体の差込口。"
+  },
+  "2AE8D8ZdRA815IZK": {
+   "name_ja": "内蔵エージェント",
+   "name_en": "Internal Agent",
+   "effect": "体に組みこんだエージェント。音声だけだが、ほかのサイバー機器とつなげる。",
+   "flavor": "頭の中で、秘書がささやく。"
+  },
+  "MVTHnEFMD7S3d1D9": {
+   "name_ja": "ジャンプ・ブースター",
+   "name_en": "Jump Booster",
+   "effect": "両脚に入れる必要がある。油圧で、跳ぶときのペナルティをなくす。",
+   "flavor": "ビルの隙間も、ひと跳びで越える。"
+  },
+  "nSdoCKRscSOeaZUH": {
+   "name_ja": "ケレンジコフ",
+   "name_en": "Kerenzikov",
+   "effect": "スピードウェア。イニシアチブに常に +2。",
+   "flavor": "撃ち合いの始まりで、いつも一歩先にいる。"
+  },
+  "yAqg8qVDiAc1ysYa": {
+   "name_ja": "レベル・ダンプナー",
+   "name_en": "Level Damper",
+   "effect": "耳が聞こえなくなったり、急な大きな音に驚いたりしない。",
+   "flavor": "爆音の中でも、耳は静か。"
+  },
+  "VbMY2fs3im1sP2dJ": {
+   "name_ja": "ライト・タトゥー",
+   "name_en": "Light Tattoo",
+   "effect": "光るタトゥー。3 つ以上入れると身だしなみ・ファッションの判定に +2。",
+   "flavor": "夜の街で、肌が光る。"
+  },
+  "Iqa0DXFWJji0JRHl": {
+   "name_ja": "低光量/赤外線/紫外線",
+   "name_en": "Low Light/IR/UV",
+   "effect": "両目に入れる必要がある。明るさや霧・煙による見えにくさのペナルティを無視する。",
+   "flavor": "闇も煙も、目の前から消える。"
+  },
+  "WzgaetvvHUQeD19B": {
+   "name_ja": "生身の腕",
+   "name_en": "Meat Arm",
+   "effect": "ふつうの腕。標準の手や一部の武器・道具を 1 つだけ付けられる。",
+   "flavor": "生まれたままの腕。"
+  },
+  "QsssoeIdaueepWxp": {
+   "name_ja": "Meat Foot",
+   "name_en": "Meat Foot",
+   "effect": "ふつうの足。",
+   "flavor": "生まれたままの足。"
+  },
+  "CgBrO0lr5fXzvcVY": {
+   "name_ja": "Meat Hand",
+   "name_en": "Meat Hand",
+   "effect": "ふつうの手。",
+   "flavor": "生まれたままの手。"
+  },
+  "gDN0U6mp3axrm9KQ": {
+   "name_ja": "生身の脚",
+   "name_en": "Meat Leg",
+   "effect": "ふつうの脚。標準の足やタロン・フットなどを付けられる。",
+   "flavor": "生まれたままの脚。"
+  },
+  "2Y63wKxk8P94YQUP": {
+   "name_ja": "医療用サイバーアーム",
+   "name_en": "Medical Grade Cyberarm",
+   "effect": "医療用のサイバーアーム。オプションを付けられない。",
+   "flavor": "失った腕の代わり。それ以上でも以下でもない。"
+  },
+  "5OrBv1knKOvpqDH7": {
+   "name_ja": "医療用サイバーレッグ",
+   "name_en": "Medical Grade Cyberleg",
+   "effect": "医療用のサイバーレッグ。オプションを付けられない。",
+   "flavor": "失った脚の代わり。それ以上でも以下でもない。"
+  },
+  "B59L6Lf0RtqTDUw7": {
+   "name_ja": "メドスキャナー",
+   "name_en": "Medscanner",
+   "effect": "腕に組みこんだメドスキャナー。けがをすぐ見立てられる。応急手当と救急医療の判定に +2。",
+   "flavor": "手をかざすだけで、傷の深さがわかる。"
+  },
+  "gAfBLrpJzkKVtr8o": {
+   "name_ja": "メモリ・チップ",
+   "name_en": "Memory Chip",
+   "effect": "チップウェア。脳のための記憶装置。抜くときは安全に。",
+   "flavor": "頭に差す、小さな記憶。"
+  },
+  "343Bc0xzAzX3bcB7": {
+   "name_ja": "顕微",
+   "name_en": "MicroOptics",
+   "effect": "400 倍まで拡大できる。",
+   "flavor": "指紋の溝まで見える。"
+  },
+  "YzRXqhofQHcRcHFr": {
+   "name_ja": "マイクロ・ビデオ",
+   "name_en": "MicroVideo",
+   "effect": "目のカメラ。チップやエージェントにつなげる。メディアに向く。",
+   "flavor": "見たものを、そのまま記録する。"
+  },
+  "l0rpyL5qxjIBOYZJ": {
+   "name_ja": "ミッドナイト・レディ™性的インプラント",
+   "name_en": "Midnight Lady Sexual Implant",
+   "effect": "性的なインプラント。",
+   "flavor": "詳しい説明は、店員に聞いてほしい。"
+  },
+  "AAzvZil3N8CJfwW8": {
+   "name_ja": "Mr. スタッド™性的インプラント",
+   "name_en": "Mr. Studd Sexual Implant",
+   "effect": "性的なインプラント。",
+   "flavor": "詳しい説明は、店員に聞いてほしい。"
+  },
+  "Iu2wDz9q6Ov0UAKo": {
+   "name_ja": "多眼マウント",
+   "name_en": "MultiOptic Mount",
+   "effect": "サイバーアイを最大 5 つ追加できる。追加の目は別に買って取り付ける。",
+   "flavor": "顔じゅうの目が、別々の方向を見ている。"
+  },
+  "1vcWKBzXQuBkJ3Dl": {
+   "name_ja": "鼻孔フィルター",
+   "name_en": "Nasal Filters",
+   "effect": "吸いこむガスや煙の影響を受けない。",
+   "flavor": "毒ガスの中でも、深呼吸できる。"
+  },
+  "ju5Rq9rOe2lpDKKl": {
+   "name_ja": "ニューラル・リンク",
+   "name_en": "Neural Link",
+   "effect": "神経系に接続する。",
+   "flavor": "体と機械をつなぐ、すべての基本。"
+  },
+  "pJmvlPM82IPK9RCG": {
+   "name_ja": "嗅覚増強",
+   "name_en": "Olfactory Boost",
+   "effect": "チップウェア。においで跡を追える。",
+   "flavor": "犬のように、においで人を追う。"
+  },
+  "umX2i9wlVcBG1lgv": {
+   "name_ja": "痛覚操作",
+   "name_en": "Pain Editor",
+   "effect": "チップウェア。重傷のペナルティをなくす。",
+   "flavor": "痛みは、ただの数字になる。"
+  },
+  "IwI8Ii32mqpaYeyA": {
+   "name_ja": "プラスチック・カヴァーリング(サイバーアーム)",
+   "name_en": "Plastic Covering (Cyber Arm)",
+   "effect": "腕のプラスチックの外装。",
+   "flavor": "安くて、それなりに見える。"
+  },
+  "DBBqtiw87n0yCJCW": {
+   "name_ja": "プラスチック・カヴァーリング(サイバーレッグ)",
+   "name_en": "Plastic Covering (Cyber Leg)",
+   "effect": "脚のプラスチックの外装。",
+   "flavor": "安くて、それなりに見える。"
+  },
+  "TievDHlAoROyoynx": {
+   "name_ja": "ポップアップ・グレネード・ランチャー",
+   "name_en": "Popup Grenade Launcher",
+   "effect": "隠せる単発のグレネード・ランチャー。出しているあいだ、その手で物を持てない。改造はスマートガン・リンクしか付けられない。",
+   "flavor": "腕が開いて、グレネードが顔を出す。"
+  },
+  "4zD0X4SZ3kqI9XJr": {
+   "name_ja": "ポップアップ近接武器",
+   "name_en": "Popup Melee Weapon",
+   "effect": "隠せる片手持ちの近接武器。出しているあいだ、その手で物を持てない。入れる武器に合わせて設定する。",
+   "flavor": "腕の中から、刃が飛び出す。"
+  },
+  "gUvoOayETJInctg8": {
+   "name_ja": "ポップアップ遠隔武器",
+   "name_en": "Popup Ranged Weapon",
+   "effect": "隠せる片手持ちの射撃武器。出しているあいだ、その手で物を持てない。入れる武器に合わせて設定する。",
+   "flavor": "腕の中から、銃口が飛び出す。"
+  },
+  "I08f3hOEgAPNG4kJ": {
+   "name_ja": "ポップアップ・シールド",
+   "name_en": "Popup Shield",
+   "effect": "すぐ出し入れできる折りたたみの防弾盾。出しているあいだ、その手で物を持てない。盾の HP は防弾シールドとして管理する。",
+   "flavor": "腕から開く、折りたたみの盾。"
+  },
+  "1GPXBuKIodbM3O0I": {
+   "name_ja": "クイック・チェンジ・マウント",
+   "name_en": "Quick Change Mount",
+   "effect": "サイバーアームを外して付け替えられる。場面ごとに腕を替えられる。",
+   "flavor": "仕事に合わせて、腕を選ぶ。"
+  },
+  "KVn4A1c6svXPovI4": {
+   "name_ja": "レーダー探知機",
+   "name_en": "Radar Detector",
+   "effect": "半径 1 マイル以内の作動中のレーダーを知らせる。",
+   "flavor": "見張られていることを、耳が先に知る。"
+  },
+  "JwM7wAbmRZfL3Z3c": {
+   "name_ja": "レーダー/ソナー・インプラント",
+   "name_en": "Radar/Sonar Implant",
+   "effect": "周り 50m を探る。遮蔽物の向こうは探れない。",
+   "flavor": "目を閉じていても、周りの形がわかる。"
+  },
+  "9mLNqf0t3qWKAqXj": {
+   "name_ja": "放射線感知器",
+   "name_en": "Radiation Detector",
+   "effect": "放射線を青い光で見せる。100m 先まで。",
+   "flavor": "危ない場所が、青く光って見える。"
+  },
+  "u0VMOMNdTt72c37W": {
+   "name_ja": "無線通信機",
+   "name_en": "Radio Communicator",
+   "effect": "体に組みこんだ無線機。範囲 1 マイル。",
+   "flavor": "口を動かさずに、仲間と話せる。"
+  },
+  "wMr8YQQxdBSNMq2o": {
+   "name_ja": "通信スキャナー/音楽プレーヤー",
+   "name_en": "Radio Scanner/Music Player",
+   "effect": "シティネットのラジオを聞くか、保存した音楽を流す。",
+   "flavor": "頭の中で、好きな曲がいつも流れている。"
+  },
+  "Ei3yxvm439sFX7Z3": {
+   "name_ja": "リアルスキン™・カヴァーリング(サイバーアーム)",
+   "name_en": "Realskinn Covering (Cyber Arm)",
+   "effect": "腕の人工皮膚の外装。",
+   "flavor": "触っても、機械だと気づかれない。"
+  },
+  "TORJ5nowRNlRCeqU": {
+   "name_ja": "リアルスキン™・カヴァーリング(サイバーレッグ)",
+   "name_en": "Realskinn Covering (Cyber Leg)",
+   "effect": "脚の人工皮膚の外装。",
+   "flavor": "触っても、機械だと気づかれない。"
+  },
+  "oeIi9BoY1WvIiqEQ": {
+   "name_ja": "リパー",
+   "name_en": "Rippers",
+   "effect": "とても鋭い爪。中型近接武器として使える。隠せる。",
+   "flavor": "指先から、刃物のような爪が伸びる。"
+  },
+  "UX79WfUt7Yungbx7": {
+   "name_ja": "サンデヴィスタン",
+   "name_en": "Sandevistan",
+   "effect": "スピードウェア。1 分間イニシアチブに +3。使ったら 1 時間使えない。",
+   "flavor": "まわりの時間が、ゆっくり流れはじめる。"
+  },
+  "Iwa8bEog21Kccvmc": {
+   "name_ja": "スクランブラー/ディスクランブラー",
+   "name_en": "Scrambler/Descrambler",
+   "effect": "通信を暗号化し、解読する。",
+   "flavor": "盗み聞きされても、中身は渡さない。"
+  },
+  "dM6LI4fqDdgut7Uy": {
+   "name_ja": "スクラッチャー",
+   "name_en": "Scratchers",
+   "effect": "鋭い爪。小型近接武器として使える。隠せる。",
+   "flavor": "ひっかき傷では済まない爪。"
+  },
+  "eapyCpVJd8BdGPMU": {
+   "name_ja": "センサー・アレイ",
+   "name_en": "Sensor Array",
+   "effect": "サイバー聴覚のオプションを最大 5 つ追加できる（サイバー聴覚基本システムの枠を 8 にする）。",
+   "flavor": "耳が、街じゅうの音を拾うアンテナになる。"
+  },
+  "NjcHWKjj6h2OE4Kb": {
+   "name_ja": "シフトタクト",
+   "name_en": "Shift Tacts",
+   "effect": "目の色を変える。好きなときに切り替えられる。",
+   "flavor": "瞳の色で、気分を伝える。"
+  },
+  "ktZgOfy6ye0EJmt6": {
+   "name_ja": "ショルダー・カム",
+   "name_en": "Shoulder Cam",
+   "effect": "肩から飛び出すカメラ。エージェントやメモリ・チップにつなげる。",
+   "flavor": "背後も、記録に残る。"
+  },
+  "QDM0kdE3MK9YzjY3": {
+   "name_ja": "スケート・フット",
+   "name_en": "Skate Foot",
+   "effect": "両足に入れる必要がある。走るときの移動が 6m 増える。",
+   "flavor": "足の裏のローラーで、街を滑っていく。"
+  },
+  "RJLEe558aeef5kHr": {
+   "name_ja": "技能チップ",
+   "name_en": "Skill Chip",
+   "effect": "チップウェア。技能を 3 にする（すでに 3 より上なら変わらない）。",
+   "flavor": "習っていないことも、チップ一枚で人並みに。"
+  },
+  "micrAI9oicghVbcG": {
+   "name_ja": "皮膚編繊",
+   "name_en": "Skin Weave",
+   "effect": "体の外側のサイバーウェア。頭と胴に SP 7 の防具。1 日に SP が 1 回復する。ほかの防具とは重ならない。",
+   "flavor": "皮膚の下に織りこんだ繊維が、弾を止める。"
+  },
+  "J2sKdlerg9DCFtkI": {
+   "name_ja": "スキンウォッチ",
+   "name_en": "Skinwatch",
+   "effect": "肌に埋めこんだ LED の時計。",
+   "flavor": "手首を見れば、いつでも時間がわかる。"
+  },
+  "u1TSFrsDP5i0KzFe": {
+   "name_ja": "スライスン・ダイス",
+   "name_en": "Slice 'N Dice",
+   "effect": "単分子のワイヤー。中型近接武器として使える。隠せる。",
+   "flavor": "指先から、見えない糸が伸びる。"
+  },
+  "it4Mfyti7WPpuuYE": {
+   "name_ja": "スマート・グラス",
+   "name_en": "Smart Glasses",
+   "effect": "サイバーアイのオプションの枠が 2 つある眼鏡。",
+   "flavor": "体に入れたくない人のための、サイバーアイの代わり。"
+  },
+  "W7S33SRvtrZUpceP": {
+   "name_ja": "スタンダート・フット",
+   "name_en": "Standard Foot",
+   "effect": "見た目はふつうの足。",
+   "flavor": "見た目は、ふつうの足。"
+  },
+  "BUKAOysOkAkwaRqo": {
+   "name_ja": "スタンダード・ハンド",
+   "name_en": "Standard Hand",
+   "effect": "見た目はふつうの手。",
+   "flavor": "見た目は、ふつうの手。"
+  },
+  "O5GmxTYCrrs8uWAd": {
+   "name_ja": "皮下アーマー",
+   "name_en": "Subdermal Armor",
+   "effect": "体の外側のサイバーウェア。頭と胴に SP 11 の防具。1 日に SP が 1 回復する。ほかの防具とは重ならない。",
+   "flavor": "脱ぐことのできない鎧。"
+  },
+  "2vSTximwCOxNPGJX": {
+   "name_ja": "皮下グリップ",
+   "name_en": "Subdermal Grip",
+   "effect": "手のひらの金属板。スマートガンを使えるようにする。ニューラル・リンクが必要。",
+   "flavor": "銃を握った瞬間、照準が目に映る。"
+  },
+  "kPYQ2Fod5FQvED38": {
+   "name_ja": "皮下ポケット",
+   "name_en": "Subdermal Pocket",
+   "effect": "皮膚の下の小さなポケット（約 5cm × 10cm）。",
+   "flavor": "体の中の、小さな隠し場所。"
+  },
+  "CHQVWD2VlDiWJSzf": {
+   "name_ja": "スーパークローム®・カヴァーリング(サイバーアーム)",
+   "name_en": "Superchrome® Covering (Cyber Arm)",
+   "effect": "腕の金属の外装。身だしなみ・ファッションの判定に +2（いくつ付けても重ならない）。",
+   "flavor": "鏡のように光る腕。見せびらかすためにある。"
+  },
+  "qpLAhi08ZCgbukzn": {
+   "name_ja": "スーパークローム®・カヴァーリング(サイバーレッグ)",
+   "name_en": "Superchrome® Covering (Cyber Leg)",
+   "effect": "脚の金属の外装。身だしなみ・ファッションの判定に +2（いくつ付けても重ならない）。",
+   "flavor": "鏡のように光る脚。見せびらかすためにある。"
+  },
+  "zoj5iyIV1bVrMxzW": {
+   "name_ja": "触覚増強",
+   "name_en": "Tactile Boost",
+   "effect": "チップウェア。物の表面を通して、20m 先までの動きを感じ取れる。",
+   "flavor": "床の振動で、誰が近づいてくるかわかる。"
+  },
+  "lJRnJRm5wsZRC7SK": {
+   "name_ja": "タロン・フット",
+   "name_en": "Talon Foot",
+   "effect": "足に仕込んだ引っこめられる刃。小型近接武器として使える。",
+   "flavor": "蹴りに、刃がついてくる。"
+  },
+  "wFp72x2FXhipZXPj": {
+   "name_ja": "ターゲティング・スコープ",
+   "name_en": "Targeting Scope",
+   "effect": "照準射撃に +1。",
+   "flavor": "狙った場所に、十字が重なる。"
+  },
+  "opzHe5mz24EwqNCM": {
+   "name_ja": "テックヘア",
+   "name_en": "Techhair",
+   "effect": "色の変わる髪。ケムスキンと一緒に使うと身だしなみの判定に +2。",
+   "flavor": "髪の色が、音楽に合わせて変わる。"
+  },
+  "2EvWIW0HXwoBK6xq": {
+   "name_ja": "テクスキャナ",
+   "name_en": "Techscanner",
+   "effect": "いろいろな道具を腕に組みこむ。いくつかの技能の判定に +2。",
+   "flavor": "腕を開けば、工具箱が出てくる。"
+  },
+  "uApwuxpuIJMe47Vn": {
+   "name_ja": "望遠",
+   "name_en": "TeleOptics",
+   "effect": "800m 先まで見える望遠の目。50m より遠い相手への単発射撃・照準射撃に +1。",
+   "flavor": "遠くの窓の中まで、のぞきこめる。"
+  },
+  "hAx2MqVm4JuwXsSV": {
+   "name_ja": "ツール・ハンド",
+   "name_en": "Tool Hand",
+   "effect": "指それぞれが別の工具になっている。テクに向く。",
+   "flavor": "指を一本ずつ、必要な工具に替える。"
+  },
+  "OhW1h2rwb7lvJPs3": {
+   "name_ja": "毒素固定体",
+   "name_en": "Toxin Binders",
+   "effect": "拷問・薬物への抵抗の判定に +2。",
+   "flavor": "毒が回る前に、体が中和してくれる。"
+  },
+  "JkQflgLDMmgLBZbc": {
+   "name_ja": "ヴァンパイア",
+   "name_en": "Vampyres",
+   "effect": "とがった歯。小型近接武器として使える。毒を仕込める。",
+   "flavor": "笑ったときの歯が、やけに鋭い。"
+  },
+  "Ie6Wzt8dwpdQ516v": {
+   "name_ja": "ヴァーチャリティ",
+   "name_en": "Virtuality",
+   "effect": "両目に入れる必要がある。目に組みこんだバーチャリティ・ゴーグル。",
+   "flavor": "現実の上に、もう一つの世界を重ねる目。"
+  },
+  "5PWjp9rOnZuhYPPu": {
+   "name_ja": "ボイス・ストレス・アナライザ",
+   "name_en": "Voice Stress Analyzer",
+   "effect": "人間観察と尋問の判定に +2。嘘を見抜く特別なモードがある。",
+   "flavor": "声の震えで、嘘がわかる。"
+  },
+  "dMiVrdVIK0ERAUYB": {
+   "name_ja": "ウェブ・フット",
+   "name_en": "Web Foot",
+   "effect": "両足に入れる必要がある。指の間の水かきで泳げる。",
+   "flavor": "水の中でも、速く動ける。"
+  },
+  "GUT0BBUD2iKpPRoM": {
+   "name_ja": "ウルヴァー",
+   "name_en": "Wolvers",
+   "effect": "拳から出る爪。大型近接武器として使える。隠せる。",
+   "flavor": "拳から、三本の刃が伸びる。"
+  },
+  "ags0aoY9ViaGvTIb": {
+   "name_ja": "抗生剤",
+   "name_en": "Antibiotic",
+   "effect": "自然治癒が始まっている相手に注射すると、1 週間、1 日に回復する HP が 2 増える。重ねがけはできない。",
+   "flavor": "傷が膿まなければ、治りは早い。"
+  },
+  "6BM5WFyCyIM8lZib": {
+   "name_ja": "ブラック・レース",
+   "name_en": "Black Lace",
+   "effect": "主効果: 1 回で 24 時間。使うと人間性を 2d6 失う（副作用の判定に成功すれば戻る）。効果のあいだ、重傷の状態を無視する。副作用（難易度 17）: 切れたときに WILL + 拷問・薬物への抵抗 + 1d10 で判定し、失敗すると人間性は戻らない。主効果の外では REF −2。",
+   "flavor": "痛みが消え、自分が無敵に思える。その代わりに、何かが削れていく。"
+  },
+  "UrKzMiFp4xFOLNIC": {
+   "name_ja": "ブルー・グラス",
+   "name_en": "Blue Glass",
+   "effect": "主効果: 1 回で 4 時間。ときどき GM から「色の渦が見える」と告げられ、その手番のアクションを失う。副作用（難易度 15）: 同じ症状が残る。",
+   "flavor": "世界が渦を巻いて見える、安物の幻覚剤。"
+  },
+  "ut8jpew6V3q58ivX": {
+   "name_ja": "ブースト",
+   "name_en": "Boost",
+   "effect": "主効果: 1 回で 24 時間、INT +2。副作用（難易度 17）: INT −2。",
+   "flavor": "頭が冴える。切れたあとは、その分だけ鈍る。"
+  },
+  "fRtXPlBcWvtgtNTf": {
+   "name_ja": "瞬間解毒剤",
+   "name_en": "Rapidetox",
+   "effect": "注射すると、今かかっているドラッグ・毒・酩酊の効果をすべて消す。",
+   "flavor": "どんなパーティーも、一瞬で終わらせる。"
+  },
+  "PRLDaeBVeMuBBIeO": {
+   "name_ja": "スマッシュ",
+   "name_en": "Smash",
+   "effect": "主効果: 1 回で 4 時間。幸せな気分になり、ダンス・軟体・会話・人間観察・説得・演技に +2。副作用（難易度 15）: 依存する。依存のあいだ、同じ技能に −2。欲しくなったときは GM が告げるので、そのように演じる。",
+   "flavor": "ナイトシティでいちばん安い幸福。"
+  },
+  "3xF0I3J9RnSxf4Ux": {
+   "name_ja": "高速治癒剤",
+   "name_en": "Speedheal",
+   "effect": "注射すると、すぐに BODY + WILL の分だけ HP が回復する。瀕死の相手には効かない。同じ相手には 1 日 1 回まで。",
+   "flavor": "傷口がみるみるふさがる。値段を聞くと、もう一度倒れそうになる。"
+  },
+  "r21n9rFplUOtnjHM": {
+   "name_ja": "興奮剤",
+   "name_en": "Stim",
+   "effect": "注射すると、1 時間、重傷によるペナルティをすべて無視する。同じ相手には 1 日 1 回まで。",
+   "flavor": "痛みを後回しにして、今は動く。"
+  },
+  "82sXoExwFlRIWesU": {
+   "name_ja": "覚醒剤",
+   "name_en": "Surge",
+   "effect": "注射すると、24 時間、眠らなくても平気になる。同じ相手には 1 週間に 1 回まで。",
+   "flavor": "徹夜仕事の相棒。翌週のことは考えない。"
+  },
+  "CyYpPh89G7IYyryM": {
+   "name_ja": "シンセコーク",
+   "name_en": "Synthcoke",
+   "effect": "主効果: 1 回で 4 時間、REF +1。ときどき被害妄想にとらわれる。副作用（難易度 15）: 主効果の外では REF −2。欲しくなったときは GM が告げるので、そのように演じる。",
+   "flavor": "指先が速くなり、背後が気になりはじめる。"
+  },
+  "GqYz689ddSKQHMen": {
+   "name_ja": "エージェント",
+   "name_en": "Agent",
+   "effect": "AI 入りのスマートフォン。場合によって、図書館検索や身だしなみ・ファッションの判定に +2。",
+   "flavor": "予定も噂も道案内も、全部これが覚えている。"
+  },
+  "Th74cfC87RqEJKAb": {
+   "name_ja": "エアハイポ",
+   "name_en": "Airhypo",
+   "effect": "注射器。",
+   "flavor": "針を使わずに薬を打てる。手当てでも、それ以外でも。"
+  },
+  "LTxStSIeRegbtZpd": {
+   "name_ja": "対スモッグ呼吸マスク",
+   "name_en": "Anti-Smog Breathing Mask",
+   "effect": "空気中の毒を濾過する。",
+   "flavor": "ナイトシティの空気を、そのまま吸う勇気はない。"
+  },
+  "Lo7rXsc5ToQf2KlN": {
+   "name_ja": "オーディオ・レコーダー",
+   "name_en": "Audio Recorder",
+   "effect": "メモリ・チップに 24 時間分の音を録れる。",
+   "flavor": "言った言わないの争いは、これで終わる。"
+  },
+  "NYxdMQPHdjnpYNLE": {
+   "name_ja": "自動制音イヤー・プロテクター",
+   "name_en": "Auto Level Dampening Ear Protectors",
+   "effect": "着けている人は大きな音の影響を受けない。",
+   "flavor": "銃声も爆発も、ちょうどいい音量に絞ってくれる。"
+  },
+  "JL6Nf3l7hjzDmJZ5": {
+   "name_ja": "双眼鏡",
+   "name_en": "Binoculars",
+   "effect": "倍率は 2 倍か 3 倍。",
+   "flavor": "見られる前に見る。"
+  },
+  "Ed0JaqTO1JyAUa47": {
+   "name_ja": "ブレインダンス・ビューア",
+   "name_en": "Braindance Viewer",
+   "effect": "ブレインダンス（他人の体験の記録）を見る機械。",
+   "flavor": "他人の人生を、数分だけ借りて生きる。"
+  },
+  "Fa8Mse1uXrLLWIxo": {
+   "name_ja": "盗聴器検出器",
+   "name_en": "Bug Detector",
+   "effect": "盗聴器を見つける。範囲 2m。",
+   "flavor": "壁に耳があるかどうか、まず確かめる。"
+  },
+  "y2a4HDhIl7FlJyD7": {
+   "name_ja": "旅行バッグ",
+   "name_en": "Carryall",
+   "effect": "かばん。",
+   "flavor": "必要な物は、だいたいこの中に入っている。"
+  },
+  "M9umYS7pNx7xVTvd": {
+   "name_ja": "化学物質分析器",
+   "name_en": "Chemical Analyzer",
+   "effect": "試料のデータベースと照らして、化学物質の成分を調べる。",
+   "flavor": "怪しい粉の正体を、その場で突きとめる。"
+  },
+  "1K1dtvrm7rjoraAJ": {
+   "name_ja": "コンピュータ",
+   "name_en": "Computer",
+   "effect": "デスクトップかノートパソコン。",
+   "flavor": "仕事の半分は、画面の前で終わる。"
+  },
+  "KF1c9BEkThuDVZb4": {
+   "name_ja": "クリオポンプ",
+   "name_en": "Cryopump",
+   "effect": "書類かばんほどの大きさの機械。けが人につなぐと、仮死状態にできる。",
+   "flavor": "時間を止めて、病院まで持ちこたえさせる。"
+  },
+  "NXYo2GCb0CtmIcYW": {
+   "name_ja": "クリオタンク",
+   "name_en": "Cryotank",
+   "effect": "人ひとりが入る大きさ。けがを普段より早く治す。",
+   "flavor": "冷たい眠りのあいだに、体が勝手に治っていく。"
+  },
+  "OjMJ2SyoMr4VWmnm": {
+   "name_ja": "使い捨て携帯電話",
+   "name_en": "Disposable Cell Phone",
+   "effect": "音声通話だけ。",
+   "flavor": "使ったら捨てる。足がつかない。"
+  },
+  "190HaepMqp2hy7D3": {
+   "name_ja": "ドラム・シンセサイザー",
+   "name_en": "Drum Synthesizer",
+   "effect": "アンプにつなぐとドラムの音を出せる。",
+   "flavor": "ひとりでもリズム隊がいる。"
+  },
+  "WAOq0nMUFwvnZpCr": {
+   "name_ja": "ダクト・テープ",
+   "name_en": "Duct Tape",
+   "effect": "物を貼りつける。",
+   "flavor": "直せない物は、まだ巻きつけが足りないだけ。"
+  },
+  "aiX4CSRjs0oKGIFK": {
+   "name_ja": "エレキギター/その他の楽器",
+   "name_en": "Electric Guitar/Other Instrument",
+   "effect": "楽器。電気楽器はアンプが必要。",
+   "flavor": "ナイトシティでは、歌も武器になる。"
+  },
+  "spgehgLv94vrH4Zo": {
+   "name_ja": "懐中電灯",
+   "name_en": "Flashlight",
+   "effect": "1 回の充電で 10 時間、100m 先まで照らす。",
+   "flavor": "暗がりに何がいるか、知りたくないときもある。"
+  },
+  "j71ouZVOvc7xEfke": {
+   "name_ja": "フード・スティック",
+   "name_en": "Food Stick",
+   "effect": "食事の代わりになるバー。",
+   "flavor": "味は気にしない。腹は満たせる。"
+  },
+  "3HWLPHE0VHMGgv48": {
+   "name_ja": "夜光塗料",
+   "name_en": "Glow Paint",
+   "effect": "暗闇で光るスプレー塗料。",
+   "flavor": "壁に印を残せば、帰り道を見失わない。"
+  },
+  "im5VJlsJv37KsyrE": {
+   "name_ja": "グロー・スティック",
+   "name_en": "Glow Stick",
+   "effect": "10 時間光る。範囲 4m。",
+   "flavor": "折れば光る。電池はいらない。"
+  },
+  "VrwVUEHuMCGjp8Fi": {
+   "name_ja": "グラップル・ガン",
+   "name_en": "Grapple Gun",
+   "effect": "30m 先まで届く。武器としては使えない。",
+   "flavor": "階段のない建物にも、入口はある。"
+  },
+  "uYXTKNbOO4ofu53c": {
+   "name_ja": "手錠",
+   "name_en": "Handcuffs",
+   "effect": "BODY が 10 より大きい相手は壊せる。",
+   "flavor": "ふつうの相手なら、これで十分。"
+  },
+  "QIHx5oQOirtTlAaD": {
+   "name_ja": "追跡装置",
+   "name_en": "Homing Tracer",
+   "effect": "追跡子の位置を追える。範囲 1 マイル。",
+   "flavor": "相手がどこへ逃げても、画面の点は消えない。"
+  },
+  "VgVcQgRkt8y5DL00": {
+   "name_ja": "携帯用ベッド&寝袋",
+   "name_en": "Inflatable Bed & Sleep-bag",
+   "effect": "持ち運べる寝具。",
+   "flavor": "どこでも、とりあえず眠れる。"
+  },
+  "YBkdTQgnZDOhRq90": {
+   "name_ja": "キブル・パック",
+   "name_en": "Kibble Pack",
+   "effect": "1 食分。",
+   "flavor": "栄養はある。それ以上の期待はしない。"
+  },
+  "xH9lmDC4oWAt9l4P": {
+   "name_ja": "リニア・フレームβ(ベータ)",
+   "name_en": "Linear Frame β (Beta)",
+   "effect": "外骨格。インターフェイス・プラグが 2 つ必要。つないでいるあいだ BODY が 14 になる（HP と死亡セーブには影響しない）。",
+   "flavor": "重機並みの力を、背中に背負う。"
+  },
+  "0begTrdCOQcRyLMN": {
+   "name_ja": "リニア・フレーム∑(シグマ)",
+   "name_en": "Linear Frame ∑ (Sigma)",
+   "effect": "外骨格。インターフェイス・プラグが 1 つ必要。つないでいるあいだ BODY が 12 になる（HP と死亡セーブには影響しない）。",
+   "flavor": "体格の差を、機械で埋める。"
+  },
+  "vlhGpguIMioeA8fe": {
+   "name_ja": "鍵開けセット",
+   "name_en": "Lock Picking Set",
+   "effect": "機械式の鍵を開けるのに必要。",
+   "flavor": "鍵は、持っている人のためだけにあるわけではない。"
+  },
+  "gRpj45rbF9faRKE3": {
+   "name_ja": "MRE",
+   "name_en": "MRE",
+   "effect": "持ち運べる自動加熱の食事。",
+   "flavor": "温かい食事は、戦場では贅沢品。"
+  },
+  "xW4PlIcWJ82QSfSh": {
+   "name_ja": "メドスキャナー",
+   "name_en": "Medscanner",
+   "effect": "応急手当と救急医療の判定に +2。",
+   "flavor": "傷の深さを、数字で教えてくれる。"
+  },
+  "klPfcM59dHl4lvWS": {
+   "name_ja": "メドテク・バッグ",
+   "name_en": "Medtech Bag",
+   "effect": "医療用具。",
+   "flavor": "包帯と薬と、少しの祈りが入っている。"
+  },
+  "LKAYRh3Oecskc6kH": {
+   "name_ja": "メモリ・チップ",
+   "name_en": "Memory Chip",
+   "effect": "データを保存する。",
+   "flavor": "小さなチップに、誰かの秘密が入っている。"
+  },
+  "wbMrUpgWHROY24OC": {
+   "name_ja": "パーソナル・ケアパック",
+   "name_en": "Personal CarePak",
+   "effect": "歯ブラシなどの身の回り品。",
+   "flavor": "仕事の前に、身だしなみは整えておく。"
+  },
+  "Zp8YbDBMTCl7sy61": {
+   "name_ja": "ポケット・アンプ",
+   "name_en": "Pocket Amplifier",
+   "effect": "6 時間使える。楽器を 2 つつなげる。",
+   "flavor": "路上がそのままステージになる。"
+  },
+  "P8jFkXDk8eVKXhNJ": {
+   "name_ja": "レーダー探知機",
+   "name_en": "Radar Detector",
+   "effect": "レーダーの電波を見つける。範囲 100m。",
+   "flavor": "見張られているかどうかを、先に知る。"
+  },
+  "88mkKO3YUWfSOGoD": {
+   "name_ja": "放射線防護服",
+   "name_en": "Radiation Suit",
+   "effect": "放射線から身を守る。",
+   "flavor": "汚染地帯に入る人の、最低限の装備。"
+  },
+  "DO2Nzq3dw0R72dpm": {
+   "name_ja": "無線通信機",
+   "name_en": "Radio Communicator",
+   "effect": "範囲 1 マイル。耳に入れる。",
+   "flavor": "仲間の声が、耳元でずっと聞こえる。"
+  },
+  "sMAZKb9ErPoQJ1vV": {
+   "name_ja": "通信スキャナー/音楽プレーヤー",
+   "name_en": "Radio Scanner/Music Player",
+   "effect": "無線の電波を受信する。範囲 1 マイル。",
+   "flavor": "警察無線と流行りの曲を、交互に聞く。"
+  },
+  "EUZBOSRdQWOqKVUg": {
+   "name_ja": "発炎筒",
+   "name_en": "Road Flare",
+   "effect": "100m 先まで照らす。1 時間燃える。",
+   "flavor": "道ばたで焚けば、誰かが気づく。"
+  },
+  "i0xmIJjhcMKIWJ0M": {
+   "name_ja": "ロープ(60m)",
+   "name_en": "Rope (60m/yd)",
+   "effect": "ナイロン製。",
+   "flavor": "登るにも、縛るにも使える。"
+  },
+  "CLaUNQ7cqa05XfFg": {
+   "name_ja": "スクランブラー/ディスクランブラー",
+   "name_en": "Scrambler/Descrambler",
+   "effect": "通信の暗号化と解読をする。",
+   "flavor": "盗み聞きされても、中身は渡さない。"
+  },
+  "uRkSAWB6JW8LfUqI": {
+   "name_ja": "テク・バッグ",
+   "name_en": "Tech Bag",
+   "effect": "工具かばん。",
+   "flavor": "ほとんどの物は、この中の道具で直せる。"
+  },
+  "347vBbRcotzYQBbW": {
+   "name_ja": "テクスキャナ",
+   "name_en": "Techscanner",
+   "effect": "TECH を使ういくつかの技能の判定に +2。",
+   "flavor": "壊れた所を、機械が先に見つけてくれる。"
+  },
+  "GPgc2QczR4H1rYPj": {
+   "name_ja": "テクツール",
+   "name_en": "Techtool",
+   "effect": "多目的の工具。",
+   "flavor": "一本で何役もこなす、テクの相棒。"
+  },
+  "bZlhfqhQEVp4vodP": {
+   "name_ja": "テント&キャンプ用品",
+   "name_en": "Tent and Camping Equipment",
+   "effect": "1 人用。",
+   "flavor": "街の外で夜を越すための一式。"
+  },
+  "IqXTqNGBmSuigIWv": {
+   "name_ja": "追跡子",
+   "name_en": "Tracer Button",
+   "effect": "追跡装置で、1 マイル先まで位置を追える。",
+   "flavor": "ボタンほどの大きさ。気づかれなければ、どこまでも追える。"
+  },
+  "tr7G2kdlPBTvyTON": {
+   "name_ja": "バイオトキシンの小瓶",
+   "name_en": "Vial of Biotoxin",
+   "effect": "拷問・薬物への抵抗に失敗すると 3d6 のダメージ。防具は効かない。",
+   "flavor": "一滴で十分。扱いには気をつける。"
+  },
+  "gaGUmTGViuxZ4mqR": {
+   "name_ja": "毒の小瓶",
+   "name_en": "Vial of Poison",
+   "effect": "拷問・薬物への抵抗に失敗すると 2d6 のダメージ。防具は効かない。",
+   "flavor": "飲み物に入れれば、それで終わる。"
+  },
+  "clCxd7qkp2olsKii": {
+   "name_ja": "ビデオ・カメラ",
+   "name_en": "Video Camera",
+   "effect": "メモリ・チップ 1 枚で 12 時間撮れる。",
+   "flavor": "映像は、言葉より強い証拠になる。"
+  },
+  "ECoCsPyfIEBCSggM": {
+   "name_ja": "バーチャリティ・ゴーグル",
+   "name_en": "Virtuality Goggles",
+   "effect": "視界にサイバースペースの映像を重ねる。",
+   "flavor": "現実の上に、もう一つの世界を見る。"
+  },
+  "yommG7jwlXzoyf8Z": {
+   "name_ja": "アーマー",
+   "name_en": "Armor",
+   "effect": "起動中、脳へのダメージを 4 減らす。同時に起動できるのは 1 つだけ。1 回のネットランで 1 回使える。",
+   "flavor": "意識の外側にかける、もう一枚の殻。"
+  },
+  "ccLHU1Ym4K4mnOds": {
+   "name_ja": "バンハンマー",
+   "name_en": "Banhammer",
+   "effect": "黒 ICE 以外に 3d6、黒 ICE に 2d6 の REZ ダメージ。",
+   "flavor": "ネットの中の、重たいハンマー。"
+  },
+  "qKOBTqM4sJzBjUXq": {
+   "name_ja": "デッキKRASH",
+   "name_en": "DeckKRASH",
+   "effect": "相手のネットランナーを安全でない方法で強制的にジャックアウトさせる。",
+   "flavor": "相手のデッキを、電源ごと引き抜く。"
+  },
+  "h6lsYlaAZLd6eoo2": {
+   "name_ja": "イレイサ",
+   "name_en": "Eraser",
+   "effect": "起動中、クローク（痕跡を消す）の判定に +2。",
+   "flavor": "足跡を、来た道ごと消していく。"
+  },
+  "PDYabXG1H9XbpAWS": {
+   "name_ja": "フラック",
+   "name_en": "Flak",
+   "effect": "起動中、黒 ICE 以外からの攻撃を 0 にする。同時に起動できるのは 1 つだけ。1 回のネットランで 1 回使える。",
+   "flavor": "撃ちこまれるデータを、まとめて払い落とす。"
+  },
+  "LArvxvm3JE9Yc9l2": {
+   "name_ja": "ヘルボルト",
+   "name_en": "Hellbolt",
+   "effect": "相手のネットランナーの脳に直接 2d6 のダメージ。断熱していない装備は燃えだす。",
+   "flavor": "ネットから現実へ、火をつけにいく。"
+  },
+  "iq3V4YMib0WVSZZD": {
+   "name_ja": "ナーヴスクラブ",
+   "name_en": "Nervescrub",
+   "effect": "相手のネットランナーの INT・REF・DEX を 1d6 下げる（最低 1）。1 時間続く。",
+   "flavor": "神経をやすりで削られたように、考えも体も鈍る。"
+  },
+  "Jgck7Y4kHbiOCNIv": {
+   "name_ja": "ポイズン・フラットライン",
+   "name_en": "Poison Flatline",
+   "effect": "相手のサイバーデッキにある黒 ICE 以外のプログラムを、無作為に 1 つ壊す。",
+   "flavor": "相手のデッキに、静かに毒を流す。"
+  },
+  "KwNqQrQpLzbhpDNR": {
+   "name_ja": "シーヤ",
+   "name_en": "See Ya",
+   "effect": "起動中、パスファインダー（構造を調べる）の判定に +2。",
+   "flavor": "ネットの奥の地図を、先回りして描く。"
+  },
+  "XIIBLQw8yb3DSnHv": {
+   "name_ja": "シールド",
+   "name_en": "Shield",
+   "effect": "黒 ICE 以外のプログラムからの、最初に成功した脳へのダメージを止める。同時に起動できるのは 1 つだけ。1 回のネットランで 1 回使える。",
+   "flavor": "一度だけなら、致命傷を防ぐ。"
+  },
+  "XySJZT4SbLBmOihf": {
+   "name_ja": "スピーディ・ゴンザルヴェス",
+   "name_en": "Speedy Gonzalvez",
+   "effect": "起動中、スピードに +2。",
+   "flavor": "ネットの中を、誰よりも先に駆け抜ける。"
+  },
+  "HLOBpJRg7sZRZWTO": {
+   "name_ja": "スーパーグルー",
+   "name_en": "Superglue",
+   "effect": "相手のネットランナーは 1d6 ラウンドのあいだ、ローカル NET の奥へ進めず、安全にジャックアウトもできない。1 回のネットランで 1 回使える。",
+   "flavor": "逃げ道を、まとめて固めてしまう。"
+  },
+  "iHUrp2OkBZb3Ugf8": {
+   "name_ja": "剣",
+   "name_en": "Sword",
+   "effect": "黒 ICE に 3d6、黒 ICE 以外に 2d6 の REZ ダメージ。",
+   "flavor": "ICE を斬るための、電子の刃。"
+  },
+  "4D6wNDXnBUKCbJTF": {
+   "name_ja": "ヴリズボルト",
+   "name_en": "Vrizzbolt",
+   "effect": "相手のネットランナーの脳に直接 1d6 のダメージ。次の手番のネット・アクションの数を 1 減らす（最低 2）。",
+   "flavor": "小さな電撃で、相手の手を止める。"
+  },
+  "SmwW6B3Qi6svIClB": {
+   "name_ja": "ワーム",
+   "name_en": "Worm",
+   "effect": "起動中、バックドア（侵入）の判定に +2。",
+   "flavor": "壁の隙間を見つけて、静かに入りこむ。"
+  },
+  "7KjoeHsFOue8Dl42": {
+   "name_ja": "AV-4 エンジン追加",
+   "name_en": "AV-4 Engine Upgrade",
+   "effect": "すべての陸の乗り物に付けられる。エアロダインの推進器を足し、空を飛べるようにする。飛行中の移動は時速 322km 相当、戦闘での速度は 40。空中では航空機の操縦の技能を使う。",
+   "flavor": "道がなければ、空を走ればいい。"
+  },
+  "l2lIF8c1HknhG8CN": {
+   "name_ja": "車体装甲",
+   "name_en": "Armored Chassis",
+   "effect": "すべての乗り物に付けられる。車体を SP 13 にする（ガラスは別）。",
+   "flavor": "車体が、走る盾になる。"
+  },
+  "DWfusJuwJXXt59bA": {
+   "name_ja": "バックアップ ・ドライブ",
+   "name_en": "Backup Drive",
+   "effect": "黒 ICE 以外のプログラムが壊されても保存しておく。ネットランナーが生身のアクションで入れ直せる。",
+   "flavor": "壊されても、もう一度立ち上げられる。"
+  },
+  "xRA275R527XLwaBJ": {
+   "name_ja": "銃剣",
+   "name_en": "Bayonet",
+   "effect": "銃を小型近接武器としても使えるようにする。付けているあいだ、その武器は服の下に隠せない。",
+   "flavor": "古いやり方だが、今でもちゃんと効く。"
+  },
+  "Pj3nZU2coYUGIjR3": {
+   "name_ja": "防弾ガラス",
+   "name_en": "Bulletproof Glass",
+   "effect": "すべての乗り物に付けられる。窓ガラスがすべて HP 15 の遮蔽物になる。もう一度付けると HP 30。窓は 1 枚ずつダメージを受ける。",
+   "flavor": "窓の外からの挨拶を、窓で受け止める。"
+  },
+  "qkASZxwH3nxb1AUx": {
+   "name_ja": "戦闘用プラウ",
+   "name_en": "Combat Plow",
+   "effect": "バイクとジェットスキー以外の陸・海の乗り物に付けられる。前から体当たりしても自分の車は壊れず、乗っている人もむち打ちの致命傷を負わない。ニトロを使った手番の体当たりは 2d6 のダメージを足す。",
+   "flavor": "障害物は、押しのけて進む。"
+  },
+  "oEK3gfarTQznYvv8": {
+   "name_ja": "通信センターコンソール",
+   "name_en": "Communications Center",
+   "effect": "すべての乗り物に付けられる。エージェントとして使えるタッチパネルと、無線通信機 6 台・スクランブラー 6 台・通信スキャナー・追跡装置と追跡子 6 個・オーディオ・レコーダーの収納。",
+   "flavor": "車が、そのまま移動する作戦本部になる。"
+  },
+  "jz7lnKQ3dKd5GCbY": {
+   "name_ja": "DNA ロック",
+   "name_en": "DNA Lock",
+   "effect": "サイバーデッキを生体認証で鍵をかける。破るには電子工学・セキュリティ技術の判定（難易度 17）が必要。",
+   "flavor": "持ち主以外には、ただの重い箱。"
+  },
+  "6osSIyyHePqZSyrg": {
+   "name_ja": "スパイク・ストリップ展開装置",
+   "name_en": "Deployable Spike Strip",
+   "effect": "地上車に付けられる。運転手がアクションでスパイクを撒く。すぐ後ろを走るタイヤの乗り物は陸上車の運転（難易度 17）を行い、失敗すると弱点に当たったものとして 4d6 のダメージ。替えのスパイクは 10eb。重ねて付けると撒ける数が増える。走行中は補充できない。",
+   "flavor": "追っ手のタイヤに、別れの挨拶を。"
+  },
+  "mtYBtYyjuFKOMngN": {
+   "name_ja": "ドラムマガジン(アサルトライフル)",
+   "name_en": "Drum Magazine (Assault Rifle)",
+   "effect": "装弾数を 45 に増やす。",
+   "flavor": "撃ちつづけられる時間が、ぐっと延びる。"
+  },
+  "J51qZjmuEheNiamo": {
+   "name_ja": "ドラムマガジン(グレネードランチャー)",
+   "name_en": "Drum Magazine (Grenade Launcher)",
+   "effect": "装弾数を 6 に増やす。",
+   "flavor": "撃ちつづけられる時間が、ぐっと延びる。"
+  },
+  "WNk0YpCbxFa6iLTH": {
+   "name_ja": "ドラムマガジン(大型拳銃)",
+   "name_en": "Drum Magazine (Heavy Pistol)",
+   "effect": "装弾数を 28 に増やす。",
+   "flavor": "撃ちつづけられる時間が、ぐっと延びる。"
+  },
+  "RMNHcBUByOmZ8uEo": {
+   "name_ja": "ドラムマガジン(大型SMG)",
+   "name_en": "Drum Magazine (Heavy SMG)",
+   "effect": "装弾数を 60 に増やす。",
+   "flavor": "撃ちつづけられる時間が、ぐっと延びる。"
+  },
+  "CqiwXRHzi0gzuVod": {
+   "name_ja": "ドラムマガジン(中型拳銃)",
+   "name_en": "Drum Magazine (Medium Pistol)",
+   "effect": "装弾数を 36 に増やす。",
+   "flavor": "撃ちつづけられる時間が、ぐっと延びる。"
+  },
+  "y9HobxZQBhVEN5Ne": {
+   "name_ja": "ドラムマガジン(ロケットランチャー)",
+   "name_en": "Drum Magazine (Rocket Launcher)",
+   "effect": "装弾数を 3 に増やす。",
+   "flavor": "撃ちつづけられる時間が、ぐっと延びる。"
+  },
+  "3z654ef9UlgH8o1o": {
+   "name_ja": "ドラムマガジン(SMG)",
+   "name_en": "Drum Magazine (SMG)",
+   "effect": "装弾数を 50 に増やす。",
+   "flavor": "撃ちつづけられる時間が、ぐっと延びる。"
+  },
+  "I7Uv0EmzaDAmdFeV": {
+   "name_ja": "ドラムマガジン(ショットガン)",
+   "name_en": "Drum Magazine (Shotgun)",
+   "effect": "装弾数を 16 に増やす。",
+   "flavor": "撃ちつづけられる時間が、ぐっと延びる。"
+  },
+  "mUUjgdfV04q6T2VS": {
+   "name_ja": "ドラムマガジン(スナイパーライフル)",
+   "name_en": "Drum Magazine (Sniper Rifle)",
+   "effect": "装弾数を 12 に増やす。",
+   "flavor": "撃ちつづけられる時間が、ぐっと延びる。"
+  },
+  "v2DXDjMY1NlGWdFZ": {
+   "name_ja": "ドラムマガジン(超大型拳銃)",
+   "name_en": "Drum Magazine (Very Heavy Pistol)",
+   "effect": "装弾数を 28 に増やす。",
+   "flavor": "撃ちつづけられる時間が、ぐっと延びる。"
+  },
+  "usbN2xyBN2b5jcTX": {
+   "name_ja": "インター・フェイスプラ同調強化",
+   "name_en": "Enhanced Interface Plug Integration",
+   "effect": "バイクに付けられる。インターフェイス・プラグで運転していて REF 8 以上なら、自分・同乗者・バイクが攻撃されたとき、歩いているときと同じように回避できる。同乗者のために回避したら、それが同乗者の防御になる。",
+   "flavor": "バイクと神経がつながり、体の延長になる。"
+  },
+  "s3oETYXA2wnTnrk1": {
+   "name_ja": "延長マガジン(アサルトライフル)",
+   "name_en": "Extended Magazine (Assault Rifle)",
+   "effect": "装弾数を 35 に増やす。",
+   "flavor": "リロードの回数が、少しだけ減る。"
+  },
+  "P4XioOHNf343JNm9": {
+   "name_ja": "延長マガジン(グレネードランチャー)",
+   "name_en": "Extended Magazine (Grenade Launcher)",
+   "effect": "装弾数を 4 に増やす。",
+   "flavor": "リロードの回数が、少しだけ減る。"
+  },
+  "eGEFGoNkBzbqv8jh": {
+   "name_ja": "延長マガジン(大型拳銃)",
+   "name_en": "Extended Magazine (Heavy Pistol)",
+   "effect": "装弾数を 14 に増やす。",
+   "flavor": "リロードの回数が、少しだけ減る。"
+  },
+  "tB66LtMSiBlZhB2W": {
+   "name_ja": "延長マガジン(大型SMG)",
+   "name_en": "Extended Magazine (Heavy SMG)",
+   "effect": "装弾数を 50 に増やす。",
+   "flavor": "リロードの回数が、少しだけ減る。"
+  },
+  "nV0EYctCZSP41Cp0": {
+   "name_ja": "延長マガジン(中型拳銃)",
+   "name_en": "Extended Magazine (Medium Pistol)",
+   "effect": "装弾数を 18 に増やす。",
+   "flavor": "リロードの回数が、少しだけ減る。"
+  },
+  "aKLcUoQt8I4Adxwg": {
+   "name_ja": "延長マガジン(ロケットランチャー)",
+   "name_en": "Extended Magazine (Rocket Launcher)",
+   "effect": "装弾数を 2 に増やす。",
+   "flavor": "リロードの回数が、少しだけ減る。"
+  },
+  "M3I9ySdmNIxcuT7T": {
+   "name_ja": "延長マガジン(SMG)",
+   "name_en": "Extended Magazine (SMG)",
+   "effect": "装弾数を 40 に増やす。",
+   "flavor": "リロードの回数が、少しだけ減る。"
+  },
+  "hGIBWetPmu8kxHwr": {
+   "name_ja": "延長マガジン(ショットガン)",
+   "name_en": "Extended Magazine (Shotgun)",
+   "effect": "装弾数を 8 に増やす。",
+   "flavor": "リロードの回数が、少しだけ減る。"
+  },
+  "seI3exdDPXajjFFz": {
+   "name_ja": "延長マガジン(スナイパーライフル)",
+   "name_en": "Extended Magazine (Sniper Rifle)",
+   "effect": "装弾数を 8 に増やす。",
+   "flavor": "リロードの回数が、少しだけ減る。"
+  },
+  "utFnYSEQcCxYgwAE": {
+   "name_ja": "延長マガジン(超大型拳銃)",
+   "name_en": "Extended Magazine (Very Heavy Pistol)",
+   "effect": "装弾数を 14 に増やす。",
+   "flavor": "リロードの回数が、少しだけ減る。"
+  },
+  "x6mYA3IJZaNK00nv": {
+   "name_ja": "グレネード・ランチャー・アンダーバレル",
+   "name_en": "Grenade Launcher Underbarrel",
+   "effect": "ふつうのグレネード・ランチャーと同じように使えるが、装弾数は 1。両手が必要で、付けるのに 2 枠使う。付けているあいだ服の下に隠せない。付けた銃の品質や他の改造の効果を引き継ぐ。",
+   "flavor": "銃の下に、もう一つの切り札を。"
+  },
+  "uFrp6fXRYfuorIwk": {
+   "name_ja": "ハードンド・サーキット",
+   "name_en": "Hardened Circuitry",
+   "effect": "サイバーデッキが EMP の効果で止まったり壊れたりしない。",
+   "flavor": "電磁パルスの嵐の中でも、デッキは黙らない。"
+  },
+  "YRDJbfFA4knBhApR": {
+   "name_ja": "車体強化",
+   "name_en": "Heavy Chassis",
+   "effect": "バイク・ジェットスキー・ジャイロコプター以外に付けられる。車体の耐久（SDP）を 20 増やす（ガラスは別）。10 トンまで牽引できる。",
+   "flavor": "重い車体は、多少の衝突では止まらない。"
+  },
+  "qFItKouR0zGYlnta": {
+   "name_ja": "居住容量",
+   "name_en": "Housing Capacity",
+   "effect": "エアロゼップ・AV-4・キャビンクルーザー・地上車・ヨットに付けられる。地上車と AV-4 にはベッド 1 つ・トイレ・シャワー・小さな台所を、キャビンクルーザー・ヨット・エアロゼップには部屋を 1 つ足す。小型地上車と高性能地上車には車体強化が必要。",
+   "flavor": "家賃を払う代わりに、車で暮らす。"
+  },
+  "mwyBsBDjTnEorM3x": {
+   "name_ja": "ホバー・アップグレード",
+   "name_en": "Hover Upgrade",
+   "effect": "すべての陸の乗り物に付けられる。ファンで浮いて水の上を走れる（時速 24km 相当、戦闘での速度 10）。",
+   "flavor": "川も運河も、道の一部になる。"
+  },
+  "pEXcsIk1FYMNdbUc": {
+   "name_ja": "赤外線暗視スコープ",
+   "name_en": "Infrared Nightvision Scope",
+   "effect": "暗闇や煙・霧の中の相手を狙うときのペナルティを 0 にする。",
+   "flavor": "闇の中でも、体温ははっきり見える。"
+  },
+  "AgwuTwzg7UeI1xch": {
+   "name_ja": "インスレーテッド・ワイヤリング",
+   "name_en": "Insulated Wiring",
+   "effect": "サイバーデッキと使う人の服に火がつかない。",
+   "flavor": "ネットの炎が、現実に燃え移らない。"
+  },
+  "kDGBW4aA2wJ9KjUF": {
+   "name_ja": "KRASHバリア",
+   "name_en": "KRASH Barrier",
+   "effect": "サイバーデッキが、ネットランナーを強制的にジャックアウトさせる効果（安全でも危険でも）を受けない。",
+   "flavor": "誰にも、勝手に回線を抜かせない。"
+  },
+  "LlcUvcVoCD6SeKOk": {
+   "name_ja": "ニトロ",
+   "name_en": "NOS",
+   "effect": "すべての乗り物に付けられる。亜酸化窒素のタンクを足す。運転中にアクションを使って、移動アクションをもう 1 回行える。重ねて付けられ、タンク 1 つにつき 1 日 1 回。",
+   "flavor": "いざというときの、ひと押し。"
+  },
+  "t6qh0xOlFcak96nC": {
+   "name_ja": "搭載型フレイムスロワー",
+   "name_en": "Onboard Flamethrower",
+   "effect": "すべての乗り物に付けられる。前・横・後ろのどこかに向けて据えるフレイムスロワー。運転手がアクションで撃つ。走行中は補充できず、武器の改造も付けられない。重ねて付けられる。",
+   "flavor": "後ろの追っ手に、火の壁を。"
+  },
+  "Ige6zeGaInYghHM1": {
+   "name_ja": "搭載型機関銃",
+   "name_en": "Onboard Machine Gun",
+   "effect": "すべての乗り物に付けられる。前に向けて据える、30 発入りのオートファイア専用のアサルト・ライフル。運転手がアクションで撃つ。走行中は補充できず、武器の改造も付けられない。重ねて付けられる。",
+   "flavor": "ハンドルを握ったまま、前の車を蜂の巣にする。"
+  },
+  "wcG4hqmZAlqYZlm3": {
+   "name_ja": "搭載型近接武器",
+   "name_en": "Onboard Melee Weapon",
+   "effect": "陸と海の乗り物に付けられる。前・横・後ろのどこかに据える超大型近接武器。運転手がアクションで攻撃する。外せない。重ねて付けられる。",
+   "flavor": "すれ違いざまに、刃が走る。"
+  },
+  "EUKwyodr06YR101B": {
+   "name_ja": "搭載型ロケット・ポッド",
+   "name_en": "Onboard Rocket Pod",
+   "effect": "バイク・ジェットスキー・ジャイロコプター以外に付けられる。前に向けて据える、ロケット 3 発入りのロケットランチャー。運転手がアクションで撃つ。走行中は補充できず、武器の改造も付けられない。重ねて付けられる。車体強化が必要。",
+   "flavor": "道を空けてもらう、いちばん確実な方法。"
+  },
+  "Ut1OZZP1KFC8o6IB": {
+   "name_ja": "レンジ・アップグレード",
+   "name_en": "Range Upgrade",
+   "effect": "サイバーデッキが、8m 離れたアクセスポイントにもつなげる（通常は 6m）。",
+   "flavor": "少し離れた物陰から、仕事ができる。"
+  },
+  "lw6N5svBE702A6VE": {
+   "name_ja": "シート・アップグレード",
+   "name_en": "Seating Upgrade",
+   "effect": "すべての乗り物に付けられる。座席を 2 つ足す。サイドカーとして外に付けても、パラシュート付きの射出座席にしてもよい。バイク・ジェットスキー・ジャイロコプター以外は重ねて付けられる。",
+   "flavor": "仲間が増えても、置いていかずに済む。"
+  },
+  "CeCRMtA7XTyEm3HM": {
+   "name_ja": "セキュリティ・アップグレード",
+   "name_en": "Security Upgrade",
+   "effect": "すべての乗り物に付けられる。DNA ロックを付け、正しい生体認証か電子工学・セキュリティ技術の判定（難易度 17）がないと開かない。失敗するとスタンバトンで殴られたのと同じダメージを受ける。1 分止まっていると車体が迷彩に隠れ、見つけるには知覚（難易度 17）が必要。",
+   "flavor": "盗もうとした者に、車が自分で仕返しする。"
+  },
+  "aFg1nXhz37e1C2YP": {
+   "name_ja": "ショットガン・アンダーバレル",
+   "name_en": "Shotgun Underbarrel",
+   "effect": "ふつうのショットガンと同じように使えるが、装弾数は 2。両手が必要で、付けるのに 2 枠使う。付けているあいだ服の下に隠せない。付けた銃の品質や他の改造の効果を引き継ぐ。",
+   "flavor": "近づかれたときの、銃の下の備え。"
+  },
+  "BC8S1sdK0QGdyHNC": {
+   "name_ja": "スマートガン・リンク",
+   "name_en": "Smartgun Link",
+   "effect": "武器を「スマートガン」にする。",
+   "flavor": "銃と目がつながり、狙いが一つになる。"
+  },
+  "7RZSjo4XKb5TFmkd": {
+   "name_ja": "密輸用アップグレード",
+   "name_en": "Smuggling Upgrade",
+   "effect": "すべての乗り物に付けられる。隠しホルスター 2 つと、密輸用の大きな隠し場所を足す。見つけるには物を隠す・見つけるの判定（難易度 17）が必要。バイク・ジェットスキー・ジャイロコプター以外は重ねて付けられる。",
+   "flavor": "検問を通るたびに、少しだけ緊張する。"
+  },
+  "Ryex0KHeeDzPQwmN": {
+   "name_ja": "狙撃用スコープ",
+   "name_en": "Sniping Scope",
+   "effect": "800m 先まで細かく見える。50m より遠い相手への単発射撃・照準射撃に +1。",
+   "flavor": "遠くの相手の瞬きまで見える。"
+  },
+  "FiZDgbVLFADR6QTT": {
+   "name_ja": "ヴィークル用銃架",
+   "name_en": "Vehicle Heavy Weapon Mount",
+   "effect": "バイク・ジェットスキー・ジャイロコプター以外に付けられる。座席の 1 つを、両手持ちの射撃武器を据える回転銃座にする。同乗者がアクションで撃ち、補充もできる。武器はアクションで付け外しできる。初めて付けるとき、ツナミ・アームズ・ヘリックス、ラインメタル EMG-86 レールガン、ミリテク・カウボーイ U-56 グレネード・ランチャーのどれかが付いてくる。防弾ガラスがあれば射手も同じガラスで守られる。",
+   "flavor": "後部座席が、そのまま砲台になる。"
+  },
+  "WNqG41VJWwDzQaIY": {
+   "name_ja": "AV-4 多用途エアロダイン",
+   "name_en": "AV-4 Multipurpose Aerodyne",
+   "effect": "垂直に離着陸でき、素早く現場へ降りられる多用途の航空機。トラウマ・チームがよく使う。",
+   "flavor": "空から救急隊が降りてくる音は、ナイトシティでは希望と恐怖の両方の合図。"
+  },
+  "W6SZVj8BHHXbpPOz": {
+   "name_ja": "AV-9 スーパー・エアロダイン",
+   "name_en": "AV-9 Super Aerodyne",
+   "effect": "座席の少ない高性能の AV。時速 300 マイルまで出る。",
+   "flavor": "企業の重役が、地上の渋滞を見下ろすための乗り物。"
+  },
+  "pnc2jyjtjTNDZKCT": {
+   "name_ja": "エアロゼップ",
+   "name_en": "Aerozep",
+   "effect": "現代の貨物飛行船。部屋が 2 つ以上必要で、価格は甲板下の部屋 1 つごと。",
+   "flavor": "ゆっくり、大きく、たくさん運ぶ。"
+  },
+  "6cciJXompBeXxMma": {
+   "name_ja": "キャビンクルーザー",
+   "name_en": "Cabin Cruiser",
+   "effect": "とても速いモーターボート。部屋が 2 つ以上必要で、価格は甲板下の部屋 1 つごと。",
+   "flavor": "海の上に、自分だけの隠れ家を持てる。"
+  },
+  "jR1AReHKQFieIdWD": {
+   "name_ja": "小型地上車",
+   "name_en": "Compact Groundcar",
+   "effect": "CHOOH2 で走る小型の地上車。たくさんのメーカーが似た車を作っている、ありふれた車。",
+   "flavor": "どこにでもある車。だから、どこにでも紛れこめる。"
+  },
+  "TsyueQcA4aeBN6xU": {
+   "name_ja": "ジャイロコプター",
+   "name_en": "Gyrocopter",
+   "effect": "2 人乗りの小型の回転翼機。",
+   "flavor": "空を飛べる、いちばん安上がりな方法。"
+  },
+  "r5x9bz7XA12gIiRY": {
+   "name_ja": "ヘリコプター",
+   "name_en": "Helicopter",
+   "effect": "4 人乗りのヘリコプター。速く、長く飛べる。",
+   "flavor": "道路が封鎖されても、空はまだ開いている。"
+  },
+  "DreAdvzXmJsiSWyy": {
+   "name_ja": "高性能地上車",
+   "name_en": "High Performance Groundcar",
+   "effect": "走りの性能に特化した地上車。",
+   "flavor": "速さは、逃げる側にも追う側にも必要だ。"
+  },
+  "x0E0hYFqfP3qJGPT": {
+   "name_ja": "ジェットスキー",
+   "name_en": "Jetski",
+   "effect": "CHOOH2 で走る 2 人乗りの水上バイク。",
+   "flavor": "水路を使えば、検問はない。"
+  },
+  "jQAAGVWOKKhzEIMK": {
+   "name_ja": "オートバイ",
+   "name_en": "Roadbike",
+   "effect": "CHOOH2 で走る、レッドの時代によく見るオートバイ。",
+   "flavor": "渋滞の隙間を抜けていく、いちばん身軽な足。"
+  },
+  "eKqDVQo3mzD16pCc": {
+   "name_ja": "スピードボート",
+   "name_en": "Speedboat",
+   "effect": "CHOOH2 で走る高速のボート。",
+   "flavor": "港の仕事には、これが欠かせない。"
+  },
+  "sFmW1uCXb2hsP7Dy": {
+   "name_ja": "スーパーカー",
+   "name_en": "Super Groundcar",
+   "effect": "CHOOH2 で走る高価なスポーツカー。とても速い。",
+   "flavor": "乗っているだけで、狙われる理由になる。"
+  },
+  "p4jR9nv6Ob90axwL": {
+   "name_ja": "スーパーバイク",
+   "name_en": "Superbike",
+   "effect": "オートバイを強化した車種。とても速い。",
+   "flavor": "エンジン音が、通り過ぎたあとに聞こえる。"
+  },
+  "Wo98wgEQA6B7FnMF": {
+   "name_ja": "ヨット",
+   "name_en": "Yacht",
+   "effect": "豪華なモーターボート。部屋が 2 つ以上必要で、価格は甲板の上か下の部屋 1 つごと。",
+   "flavor": "金持ちの、海の上の城。"
+  },
+  "iSyf14qCf2US6im1": {
+   "name_ja": "エアーピストル",
+   "name_en": "Air Pistol",
+   "effect": "特殊な中型拳銃。ペイント弾を撃つ。酸の弾を込めると、当たるたびに防具の SP を 1 削る。",
+   "flavor": "見た目はおもちゃ。中身を何にするかで、ただのいたずらにも嫌がらせにもなる。"
+  },
+  "QrQNdHTuEDxrfIxS": {
+   "name_ja": "アサルト・ライフル",
+   "name_en": "Assault Rifle",
+   "effect": "",
+   "flavor": "軍や企業の警備隊が使う、いちばん標準的な突撃銃。"
+  },
+  "Ew9qfNB7omExalEu": {
+   "name_ja": "アサルトライフル (高品質)",
+   "name_en": "Assault Rifle (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "軍や企業の警備隊が使う、いちばん標準的な突撃銃。"
+  },
+  "wNHXTitRqLd1X0Do": {
+   "name_ja": "アサルトライフル(低品質)",
+   "name_en": "Assault Rifle (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "軍や企業の警備隊が使う、いちばん標準的な突撃銃。"
+  },
+  "VtHbu4C8Pg0H2oOD": {
+   "name_ja": "野球バット",
+   "name_en": "Baseball Bat",
+   "effect": "",
+   "flavor": "バットケースに入れておけば、誰も疑わない。"
+  },
+  "7XYWTgEJB50CN7Xm": {
+   "name_ja": "野球バット (高品質)",
+   "name_en": "Baseball Bat (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "バットケースに入れておけば、誰も疑わない。"
+  },
+  "2XBlQq4DtxnwRTk4": {
+   "name_ja": "野球バット (低品質)",
+   "name_en": "Baseball Bat (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "バットケースに入れておけば、誰も疑わない。"
+  },
+  "n8wOKWrJUC0ZS5jg": {
+   "name_ja": "弓",
+   "name_en": "Bow",
+   "effect": "矢をつがえるのは攻撃のアクションに含まれる（リロードのアクションはいらない）。",
+   "flavor": "音が出ない。古い道具ほど、ナイトシティでは逆に目立たない。"
+  },
+  "fQkgTc2gRtpuZvtX": {
+   "name_ja": "弓 (高品質)",
+   "name_en": "Bow (Excellent)",
+   "effect": "矢をつがえるのは攻撃のアクションに含まれる（リロードのアクションはいらない）。 高品質: 攻撃の判定に +1。",
+   "flavor": "音が出ない。古い道具ほど、ナイトシティでは逆に目立たない。"
+  },
+  "LIGE9re7IZWkvU4g": {
+   "name_ja": "弓 (低品質)",
+   "name_en": "Bow (Poor)",
+   "effect": "矢をつがえるのは攻撃のアクションに含まれる（リロードのアクションはいらない）。 低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "音が出ない。古い道具ほど、ナイトシティでは逆に目立たない。"
+  },
+  "QCtW6zOzx0zp88ji": {
+   "name_ja": "チェーンソー",
+   "name_en": "Chainsaw",
+   "effect": "CHOOH2 の燃料で動く。満タンで 2〜3 時間使える。",
+   "flavor": "エンジンをかけた瞬間、話し合いは終わる。"
+  },
+  "TIIsI6khCIZE4iip": {
+   "name_ja": "チェーンソー (高品質)",
+   "name_en": "Chainsaw (Excellent)",
+   "effect": "CHOOH2 の燃料で動く。満タンで 2〜3 時間使える。 高品質: 攻撃の判定に +1。",
+   "flavor": "エンジンをかけた瞬間、話し合いは終わる。"
+  },
+  "UTScbqdHmttI41Xu": {
+   "name_ja": "チェーンソー (低品質)",
+   "name_en": "Chainsaw (Poor)",
+   "effect": "CHOOH2 の燃料で動く。満タンで 2〜3 時間使える。 低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "エンジンをかけた瞬間、話し合いは終わる。"
+  },
+  "UlNLm2tio4pdgOgV": {
+   "name_ja": "コンバットナイフ",
+   "name_en": "Combat Knife",
+   "effect": "",
+   "flavor": "路地裏の必需品。ブーツの中にも袖の中にも収まる。"
+  },
+  "evxblJ6pHKLXz3c2": {
+   "name_ja": "コンバットナイフ (高品質)",
+   "name_en": "Combat Knife (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "路地裏の必需品。ブーツの中にも袖の中にも収まる。"
+  },
+  "glDRehQyz40desZo": {
+   "name_ja": "コンバットナイフ(低品質)",
+   "name_en": "Combat Knife (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "路地裏の必需品。ブーツの中にも袖の中にも収まる。"
+  },
+  "5DZRWppYOzCk9rgQ": {
+   "name_ja": "Constitutional Arms Hurricane Assault Weapon",
+   "name_en": "Constitutional Arms Hurricane Assault Weapon",
+   "effect": "特殊なショットガン。照準射撃ができない。台座に据えていなければ BODY 11 以上が必要。",
+   "flavor": "撃つというより、目の前の空間を丸ごと消す道具。"
+  },
+  "BWLryyUI4fVpD70G": {
+   "name_ja": "クロスボウ",
+   "name_en": "Crossbow",
+   "effect": "矢をつがえるのは攻撃のアクションに含まれる（リロードのアクションはいらない）。",
+   "flavor": "引き金は静かで、矢は回収できる。弾代の節約にもなる。"
+  },
+  "DDFkD0nWwz34WjRE": {
+   "name_ja": "クロスボウ (高品質)",
+   "name_en": "Crossbow (Excellent)",
+   "effect": "矢をつがえるのは攻撃のアクションに含まれる（リロードのアクションはいらない）。 高品質: 攻撃の判定に +1。",
+   "flavor": "引き金は静かで、矢は回収できる。弾代の節約にもなる。"
+  },
+  "iIWzx4Ae6eUZmqcQ": {
+   "name_ja": "クロスボウ(低品質)",
+   "name_en": "Crossbow (Poor)",
+   "effect": "矢をつがえるのは攻撃のアクションに含まれる（リロードのアクションはいらない）。 低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "引き金は静かで、矢は回収できる。弾代の節約にもなる。"
+  },
+  "37MMJ9HlsL6mCt2D": {
+   "name_ja": "バール",
+   "name_en": "Crowbar",
+   "effect": "",
+   "flavor": "扉をこじ開け、ついでに頭もこじ開ける。工具箱に入っていても怪しまれない。"
+  },
+  "et4avnof5XKvoHTS": {
+   "name_ja": "バール (高品質)",
+   "name_en": "Crowbar (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "扉をこじ開け、ついでに頭もこじ開ける。工具箱に入っていても怪しまれない。"
+  },
+  "ES0FYqZpy8NcDrEZ": {
+   "name_ja": "バール(低品質)",
+   "name_en": "Crowbar (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "扉をこじ開け、ついでに頭もこじ開ける。工具箱に入っていても怪しまれない。"
+  },
+  "fSvkIl83Rsqd7O16": {
+   "name_ja": "ダーツガン",
+   "name_en": "Dartgun",
+   "effect": "特殊な超大型拳銃。",
+   "flavor": "針の先に何を塗るかは、持ち主の性格しだい。"
+  },
+  "qAqYtbD1yFgQNelR": {
+   "name_ja": "フレイムスロワー",
+   "name_en": "Flamethrower",
+   "effect": "特殊なショットガン。使う技能は重火器。",
+   "flavor": "ナイトシティでは、燃やして解決することが多すぎる。"
+  },
+  "KgqUdz9Fs55747gv": {
+   "name_ja": "グレネード・ランチャー",
+   "name_en": "Grenade Launcher",
+   "effect": "いろいろな種類のグレネードを撃てる。",
+   "flavor": "一発ごとに、周りの景色が書き換わる。"
+  },
+  "zl2qzlFpS7IsJASO": {
+   "name_ja": "グレネードランチャー (高品質)",
+   "name_en": "Grenade Launcher (Excellent)",
+   "effect": "いろいろな種類のグレネードを撃てる。 高品質: 攻撃の判定に +1。",
+   "flavor": "一発ごとに、周りの景色が書き換わる。"
+  },
+  "30W4ja1h6Sq42cB9": {
+   "name_ja": "グレネード・ランチャー(低品質)",
+   "name_en": "Grenade Launcher (Poor)",
+   "effect": "いろいろな種類のグレネードを撃てる。 低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "一発ごとに、周りの景色が書き換わる。"
+  },
+  "g2d7I3KLRXXbMr1g": {
+   "name_ja": "大型近接武器",
+   "name_en": "Heavy Melee",
+   "effect": "汎用の大型近接武器（特定の武器の代わりに使う）。",
+   "flavor": "重さがそのまま説得力になる。"
+  },
+  "lkynJgL5MTDuHwPq": {
+   "name_ja": "大型近接武器 (高品質)",
+   "name_en": "Heavy Melee (Excellent)",
+   "effect": "汎用の大型近接武器（特定の武器の代わりに使う）。 高品質: 攻撃の判定に +1。",
+   "flavor": "重さがそのまま説得力になる。"
+  },
+  "qjUfGfpQO16ntqHt": {
+   "name_ja": "大型近接武器 (低品質)",
+   "name_en": "Heavy Melee (Poor)",
+   "effect": "汎用の大型近接武器（特定の武器の代わりに使う）。 低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "重さがそのまま説得力になる。"
+  },
+  "Y433cjlB1uVHPysk": {
+   "name_ja": "大型拳銃",
+   "name_en": "Heavy Pistol",
+   "effect": "隠して持てる。",
+   "flavor": "ナイトシティでいちばんよく見る銃。上着の下にちょうど収まる。"
+  },
+  "CJk0YRgshf45bCTz": {
+   "name_ja": "大型拳銃 (高品質)",
+   "name_en": "Heavy Pistol (Excellent)",
+   "effect": "隠して持てる。 高品質: 攻撃の判定に +1。",
+   "flavor": "ナイトシティでいちばんよく見る銃。上着の下にちょうど収まる。"
+  },
+  "HOgtO363Rw42ZHMp": {
+   "name_ja": "大型拳銃(低品質)",
+   "name_en": "Heavy Pistol (Poor)",
+   "effect": "隠して持てる。 低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "ナイトシティでいちばんよく見る銃。上着の下にちょうど収まる。"
+  },
+  "nFXxinLVjYA06z1K": {
+   "name_ja": "大型SMG",
+   "name_en": "Heavy SMG",
+   "effect": "大きいので隠して持てない。",
+   "flavor": "弾をばらまきたいが、肩に担ぐ銃は大げさすぎる、という人向け。"
+  },
+  "nmLsegi1CElgRVD3": {
+   "name_ja": "大型SMG (高品質)",
+   "name_en": "Heavy SMG (Excellent)",
+   "effect": "大きいので隠して持てない。 高品質: 攻撃の判定に +1。",
+   "flavor": "弾をばらまきたいが、肩に担ぐ銃は大げさすぎる、という人向け。"
+  },
+  "DrYW7Wu9wt8waU28": {
+   "name_ja": "大型SMG (低品質)",
+   "name_en": "Heavy SMG (Poor)",
+   "effect": "大きいので隠して持てない。 低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "弾をばらまきたいが、肩に担ぐ銃は大げさすぎる、という人向け。"
+  },
+  "vqUPo2YSPLAcV04T": {
+   "name_ja": "ヘリコプターの回転翼",
+   "name_en": "Helicopter Blades",
+   "effect": "",
+   "flavor": "墜ちた機体から外した回転翼。手作りの柄が巻いてある。"
+  },
+  "9alzkarjimr2QXmn": {
+   "name_ja": "ヘリコプターの回転翼(高品質)",
+   "name_en": "Helicopter Blades (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "墜ちた機体から外した回転翼。手作りの柄が巻いてある。"
+  },
+  "x3ZTVLJRsCd4vxVq": {
+   "name_ja": "ヘリコプターの回転翼(低品質)",
+   "name_en": "Helicopter Blades (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "墜ちた機体から外した回転翼。手作りの柄が巻いてある。"
+  },
+  "8ZDEswdFk7K839Dn": {
+   "name_ja": "Kendachi Mono-Three",
+   "name_en": "Kendachi Mono-Three",
+   "effect": "特殊な高品質の両手持ちの超大型近接武器。SP 11 未満の防具を無視する。",
+   "flavor": "単分子の刃を持つハイテクの刀。斬られた側は、しばらく斬られたことに気づかない。"
+  },
+  "UzYcFOm0knIcLVF0": {
+   "name_ja": "鉄パイプ",
+   "name_en": "Lead Pipe",
+   "effect": "",
+   "flavor": "昔は何かを流していた管。今は人を黙らせるのに使われている。"
+  },
+  "XhMHJrLaYsmrK3J9": {
+   "name_ja": "鉄パイプ(高品質)",
+   "name_en": "Lead Pipe (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "昔は何かを流していた管。今は人を黙らせるのに使われている。"
+  },
+  "wDPkVbsM0UK9vwoW": {
+   "name_ja": "鉄パイプ(低品質)",
+   "name_en": "Lead Pipe (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "昔は何かを流していた管。今は人を黙らせるのに使われている。"
+  },
+  "hvxl5hrwWBPZmSwF": {
+   "name_ja": "小型近接武器",
+   "name_en": "Light Melee",
+   "effect": "汎用の小型近接武器（特定の武器の代わりに使う）。",
+   "flavor": "小さくても、急所に届けば十分。"
+  },
+  "TQvsBbPEBc13SdVC": {
+   "name_ja": "小型近接武器 (高品質)",
+   "name_en": "Light Melee (Excellent)",
+   "effect": "汎用の小型近接武器（特定の武器の代わりに使う）。 高品質: 攻撃の判定に +1。",
+   "flavor": "小さくても、急所に届けば十分。"
+  },
+  "ajKRWajN4eAHC50E": {
+   "name_ja": "小型近接武器(低品質)",
+   "name_en": "Light Melee (Poor)",
+   "effect": "汎用の小型近接武器（特定の武器の代わりに使う）。 低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "小さくても、急所に届けば十分。"
+  },
+  "ZgcPrSNsggkm8D0w": {
+   "name_ja": "鉈",
+   "name_en": "Machete",
+   "effect": "",
+   "flavor": "藪も紐も腕も切れる。ナイトシティのギャングに好まれる。"
+  },
+  "JHGbw24quociaZKc": {
+   "name_ja": "鉈(高品質)",
+   "name_en": "Machete (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "藪も紐も腕も切れる。ナイトシティのギャングに好まれる。"
+  },
+  "2wP5wan7HZmaRuh3": {
+   "name_ja": "鉈(低品質)",
+   "name_en": "Machete (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "藪も紐も腕も切れる。ナイトシティのギャングに好まれる。"
+  },
+  "YFAt5vDcufYFtFCr": {
+   "name_ja": "マロリアン・アームズ3516",
+   "name_en": "Malorian Arms 3516",
+   "effect": "特殊な高品質の超大型拳銃。外せないスマートガン・リンクが付いている。",
+   "flavor": "伝説的なロッカーボーイが持っていたことで知られる、手作りの拳銃。"
+  },
+  "hW4eIbo01Hx2Jnc2": {
+   "name_ja": "武術",
+   "name_en": "Martial Arts",
+   "effect": "素手の攻撃。防具の SP を半分にして計算する。使う前に、どの武術の技能を使うか設定する。",
+   "flavor": "鍛えた体そのものが武器。没収されることもない。"
+  },
+  "lKlvupxxfKfNVPEc": {
+   "name_ja": "中型近接武器",
+   "name_en": "Medium Melee",
+   "effect": "汎用の中型近接武器（特定の武器の代わりに使う）。",
+   "flavor": "片手で振れて、ちゃんと効く。"
+  },
+  "grEw5oU6WDsqAOvY": {
+   "name_ja": "中型近接武器 (高品質)",
+   "name_en": "Medium Melee (Excellent)",
+   "effect": "汎用の中型近接武器（特定の武器の代わりに使う）。 高品質: 攻撃の判定に +1。",
+   "flavor": "片手で振れて、ちゃんと効く。"
+  },
+  "vmOTJujlh0K6dfBX": {
+   "name_ja": "中型近接武器 (低品質)",
+   "name_en": "Medium Melee (Poor)",
+   "effect": "汎用の中型近接武器（特定の武器の代わりに使う）。 低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "片手で振れて、ちゃんと効く。"
+  },
+  "VwuC5ZtcKsqtFHms": {
+   "name_ja": "中型拳銃",
+   "name_en": "Medium Pistol",
+   "effect": "隠して持てる。",
+   "flavor": "軽くて扱いやすい。最初の 1 丁に選ばれがちな拳銃。"
+  },
+  "zqGFSxTSOErGjXeU": {
+   "name_ja": "中型拳銃(高品質)",
+   "name_en": "Medium Pistol (Excellent)",
+   "effect": "隠して持てる。 高品質: 攻撃の判定に +1。",
+   "flavor": "軽くて扱いやすい。最初の 1 丁に選ばれがちな拳銃。"
+  },
+  "tCTzi4miYdNgAJVc": {
+   "name_ja": "中型拳銃(低品質)",
+   "name_en": "Medium Pistol (Poor)",
+   "effect": "隠して持てる。 低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "軽くて扱いやすい。最初の 1 丁に選ばれがちな拳銃。"
+  },
+  "oQ4mV07fh1et5zI7": {
+   "name_ja": "マイクロウェーバー",
+   "name_en": "Microwaver",
+   "effect": "特殊な超大型拳銃。当たった相手は、サイバーテックの判定（難易度 15）に成功しないと、サイバーウェアや電子機器が 1 分間動かなくなる。",
+   "flavor": "撃たれた側のクロームが、一斉に黙りこむ。"
+  },
+  "IctYbE3ZOOR2yw5H": {
+   "name_ja": "Militech \"Cowboy\" U-56 Grenade Launcher",
+   "name_en": "Militech \"Cowboy\" U-56 Grenade Launcher",
+   "effect": "特殊なグレネード・ランチャー。ROF 2。グレネードを 4 発込められる。台座に据えていなければ BODY 11 以上が必要。",
+   "flavor": "ミリテク製の連発式。撃ち合いを、一方的な花火大会に変える。"
+  },
+  "H3TbPxxkfN9ir5kp": {
+   "name_ja": "薙刀",
+   "name_en": "Naginata",
+   "effect": "",
+   "flavor": "長い柄の先に反った刃。近距離の制圧用に、アラサカの戦術部隊が好んで使う。"
+  },
+  "tcok1yUmGF0qCn5D": {
+   "name_ja": "薙刀(高品質)",
+   "name_en": "Naginata (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "長い柄の先に反った刃。近距離の制圧用に、アラサカの戦術部隊が好んで使う。"
+  },
+  "zIxmmhvmW64lE1y3": {
+   "name_ja": "薙刀(低品質)",
+   "name_en": "Naginata (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "長い柄の先に反った刃。近距離の制圧用に、アラサカの戦術部隊が好んで使う。"
+  },
+  "DXVvTnvnQKLp9Uky": {
+   "name_ja": "Rhinemetall EMG-86 Railgun",
+   "name_en": "Rhinemetall EMG-86 Railgun",
+   "effect": "特殊なアサルト・ライフル。照準射撃もオートファイアもできない。台座に据えていなければ BODY 11 以上が必要。SP 11 未満の防具を無視する。",
+   "flavor": "電磁加速で弾を撃ち出す。壁の向こうにいても安全とは言えない。"
+  },
+  "Fl6F6x2PstAthge7": {
+   "name_ja": "ロケットランチャー",
+   "name_en": "Rocket Launcher",
+   "effect": "",
+   "flavor": "交渉が決裂したときの最終手段。"
+  },
+  "tzWTzy28fH8N092r": {
+   "name_ja": "ロケットランチャー (高品質)",
+   "name_en": "Rocket Launcher (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "交渉が決裂したときの最終手段。"
+  },
+  "Gky7qJb3lawgiq1u": {
+   "name_ja": "ロケットランチャー(低品質)",
+   "name_en": "Rocket Launcher (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "交渉が決裂したときの最終手段。"
+  },
+  "FdWzIROFGFrpvFMj": {
+   "name_ja": "SMG",
+   "name_en": "SMG",
+   "effect": "隠して持てる。",
+   "flavor": "コートの下から弾の雨を降らせる。"
+  },
+  "MmFM7zOUJI6ik1AP": {
+   "name_ja": "SMG (高品質)",
+   "name_en": "SMG (Excellent)",
+   "effect": "隠して持てる。 高品質: 攻撃の判定に +1。",
+   "flavor": "コートの下から弾の雨を降らせる。"
+  },
+  "eBiYEY7wwTGQeE1g": {
+   "name_ja": "SMG (低品質)",
+   "name_en": "SMG (Poor)",
+   "effect": "隠して持てる。 低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "コートの下から弾の雨を降らせる。"
+  },
+  "PJhu6eY766OegZBo": {
+   "name_ja": "ショットガン",
+   "name_en": "Shotgun",
+   "effect": "",
+   "flavor": "狙いが多少甘くても、扉の前ではいちばん頼りになる。"
+  },
+  "6ZKnohADyqX5Iyqz": {
+   "name_ja": "ショットガン (高品質)",
+   "name_en": "Shotgun (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "狙いが多少甘くても、扉の前ではいちばん頼りになる。"
+  },
+  "L4aHgrhuHNzcyXTY": {
+   "name_ja": "ショットガン (低品質)",
+   "name_en": "Shotgun (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "狙いが多少甘くても、扉の前ではいちばん頼りになる。"
+  },
+  "B53FFRpbpoT3VPP0": {
+   "name_ja": "シュリーカー",
+   "name_en": "Shrieker",
+   "effect": "特殊な超大型拳銃。撃つ側は耳の保護がないと自分の耳を痛める。当たった相手は、拷問・薬物への抵抗の判定（難易度 15）に成功しないと、致命傷「耳の損傷」を負う。",
+   "flavor": "銃声ではなく、悲鳴のような音で相手の耳を壊す。"
+  },
+  "Brw1noBAwDuFqO2T": {
+   "name_ja": "スレッジハンマー",
+   "name_en": "Sledgehammer",
+   "effect": "",
+   "flavor": "平らな鉄の頭で、壁も扉も骨も同じように壊す。"
+  },
+  "vfITAP3Y0Hn1Ygjy": {
+   "name_ja": "スレッジハンマー (高品質)",
+   "name_en": "Sledgehammer (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "平らな鉄の頭で、壁も扉も骨も同じように壊す。"
+  },
+  "XUCQZKCL0t1HhOmR": {
+   "name_ja": "スレッジハンマー(低品質)",
+   "name_en": "Sledgehammer (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "平らな鉄の頭で、壁も扉も骨も同じように壊す。"
+  },
+  "riJDKdjhCWwkW4MO": {
+   "name_ja": "スナイパーライフル",
+   "name_en": "Sniper Rifle",
+   "effect": "弾倉に 4 発入る。",
+   "flavor": "遠くから一発で終わらせる。撃つまでの待ち時間がいちばん長い。"
+  },
+  "g1WPHBmTgxEHTbSp": {
+   "name_ja": "スナイパーライフル (高品質)",
+   "name_en": "Sniper Rifle (Excellent)",
+   "effect": "弾倉に 4 発入る。 高品質: 攻撃の判定に +1。",
+   "flavor": "遠くから一発で終わらせる。撃つまでの待ち時間がいちばん長い。"
+  },
+  "CnLh2ODjGnlRrYGP": {
+   "name_ja": "スナイパーライフル(低品質)",
+   "name_en": "Sniper Rifle (Poor)",
+   "effect": "弾倉に 4 発入る。 低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "遠くから一発で終わらせる。撃つまでの待ち時間がいちばん長い。"
+  },
+  "ewjRv6jzfBSR0o6e": {
+   "name_ja": "釘バット",
+   "name_en": "Spiked Bat",
+   "effect": "",
+   "flavor": "釘を何本も打ちこんだバット。見た目どおりの使い方をする。"
+  },
+  "sh57bxMsMkSVx2cA": {
+   "name_ja": "釘バット (高品質)",
+   "name_en": "Spiked Bat (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "釘を何本も打ちこんだバット。見た目どおりの使い方をする。"
+  },
+  "1QtzRIIpGuvL1Msn": {
+   "name_ja": "釘バット(低品質)",
+   "name_en": "Spiked Bat (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "釘を何本も打ちこんだバット。見た目どおりの使い方をする。"
+  },
+  "O1brHdazB6mqbVp1": {
+   "name_ja": "スタンバトン",
+   "name_en": "Stun Baton",
+   "effect": "特殊な片手持ちの中型近接武器。HP を 1 未満にするダメージを与えると、相手は死なずに気絶する。致命傷を与えず、防具の SP も削らない。",
+   "flavor": "警備員の腰にぶら下がっている、殺さないための警棒。"
+  },
+  "yJ8sMz4BMgQ7ZH3K": {
+   "name_ja": "スタンガン",
+   "name_en": "Stun Gun",
+   "effect": "特殊な大型拳銃。HP を 1 未満にするダメージを与えると、相手は死なずに気絶する。致命傷を与えず、防具の SP も削らない。",
+   "flavor": "生け捕りの依頼には、これがいちばん。"
+  },
+  "EgU8e5iJFIvQKFEv": {
+   "name_ja": "剣",
+   "name_en": "Sword",
+   "effect": "",
+   "flavor": "斬るにも突くにも向いた、刃と柄のある武器。"
+  },
+  "G2ZYyZdkjDlerJSM": {
+   "name_ja": "剣 (高品質)",
+   "name_en": "Sword (Excellent)",
+   "effect": "高品質: 攻撃の判定に +1。",
+   "flavor": "斬るにも突くにも向いた、刃と柄のある武器。"
+  },
+  "bRUdp9rScPoOZwsB": {
+   "name_ja": "剣(低品質)",
+   "name_en": "Sword (Poor)",
+   "effect": "低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "斬るにも突くにも向いた、刃と柄のある武器。"
+  },
+  "29p2bEfPcAWHpsTY": {
+   "name_ja": "投擲武器",
+   "name_en": "Thrown Weapon",
+   "effect": "物を投げる遠隔攻撃（アクション 1 回、25m まで）。銃弾を回避できる相手は、投げた物も回避できる。近接武器を投げると基本のダメージを与えるが、SP を半分にする効果はない。",
+   "flavor": "手近な物は、だいたい何でも武器になる。"
+  },
+  "jwR2EkIcklythvSz": {
+   "name_ja": "トマホーク",
+   "name_en": "Tomahawk",
+   "effect": "投げることもできる。",
+   "flavor": "軽い斧。手に持っても、投げても使える。"
+  },
+  "m3Wv89jTjW8BHEhE": {
+   "name_ja": "トマホーク (高品質)",
+   "name_en": "Tomahawk (Excellent)",
+   "effect": "投げることもできる。 高品質: 攻撃の判定に +1。",
+   "flavor": "軽い斧。手に持っても、投げても使える。"
+  },
+  "BwKdGqLl5bnHJ1VB": {
+   "name_ja": "トマホーク(低品質)",
+   "name_en": "Tomahawk (Poor)",
+   "effect": "投げることもできる。 低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "軽い斧。手に持っても、投げても使える。"
+  },
+  "Rju0qV9mEaZ8oJhG": {
+   "name_ja": "Tsunami Arms Helix",
+   "name_en": "Tsunami Arms Helix",
+   "effect": "特殊なアサルト・ライフル。オートファイアしかできない。40 発入り、1 回の攻撃で 20 発使う。オートファイアの倍率は最大 5。台座に据えていなければ BODY 11 以上が必要。",
+   "flavor": "撃つたびに弾倉の半分が消える。撃たれた側は、もっと多くを失う。"
+  },
+  "X6VYB5awDbtURwIv": {
+   "name_ja": "素手",
+   "name_en": "Unarmed",
+   "effect": "素手の攻撃。防具の SP を半分にする効果はない。",
+   "flavor": "武器がなくても、拳はある。"
+  },
+  "PxOjhUUs7cRULv75": {
+   "name_ja": "超大型近接武器",
+   "name_en": "Very Heavy Melee",
+   "effect": "汎用の超大型近接武器（特定の武器の代わりに使う）。",
+   "flavor": "両手で振りかぶる。当たれば、だいたい終わる。"
+  },
+  "7PzmirTyjLFyCUcs": {
+   "name_ja": "超大型近接武器 (高品質)",
+   "name_en": "Very Heavy Melee (Excellent)",
+   "effect": "汎用の超大型近接武器（特定の武器の代わりに使う）。 高品質: 攻撃の判定に +1。",
+   "flavor": "両手で振りかぶる。当たれば、だいたい終わる。"
+  },
+  "7sZiyRANkHY7yyNw": {
+   "name_ja": "超大型近接武器(低品質)",
+   "name_en": "Very Heavy Melee (Poor)",
+   "effect": "汎用の超大型近接武器（特定の武器の代わりに使う）。 低品質: 攻撃で出目 1（ファンブル）が出ると武器のどこかが壊れ、使えるようにするのにアクションが 1 回いる。",
+   "flavor": "両手で振りかぶる。当たれば、だいたい終わる。"
+  },
+  "4L05qIZxsy0uDSHz": {
+   "name_ja": "超大型拳銃",
+   "name_en": "Very Heavy Pistol",
+   "effect": "大きいので隠して持てない。",
+   "flavor": "拳銃の形をした大砲。撃つたびに手首が文句を言う。"
+  },
+  "kS2YEit2JQqrjfcR": {
+   "name_ja": "超大型拳銃(低品質)",
+   "name_en": "Very Heavy Pistol (Excellent)",
+   "effect": "大きいので隠して持てない。 高品質: 攻撃の判定に +1。",
+   "flavor": "拳銃の形をした大砲。撃つたびに手首が文句を言う。"
+  },
+  "CQ3pmuNqBNFiNMBd": {
+   "name_ja": "超大型拳銃(低品質)",
+   "name_en": "Very Heavy Pistol (Poor)",
+   "effect": "大きいので隠して持てない。 低品質: 攻撃で出目 1（ファンブル）が出ると弾詰まりを起こし、直すのにアクションが 1 回いる。",
+   "flavor": "拳銃の形をした大砲。撃つたびに手首が文句を言う。"
+  }
+ }
+}
