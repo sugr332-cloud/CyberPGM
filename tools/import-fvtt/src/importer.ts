@@ -583,13 +583,10 @@ export function runImport(options: ImportOptions): ImportReportData {
             if (!existingImg) {
               isImageDiff = true;
             } else {
-              // Migrate initial 'gm' visibility to 'players' for fvtt_icon if GM hasn't customized it
-              const targetVisibility = existingImg.visibility === 'gm' ? 'players' : existingImg.visibility;
               if (
                 existingImg.path !== imgRelPath ||
                 existingImg.license !== imgCredit.license ||
-                existingImg.attribution !== imgCredit.attribution ||
-                existingImg.visibility !== targetVisibility
+                existingImg.attribution !== imgCredit.attribution
               ) {
                 isImageDiff = true;
               }
@@ -644,10 +641,9 @@ export function runImport(options: ImportOptions): ImportReportData {
                       sourcePageEn,
                     );
                 } else if (isImageDiff) {
-                  const targetVisibility = existingImg.visibility === 'gm' ? 'players' : existingImg.visibility;
                   sqlite
                     .prepare(
-                      `UPDATE images SET path = ?, license = ?, attribution = ?, source_book = ?, source_page = ?, visibility = ? WHERE id = ?`,
+                      `UPDATE images SET path = ?, license = ?, attribution = ?, source_book = ?, source_page = ? WHERE id = ?`,
                     )
                     .run(
                       imgRelPath,
@@ -655,7 +651,6 @@ export function runImport(options: ImportOptions): ImportReportData {
                       imgCredit.attribution,
                       sourceBook,
                       sourcePageEn,
-                      targetVisibility,
                       existingImg.id,
                     );
                 }

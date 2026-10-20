@@ -10,6 +10,8 @@ export interface ResolveDamageInput {
   ablation?: number;
   shieldHp?: number;
   isExplosive?: boolean;
+  lethal?: boolean;
+  currentHp?: number;
 }
 
 export interface ResolveDamageResult {
@@ -25,7 +27,7 @@ export interface ResolveDamageResult {
 }
 
 /**
- * Resolves damage calculation according to Cyberpunk RED rules (RULES_CHECK §3).
+ * Resolves damage calculation according to Cyberpunk RED rules (RULES_CHECK §3 and Review 02).
  */
 export function resolveDamage(
   input: ResolveDamageInput,
@@ -40,38 +42,72 @@ export function resolveDamage(
   const critical = sixes >= rules.critSixesNeeded;
   const critBonus = critical ? rules.critBonusDamage : 0;
 
-  // Shield resolution
-  let remainingDamage = rawTotal;
+  // Shield resolution (FVTT _applyDamage behavior)
   let shieldHpAfter = input.shieldHp ?? 0;
+  let shieldBlocked = false;
+  let remainingDamage = rawTotal;
 
-  if (typeof input.shieldHp === 'number' && input.shieldHp > 0 && !input.isExplosive) {
-    const absorbed = Math.min(remainingDamage, input.shieldHp);
-    shieldHpAfter = input.shieldHp - absorbed;
-    remainingDamage -= absorbed;
+  if (typeof input.shieldHp === 'number' && input.shieldHp > 0) {
+    const rawDamageForShield = rawTotal + critBonus;
+    const shieldDmg = Math.min(rawDamageForShield, input.shieldHp);
+    shieldHpAfter = input.shieldHp - shieldDmg;
+
+    if (!input.isExplosive) {
+      // Non-explosive attacks stop at the shield entirely
+      shieldBlocked = true;
+    } else {
+      // Explosive attacks stop if the shield survives; if broken (shieldHpAfter === 0),
+      // the full unmitigated raw damage proceeds to armor
+      if (shieldHpAfter > 0) {
+        shieldBlocked = true;
+      } else {
+        remainingDamage = rawTotal;
+      }
+    }
   }
 
-  // Armor resolution
+  // Armor resolution: SP < ignoreBelowSP ignores armor (strict less-than)
   let effectiveSp: number;
-  if (typeof input.ignoreBelowSP === 'number' && input.sp <= input.ignoreBelowSP) {
+  if (typeof input.ignoreBelowSP === 'number' && input.sp < input.ignoreBelowSP) {
     effectiveSp = 0;
   } else {
     const ignorePct = input.ignoreArmorPercent ?? 0;
     effectiveSp = Math.round(input.sp * (1 - ignorePct / 100));
   }
 
-  const penetrationRaw = Math.max(0, remainingDamage - effectiveSp);
-  const penetrating = input.location === 'head' ? penetrationRaw * 2 : penetrationRaw;
-
-  // Ablation occurs only when damage penetrates SP
+  let penetrating = 0;
   let spAfter = input.sp;
-  if (penetrationRaw > 0) {
-    const ablationAmt = input.ablation ?? rules.defaultAblation;
-    spAfter = Math.max(0, input.sp - ablationAmt);
-  }
+  let hpLoss = 0;
+  let criticalInjuryTable: 'head' | 'body' | null = null;
 
-  // HP loss = penetrating (doubled if head) + critBonus (SP does not reduce critBonus, not doubled on head)
-  const hpLoss = penetrating + critBonus;
-  const criticalInjuryTable = critical ? input.location : null;
+  if (shieldBlocked) {
+    // Attack blocked by shield: 0 penetrating, 0 hpLoss, SP remains intact, no injury table
+    penetrating = 0;
+    hpLoss = 0;
+    spAfter = input.sp;
+    criticalInjuryTable = null;
+  } else {
+    const penetrationRaw = Math.max(0, remainingDamage - effectiveSp);
+    penetrating = input.location === 'head' ? penetrationRaw * 2 : penetrationRaw;
+
+    if (penetrationRaw > 0) {
+      const ablationAmt = input.ablation ?? rules.defaultAblation;
+      spAfter = Math.max(0, input.sp - ablationAmt);
+    }
+
+    hpLoss = penetrating + critBonus;
+    criticalInjuryTable = critical ? input.location : null;
+
+    // Non-lethal attack handling: cannot reduce HP below 1
+    if (input.lethal === false && typeof input.currentHp === 'number') {
+      if (input.currentHp <= 0) {
+        hpLoss = 0;
+      } else {
+        const maxLoss = input.currentHp - 1;
+        hpLoss = Math.min(hpLoss, Math.max(0, maxLoss));
+      }
+    }
+  }
 
   return {
     rawTotal,

@@ -20,15 +20,20 @@ describe('FVTT Importer', () => {
     const sqlite = new Database(testDbPath);
     sqlite.pragma('foreign_keys = ON');
 
-    // Run migration sql directly
-    const migrationSql = fs.readFileSync(
-      path.resolve(process.cwd(), 'drizzle/0000_curvy_ken_ellis.sql'),
-      'utf-8',
-    );
-    const statements = migrationSql.split('--> statement-breakpoint');
-    for (const stmt of statements) {
-      if (stmt.trim()) {
-        sqlite.exec(stmt);
+    // Run migration sql files directly in order
+    const drizzleDir = path.resolve(process.cwd(), 'drizzle');
+    const sqlFiles = fs
+      .readdirSync(drizzleDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
+
+    for (const sqlFile of sqlFiles) {
+      const migrationSql = fs.readFileSync(path.join(drizzleDir, sqlFile), 'utf-8');
+      const statements = migrationSql.split('--> statement-breakpoint');
+      for (const stmt of statements) {
+        if (stmt.trim()) {
+          sqlite.exec(stmt);
+        }
       }
     }
     sqlite.close();
@@ -183,6 +188,37 @@ describe('FVTT Importer', () => {
     expect(editedItem.tags).toBe('["favorite"]');
     expect(editedItem.notes).toBe('GM用メモテキスト');
 
+    sqlite2.close();
+  });
+
+  it('preserves image visibility when GM manually changes it to gm (Issue #14 Review 02)', () => {
+    // Run 1
+    runImport({
+      srcDir: fixtureSrcDir,
+      dbPath: testDbPath,
+    });
+
+    const sqlite = new Database(testDbPath);
+    // GM changes visibility of fvtt_icon to 'gm'
+    sqlite.prepare(`UPDATE images SET visibility = 'gm' WHERE origin = 'fvtt_icon'`).run();
+    const updatedImg = sqlite
+      .prepare(`SELECT visibility FROM images WHERE origin = 'fvtt_icon'`)
+      .get() as { visibility: string };
+    expect(updatedImg.visibility).toBe('gm');
+    sqlite.close();
+
+    // Run 2
+    runImport({
+      srcDir: fixtureSrcDir,
+      dbPath: testDbPath,
+    });
+
+    // Check visibility remains 'gm'
+    const sqlite2 = new Database(testDbPath);
+    const finalImg = sqlite2
+      .prepare(`SELECT visibility FROM images WHERE origin = 'fvtt_icon'`)
+      .get() as { visibility: string };
+    expect(finalImg.visibility).toBe('gm');
     sqlite2.close();
   });
 

@@ -8,6 +8,13 @@
       "when": 1792471908877,
       "tag": "0000_curvy_ken_ellis",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792474000000,
+      "tag": "0001_migrate_fvtt_icon_visibility",
+      "breakpoints": true
     }
   ]
 }

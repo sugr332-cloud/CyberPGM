@@ -112,44 +112,130 @@ describe('damage module (RULES_CHECK §3, FVTT _applyDamage)', () => {
     expect(res.spAfter).toBe(8);
   });
 
-  it('handles shield HP absorption: shield HP 10 vs damage 16 (RULES_CHECK §3)', () => {
-    // Shield absorbs 10, breaks (0 HP left). Remaining 6 hits body SP 0
+  it('handles shield HP absorption: non-explosive stops at shield (FVTT _applyDamage, Review 02)', () => {
+    // Shield HP 10 vs damage 16: shield breaks (shieldHpAfter 0), but attack stops completely
     const res = resolveDamage({
       dice: [10, 6],
       location: 'body',
-      sp: 0,
+      sp: 7,
       shieldHp: 10,
     });
 
     expect(res.shieldHpAfter).toBe(0);
-    expect(res.hpLoss).toBe(6);
+    expect(res.hpLoss).toBe(0);
+    expect(res.penetrating).toBe(0);
+    expect(res.spAfter).toBe(7);
+    expect(res.criticalInjuryTable).toBeNull();
   });
 
-  it('explosive damage ignores shields', () => {
+  it('handles shield HP absorption: explosive stops if shield survives (Issue #14, Review 02)', () => {
+    // Shield HP 20 vs damage 16 (explosive): shield HP becomes 4, attack stops
     const res = resolveDamage({
-      dice: [6, 4],
+      dice: [10, 6],
       location: 'body',
-      sp: 4,
+      sp: 7,
+      shieldHp: 20,
+      isExplosive: true,
+    });
+
+    expect(res.shieldHpAfter).toBe(4);
+    expect(res.hpLoss).toBe(0);
+    expect(res.penetrating).toBe(0);
+    expect(res.spAfter).toBe(7);
+    expect(res.criticalInjuryTable).toBeNull();
+  });
+
+  it('handles shield HP absorption: explosive breaks shield and full unmitigated damage hits armor (Issue #14, Review 02)', () => {
+    // Shield HP 10 vs damage 16 (explosive): shield breaks (shieldHpAfter 0),
+    // full unmitigated damage (16) proceeds to body SP 7 -> penetrating 9, hpLoss 9, spAfter 6
+    const res = resolveDamage({
+      dice: [10, 6],
+      location: 'body',
+      sp: 7,
       shieldHp: 10,
       isExplosive: true,
     });
 
-    // Shield untouched, full damage hits body
-    expect(res.shieldHpAfter).toBe(10);
-    expect(res.effectiveSp).toBe(4);
-    expect(res.penetrating).toBe(6);
+    expect(res.shieldHpAfter).toBe(0);
+    expect(res.effectiveSp).toBe(7);
+    expect(res.penetrating).toBe(9);
+    expect(res.hpLoss).toBe(9);
+    expect(res.spAfter).toBe(6);
+    expect(res.criticalInjuryTable).toBeNull();
   });
 
-  it('ignores SP when SP <= ignoreBelowSP', () => {
-    const res = resolveDamage({
+  it('handles ignoreBelowSP strictly less than SP boundary (Review 02)', () => {
+    // SP === ignoreBelowSP: armor is NOT ignored
+    const resEqual = resolveDamage({
       dice: [5, 5],
       location: 'body',
       sp: 4,
       ignoreBelowSP: 4,
     });
+    expect(resEqual.effectiveSp).toBe(4);
+    expect(resEqual.penetrating).toBe(6); // 10 - 4
 
-    expect(res.effectiveSp).toBe(0);
-    expect(res.penetrating).toBe(10);
+    // SP < ignoreBelowSP: armor IS ignored
+    const resStrictlyLess = resolveDamage({
+      dice: [5, 5],
+      location: 'body',
+      sp: 3,
+      ignoreBelowSP: 4,
+    });
+    expect(resStrictlyLess.effectiveSp).toBe(0);
+    expect(resStrictlyLess.penetrating).toBe(10);
+  });
+
+  it('handles non-lethal damage capping hpLoss at currentHp - 1 (Review 02)', () => {
+    // currentHp 10, raw damage would deal 15 hpLoss -> capped at 9
+    const resCapped = resolveDamage({
+      dice: [10, 5],
+      location: 'body',
+      sp: 0,
+      lethal: false,
+      currentHp: 10,
+    });
+    expect(resCapped.hpLoss).toBe(9);
+
+    // currentHp 0 (already down) -> hpLoss is 0
+    const resAlreadyDown = resolveDamage({
+      dice: [10, 5],
+      location: 'body',
+      sp: 0,
+      lethal: false,
+      currentHp: 0,
+    });
+    expect(resAlreadyDown.hpLoss).toBe(0);
+
+    // currentHp < 0 -> hpLoss is 0
+    const resNegative = resolveDamage({
+      dice: [10, 5],
+      location: 'body',
+      sp: 0,
+      lethal: false,
+      currentHp: -5,
+    });
+    expect(resNegative.hpLoss).toBe(0);
+
+    // currentHp 20, damage 5 -> hpLoss is 5 (not capped)
+    const resNormalNonLethal = resolveDamage({
+      dice: [3, 2],
+      location: 'body',
+      sp: 0,
+      lethal: false,
+      currentHp: 20,
+    });
+    expect(resNormalNonLethal.hpLoss).toBe(5);
+
+    // lethal: true (default) -> deals full 15 hpLoss even if currentHp is 10
+    const resLethal = resolveDamage({
+      dice: [10, 5],
+      location: 'body',
+      sp: 0,
+      lethal: true,
+      currentHp: 10,
+    });
+    expect(resLethal.hpLoss).toBe(15);
   });
 
   it('looks up critical injury by 2d6 roll (RULES_CHECK §3, SPEC §5.0.1)', () => {
