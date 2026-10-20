@@ -17,6 +17,7 @@ import { commerceRoutes } from './routes/commerce.js';
 import { characterCreationRoutes } from './routes/character-creation.js';
 import { skillNotesRoutes } from './routes/skill-notes.js';
 import { combatRoutes, getCurrentCombat } from './routes/combat.js';
+import { boardsRoutes, getHydratedBoard } from './routes/boards.js';
 import { db } from './db/client.js';
 import { initPhase3bData } from './db/init-phase3b.js';
 import { initPhase4aData } from './db/init-phase4a.js';
@@ -51,6 +52,11 @@ app.route('/api', commerceRoutes);
 app.route('/api', characterCreationRoutes);
 app.route('/api', skillNotesRoutes);
 app.route('/api', combatRoutes);
+app.route('/api', boardsRoutes);
+
+// Configure session providers
+sessionManager.setCombatProvider(getCurrentCombat);
+sessionManager.setBoardProvider(getHydratedBoard);
 
 // Initialize Phase 3b data (skill notes, creation method)
 initPhase3bData(db);
@@ -63,27 +69,50 @@ app.get(
   '/ws',
   upgradeWebSocket((c) => {
     const token = c.req.query('token');
-    const device = token ? verifyToken(token) : null;
-    if (!device) {
-      return {
-        onOpen(_evt, ws) {
-          ws.close(1008, 'Unauthorized: Valid device token required');
-        },
-      };
+    const sessionCode = c.req.query('session') || c.req.query('code') || c.req.query('session_code');
+    const roleQuery = c.req.query('role');
+
+    let role: 'gm' | 'player' | 'screen' = 'player';
+    let deviceId = '';
+    let characterId: string | null | undefined = null;
+
+    if (
+      (roleQuery === 'screen' || (!token && sessionCode)) &&
+      sessionCode?.toUpperCase() === sessionManager.getSessionCode().toUpperCase()
+    ) {
+      role = 'screen';
+      deviceId = `screen-${Date.now()}`;
+    } else {
+      const device = token ? verifyToken(token) : null;
+      if (!device) {
+        return {
+          onOpen(_evt, ws) {
+            ws.close(1008, 'Unauthorized: Valid device token or session code required');
+          },
+        };
+      }
+      role = device.role;
+      deviceId = device.id;
+      characterId = device.characterId;
     }
 
     return {
       onOpen(_evt, ws) {
         sessionManager.addClient({
           ws,
-          role: device.role,
-          deviceId: device.id,
-          characterId: device.characterId,
+          role,
+          deviceId,
+          characterId,
         });
 
         // If player, send initial character sheet immediately
-        if (device.role === 'player' && device.characterId) {
-          sessionManager.updateCharacterSheet(device.characterId);
+        if (role === 'player' && characterId) {
+          sessionManager.updateCharacterSheet(characterId);
+        }
+
+        // If screen, send initial screen update immediately
+        if (role === 'screen') {
+          sessionManager.sendInitialScreenUpdate(ws);
         }
       },
       onMessage(evt, ws) {
@@ -92,24 +121,24 @@ app.get(
           if (data && data.type === 'ping') {
             ws.send(JSON.stringify({ type: 'pong' }));
           } else if (data && data.type === 'combat:choose') {
-            if (device.role === 'player' && device.characterId) {
+            if (role === 'player' && characterId) {
               const current = getCurrentCombat();
               if (current && current.status === 'active') {
                 const activePart = current.participants[current.turn_index];
                 const isDodge = data.payload?.action_key === 'dodge';
-                if (isDodge || (activePart && activePart.character_id === device.characterId)) {
+                if (isDodge || (activePart && activePart.character_id === characterId)) {
                   sessionManager.forwardCombatChooseToGm({
                     ...data.payload,
-                    character_id: device.characterId,
+                    character_id: characterId,
                   });
                 }
               }
             }
           } else if (data && data.type === 'combat:roll') {
-            if (device.role === 'player' && device.characterId) {
+            if (role === 'player' && characterId) {
               sessionManager.forwardCombatRollToGm({
                 ...data.payload,
-                character_id: device.characterId,
+                character_id: characterId,
               });
             }
           }

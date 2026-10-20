@@ -9,3 +9,4 @@ export * from './weapons.js';
 export * from './roles.js';
 export * from './creation.js';
 export * from './combat.js';
+export * from './board.js';

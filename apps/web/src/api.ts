@@ -16,6 +16,10 @@ import {
   CharacterDraft,
   CharacterSubmission,
   CpgmCharacterFile,
+  Board,
+  BoardObject,
+  BoardToken,
+  BoardDrop,
 } from '@cyberpgm/shared';
 
 export const API_BASE = '';
@@ -431,7 +435,7 @@ export const api = {
       body: JSON.stringify({ participants }),
     }, getGmToken()),
 
-  updateCombat: (combatId: string, data: { action?: string; settings?: any; deleteMooks?: boolean }) =>
+  updateCombat: (combatId: string, data: { action?: string; settings?: any; deleteMooks?: boolean; board_id?: string | null }) =>
     request<{ combat: any }>(`/api/combats/${combatId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
@@ -453,4 +457,121 @@ export const api = {
     request<{ success: boolean; undoneLogId: string; combat: any }>(`/api/combats/${combatId}/undo`, {
       method: 'POST',
     }, getGmToken()),
+
+  // Board API (Phase 4b)
+  getBoards: () =>
+    request<{ boards: Board[] }>('/api/boards', {}, getGmToken()),
+
+  getBoard: (boardId: string) =>
+    request<{ board: Board }>(
+      `/api/boards/${boardId}`,
+      {},
+      getGmToken(),
+    ),
+
+  createBoard: (data: { name: string; background_image_id?: string | null; grid?: any }) =>
+    request<{ board: Board }>(
+      '/api/boards',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  updateBoard: (boardId: string, data: { name?: string; background_image_id?: string | null; grid?: any }) =>
+    request<{ board: Board }>(
+      `/api/boards/${boardId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteBoard: (boardId: string) =>
+    request<{ success: boolean }>(
+      `/api/boards/${boardId}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
+
+  createBoardObject: (boardId: string, data: any) =>
+    request<{ object: BoardObject }>(
+      `/api/boards/${boardId}/objects`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  updateBoardObject: (boardId: string, objectId: string, data: any) =>
+    request<{ object: BoardObject }>(
+      `/api/boards/${boardId}/objects/${objectId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteBoardObject: (boardId: string, objectId: string) =>
+    request<{ success: boolean }>(
+      `/api/boards/${boardId}/objects/${objectId}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
+
+  createBoardToken: (boardId: string, data: any) =>
+    request<{ token: BoardToken }>(
+      `/api/boards/${boardId}/tokens`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  updateBoardToken: (boardId: string, tokenId: string, data: any) =>
+    request<{ token: BoardToken }>(
+      `/api/boards/${boardId}/tokens/${tokenId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteBoardToken: (boardId: string, tokenId: string) =>
+    request<{ success: boolean }>(
+      `/api/boards/${boardId}/tokens/${tokenId}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
+
+  createBoardDrop: (boardId: string, data: any) =>
+    request<{ drop: BoardDrop }>(
+      `/api/boards/${boardId}/drops`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteBoardDrop: (boardId: string, dropId: string) =>
+    request<{ success: boolean }>(
+      `/api/boards/${boardId}/drops/${dropId}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
 };

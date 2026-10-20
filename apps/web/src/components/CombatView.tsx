@@ -6,18 +6,29 @@ import {
   CombatActionDef,
   CombatChange,
   CharacterSheet,
+  Board,
+  BoardObject,
+  BoardToken,
+  BoardDrop,
 } from '@cyberpgm/shared';
 import {
   initiativeTotal,
   sortInitiative,
   InitiativeEntry,
+  findReachableSquares,
+  checkLineOfSight,
+  gridDistance,
+  DEFAULT_RULES,
+  LosStatus,
 } from '@cyberpgm/rules';
+import { BoardView } from './BoardView.js';
 
 interface CombatViewProps {
   characters: CharacterSheet[];
   onRefreshCharacters: () => void;
   token?: string | null;
   wsMessage?: { type: string; payload: any } | null;
+  isStandaloneWindow?: boolean;
 }
 
 export const CombatView: React.FC<CombatViewProps> = ({
@@ -25,11 +36,35 @@ export const CombatView: React.FC<CombatViewProps> = ({
   onRefreshCharacters,
   token,
   wsMessage,
+  isStandaloneWindow = false,
 }) => {
   const [combat, setCombat] = useState<Combat | null>(null);
   const activePart = combat?.participants?.[combat.turn_index];
   const [actions, setActions] = useState<CombatActionDef[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Board state (Phase 4b)
+  const [boards, setBoards] = useState<Board[]>([]);
+  const [boardData, setBoardData] = useState<{
+    board: Board;
+    objects: BoardObject[];
+    tokens: BoardToken[];
+    drops: BoardDrop[];
+  } | null>(null);
+  const [sessionCode, setSessionCode] = useState<string>('');
+  const [isTvBroadcasting, setIsTvBroadcasting] = useState<boolean>(true);
+
+  // Board Interaction & Movements
+  const [destination, setDestination] = useState<{ x: number; y: number } | null>(null);
+  const [forceMove, setForceMove] = useState<boolean>(false);
+
+  // Line of Sight & Cover State
+  const [losOverride, setLosOverride] = useState<'auto' | LosStatus>('auto');
+  const [hitCover, setHitCover] = useState<boolean>(false);
+  const [coverDamageInput, setCoverDamageInput] = useState<string>('');
+  const [coverHpInput, setCoverHpInput] = useState<string>('');
+  const [coverObjectId, setCoverObjectId] = useState<string | null>(null);
+  const [pickupDropId, setPickupDropId] = useState<string | null>(null);
 
   // Setup state
   const [mookCount, setMookCount] = useState<number>(2);
@@ -88,10 +123,266 @@ export const CombatView: React.FC<CombatViewProps> = ({
     }
   }, [token]);
 
+  // Load current board & boards list
+  const refreshBoard = useCallback(async (boardId: string) => {
+    try {
+      const data = await api.getBoard(boardId);
+      if (data && data.board) {
+        setBoardData({
+          board: data.board,
+          objects: data.board.objects || [],
+          tokens: data.board.tokens || [],
+          drops: data.board.drops || [],
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to fetch board details:', err);
+    }
+  }, []);
+
+  const refreshBoardsList = useCallback(async () => {
+    try {
+      const res = await api.getBoards();
+      setBoards(res.boards);
+      const session = await api.getSessionInfo().catch(() => null);
+      if (session) setSessionCode(session.code);
+    } catch (err) {
+      console.warn('Failed to fetch boards list:', err);
+    }
+  }, []);
+
   useEffect(() => {
     refreshCombat();
+    refreshBoardsList();
     api.getCombatActions().then((res) => setActions(res.actions)).catch(() => {});
-  }, [refreshCombat]);
+  }, [refreshCombat, refreshBoardsList]);
+
+  useEffect(() => {
+    if (combat?.board_id) {
+      refreshBoard(combat.board_id);
+    } else {
+      setBoardData(null);
+    }
+  }, [combat?.board_id, refreshBoard]);
+
+  // Board Object & Token Handlers
+  const handleAutoPlaceTokens = async () => {
+    if (!combat || !boardData) return;
+    const existingIds = new Set(boardData.tokens.map((t) => t.character_id));
+    let allyCount = 0;
+    let enemyCount = 0;
+    for (const p of combat.participants) {
+      const matchId = p.character_id || p.id;
+      if (!existingIds.has(matchId)) {
+        const isAlly = p.side === 'ally';
+        const x = isAlly ? 2 : 12;
+        const y = isAlly ? 2 + allyCount++ : 2 + enemyCount++;
+        await api.createBoardToken(boardData.board.id, {
+          character_id: matchId,
+          x,
+          y,
+          gm_only: false,
+        });
+      }
+    }
+    refreshBoard(boardData.board.id);
+  };
+
+  const handleCreateBoard = async () => {
+    if (!combat) return;
+    try {
+      const res = await api.createBoard({ name: '戦闘盤面' });
+      await api.updateCombat(combat.id, { board_id: res.board.id });
+      refreshCombat();
+      refreshBoard(res.board.id);
+    } catch (err: any) {
+      alert(`盤面の作成に失敗しました: ${err.message}`);
+    }
+  };
+
+  const handleSelectBoard = async (boardId: string) => {
+    if (!combat) return;
+    try {
+      await api.updateCombat(combat.id, { board_id: boardId });
+      refreshCombat();
+      refreshBoard(boardId);
+    } catch (err: any) {
+      alert(`盤面の変更に失敗しました: ${err.message}`);
+    }
+  };
+
+  const handleCreateObject = async (obj: Omit<BoardObject, 'id' | 'board_id'>) => {
+    if (!boardData) return;
+    try {
+      await api.createBoardObject(boardData.board.id, obj);
+      refreshBoard(boardData.board.id);
+    } catch (err: any) {
+      alert(`オブジェクトの追加に失敗しました: ${err.message}`);
+    }
+  };
+
+  const handleUpdateObject = async (objId: string, patch: Partial<BoardObject>) => {
+    if (!boardData) return;
+    try {
+      await api.updateBoardObject(boardData.board.id, objId, patch);
+      refreshBoard(boardData.board.id);
+    } catch (err: any) {
+      console.warn('Failed to update object:', err);
+    }
+  };
+
+  const handleDeleteObject = async (objId: string) => {
+    if (!boardData) return;
+    try {
+      await api.deleteBoardObject(boardData.board.id, objId);
+      refreshBoard(boardData.board.id);
+    } catch (err: any) {
+      alert(`オブジェクトの削除に失敗しました: ${err.message}`);
+    }
+  };
+
+  const handleMoveToken = async (tokenId: string, x: number, y: number) => {
+    if (!boardData) return;
+    try {
+      await api.updateBoardToken(boardData.board.id, tokenId, { x, y });
+      refreshBoard(boardData.board.id);
+    } catch (err: any) {
+      console.warn('Failed to update token position:', err);
+    }
+  };
+
+  // Movement reachable squares
+  const reachableCells = useMemo(() => {
+    if (!boardData || !activePart) return undefined;
+    if (selectedActionKey !== 'move' && selectedActionKey !== 'run') return undefined;
+
+    const token = boardData.tokens.find(
+      (t) => (activePart.character_id && t.character_id === activePart.character_id) || t.character_id === activePart.id
+    );
+    if (!token) return undefined;
+
+    const start = { x: token.x, y: token.y };
+    const charMove = activePart.character?.stats?.move ?? 6;
+    const maxMoves = selectedActionKey === 'run' ? charMove * 2 : charMove;
+
+    const blockedCells = new Set<string>();
+    boardData.objects.forEach((obj) => {
+      if (!obj.passable) {
+        for (let dx = 0; dx < obj.w; dx++) {
+          for (let dy = 0; dy < obj.h; dy++) {
+            blockedCells.add(`${obj.x + dx},${obj.y + dy}`);
+          }
+        }
+      }
+    });
+
+    const stoppingBlockedCells = new Set<string>();
+    boardData.tokens.forEach((t) => {
+      if (t.id !== token.id) {
+        stoppingBlockedCells.add(`${t.x},${t.y}`);
+      }
+    });
+
+    const bounds = {
+      cols: boardData.board.grid?.cols || 20,
+      rows: boardData.board.grid?.rows || 15,
+    };
+
+    const reachable = findReachableSquares({
+      start,
+      maxSquares: maxMoves,
+      isPassable: (pt) => !blockedCells.has(`${pt.x},${pt.y}`),
+      canStop: (pt) => !stoppingBlockedCells.has(`${pt.x},${pt.y}`),
+      bounds,
+      diagonalRule: (combat?.settings?.diagonalRule as 'chebyshev' | 'alternate') || 'chebyshev',
+    });
+
+    return new Set(reachable.map((pt) => `${pt.x},${pt.y}`));
+  }, [boardData, activePart, selectedActionKey, combat?.settings?.diagonalRule]);
+
+  // LoS and Distance calculation
+  const losInfo = useMemo(() => {
+    if (!boardData || !activePart || !targetParticipantId) return null;
+    const shooterToken = boardData.tokens.find(
+      (t) => (activePart.character_id && t.character_id === activePart.character_id) || t.character_id === activePart.id
+    );
+    const targetPart = combat?.participants.find((p) => p.id === targetParticipantId);
+    const targetToken = boardData.tokens.find(
+      (t) => (targetPart?.character_id && t.character_id === targetPart.character_id) || t.character_id === targetParticipantId
+    );
+    if (!shooterToken || !targetToken) return null;
+
+    const rules = {
+      ...DEFAULT_RULES,
+      diagonalRule: (combat?.settings?.diagonalRule as 'chebyshev' | 'alternate') || 'chebyshev',
+      metersPerSquare: boardData.board.grid?.cell_m || 2,
+    };
+
+    const losResult = checkLineOfSight(
+      { x: shooterToken.x, y: shooterToken.y },
+      { x: targetToken.x, y: targetToken.y },
+      boardData.objects,
+      rules,
+    );
+
+    const distSquares = gridDistance(
+      { x: shooterToken.x, y: shooterToken.y },
+      { x: targetToken.x, y: targetToken.y },
+      rules,
+    );
+    const autoDistanceM = distSquares * (boardData.board.grid?.cell_m || rules.metersPerSquare);
+
+    const effectiveStatus = losOverride !== 'auto' ? losOverride : losResult.status;
+
+    return {
+      x1: shooterToken.x,
+      y1: shooterToken.y,
+      x2: targetToken.x,
+      y2: targetToken.y,
+      distSquares,
+      autoDistanceM,
+      status: effectiveStatus,
+      rawStatus: losResult.status,
+      hitCoverObject: losResult.coverObjects?.[0],
+    };
+  }, [boardData, activePart, targetParticipantId, combat, losOverride]);
+
+  useEffect(() => {
+    if (losInfo && ['ranged', 'aimed', 'autofire'].includes(selectedActionKey || '')) {
+      setDistanceM(losInfo.autoDistanceM);
+    }
+  }, [losInfo, selectedActionKey]);
+
+  const meleeBlocked = useMemo(() => {
+    if (!['melee', 'brawl'].includes(selectedActionKey || '')) return false;
+    if (losInfo && losInfo.distSquares > 1) return true;
+    return false;
+  }, [selectedActionKey, losInfo]);
+
+  const isCoverHpNeededAndMissing = useMemo(() => {
+    if (!hitCover) return false;
+    const coverId = coverObjectId || losInfo?.hitCoverObject?.id;
+    const activeObj = coverId ? boardData?.objects.find((o) => o.id === coverId) : losInfo?.hitCoverObject;
+    const hasObjHp = activeObj && activeObj.cover_hp !== null && activeObj.cover_hp !== undefined;
+    if (hasObjHp) return false;
+    return coverHpInput.trim() === '' || isNaN(Number(coverHpInput)) || Number(coverHpInput) <= 0;
+  }, [hitCover, coverObjectId, losInfo, boardData, coverHpInput]);
+
+  const nearbyDrops = useMemo(() => {
+    if (!boardData || !activePart) return [];
+    const activeToken = boardData.tokens.find(
+      (t) => (activePart.character_id && t.character_id === activePart.character_id) || t.character_id === activePart.id
+    );
+    if (!activeToken) return [];
+
+    return boardData.drops.filter((d) => {
+      const dist = gridDistance(
+        { x: activeToken.x, y: activeToken.y },
+        { x: d.x, y: d.y },
+      );
+      return dist <= 1;
+    });
+  }, [boardData, activePart]);
 
   // Weapon entries in inventory for active participant (kind === 'weapon')
   const weaponEntries = useMemo(() => {
@@ -150,8 +441,14 @@ export const CombatView: React.FC<CombatViewProps> = ({
           setInitInputs((prev) => ({ ...prev, [cid]: { first, extra } }));
         }
       }
+    } else if (wsMessage.type === 'board:update') {
+      if (combat?.board_id) {
+        refreshBoard(combat.board_id);
+      } else {
+        refreshBoardsList();
+      }
     }
-  }, [wsMessage, refreshCombat, onRefreshCharacters]);
+  }, [wsMessage, refreshCombat, onRefreshCharacters, refreshBoard, refreshBoardsList, combat?.board_id]);
 
   // Start new combat (setup)
   const handleStartNewCombat = async () => {
@@ -256,6 +553,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
     const activePart = combat.participants[combat.turn_index];
     if (!activePart) return;
 
+    if (isCoverHpNeededAndMissing) {
+      alert('遮蔽物のHPが未入力です。遮蔽物のHPを入力してください。');
+      return;
+    }
+
     setIsResolving(true);
     try {
       const damageDice = damageDiceStr
@@ -337,6 +639,14 @@ export const CombatView: React.FC<CombatViewProps> = ({
         attacks,
         manual_changes: manualChanges,
         manual_notes: manualNotes,
+        destination: (selectedActionKey === 'move' || selectedActionKey === 'run') ? destination || undefined : undefined,
+        force_move: forceMove,
+        los_override: losOverride !== 'auto' ? losOverride : undefined,
+        hit_cover: hitCover,
+        cover_object_id: hitCover && (losInfo?.hitCoverObject?.id || coverObjectId) ? (losInfo?.hitCoverObject?.id || coverObjectId) : undefined,
+        cover_current_hp: hitCover && coverHpInput !== '' ? Number(coverHpInput) : undefined,
+        cover_damage: hitCover && coverDamageInput !== '' ? Number(coverDamageInput) : undefined,
+        pickup_drop_id: selectedActionKey === 'pickup' ? pickupDropId || undefined : undefined,
       });
 
       setPreviewResult(res.result);
@@ -417,15 +727,77 @@ export const CombatView: React.FC<CombatViewProps> = ({
         attacks,
         manual_changes: previewResult.changes,
         manual_notes: manualNotes,
+        destination: (selectedActionKey === 'move' || selectedActionKey === 'run') ? destination || undefined : undefined,
+        force_move: forceMove,
+        los_override: losOverride !== 'auto' ? losOverride : undefined,
+        hit_cover: hitCover,
+        cover_object_id: hitCover && (losInfo?.hitCoverObject?.id || coverObjectId) ? (losInfo?.hitCoverObject?.id || coverObjectId) : undefined,
+        cover_current_hp: hitCover && coverHpInput !== '' ? Number(coverHpInput) : undefined,
+        cover_damage: hitCover && coverDamageInput !== '' ? Number(coverDamageInput) : undefined,
+        pickup_drop_id: selectedActionKey === 'pickup' ? pickupDropId || undefined : undefined,
       });
 
       setCombat(res.combat);
+      if (combat.board_id) {
+        refreshBoard(combat.board_id);
+      }
+      setDestination(null);
+      setHitCover(false);
+      setCoverDamageInput('');
+      setPickupDropId(null);
       setPreviewResult(null);
       setSelectedActionKey(null);
       setSecondAttackEnabled(false);
       onRefreshCharacters();
     } catch (err: any) {
       alert(`反映に失敗しました: ${err.message}`);
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  // Direct move confirm
+  const handleConfirmMove = async () => {
+    if (!combat || !activePart || !destination) return;
+    setIsApplying(true);
+    try {
+      const res = await api.applyCombatAction(combat.id, {
+        action_key: selectedActionKey || 'move',
+        actor_id: activePart.id,
+        participant_id: activePart.id,
+        destination,
+        force_move: forceMove,
+      });
+      setCombat(res.combat);
+      if (combat.board_id) refreshBoard(combat.board_id);
+      setDestination(null);
+      setSelectedActionKey(null);
+      onRefreshCharacters();
+    } catch (err: any) {
+      alert(`移動の反映に失敗しました: ${err.message}`);
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  // Direct pickup confirm
+  const handleConfirmPickup = async () => {
+    if (!combat || !activePart || !pickupDropId) return;
+    setIsApplying(true);
+    try {
+      const res = await api.applyCombatAction(combat.id, {
+        action_key: 'pickup',
+        actor_id: activePart.id,
+        participant_id: activePart.id,
+        pickup_drop_id: pickupDropId,
+      });
+      setCombat(res.combat);
+      if (combat.board_id) refreshBoard(combat.board_id);
+      setPickupDropId(null);
+      setSelectedActionKey(null);
+      onRefreshCharacters();
+    } catch (err: any) {
+      alert(`拾うアクションの反映に失敗しました: ${err.message}`);
     } finally {
       setIsApplying(false);
     }
@@ -439,6 +811,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
     try {
       const res = await api.undoCombatAction(combat.id);
       setCombat(res.combat);
+      if (combat.board_id) {
+        refreshBoard(combat.board_id);
+      }
       setPreviewResult(null);
       onRefreshCharacters();
     } catch (err: any) {
@@ -844,23 +1219,91 @@ export const CombatView: React.FC<CombatViewProps> = ({
           gap: '12px',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <span
               style={{
                 fontSize: '1.2rem',
                 fontWeight: 800,
                 color: 'var(--color-ally)',
+                whiteSpace: 'nowrap',
               }}
             >
               ラウンド {combat.round}
             </span>
-            <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+            <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
               手番: <strong>{activePart ? activePart.name : '—'}</strong>
             </span>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {!isStandaloneWindow && (
+              <button
+                type="button"
+                onClick={() => window.open('/gm/combat', 'cpgm_combat', 'width=1280,height=900')}
+                style={{
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-border-light)',
+                  color: 'var(--color-text)',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                別ウィンドウで開く
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={async () => {
+                const nextVal = !isTvBroadcasting;
+                setIsTvBroadcasting(nextVal);
+                if (combat) {
+                  try {
+                    await api.updateCombat(combat.id, {
+                      settings: { broadcastToTv: nextVal },
+                    });
+                  } catch (err) {
+                    console.warn('Failed to update TV broadcast setting:', err);
+                  }
+                }
+              }}
+              style={{
+                backgroundColor: isTvBroadcasting ? 'rgba(79, 182, 227, 0.2)' : 'var(--color-surface-elevated)',
+                border: `1px solid ${isTvBroadcasting ? 'var(--color-ally)' : 'var(--color-border-light)'}`,
+                color: isTvBroadcasting ? 'var(--color-ally)' : 'var(--color-text-muted)',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              TVに出す: {isTvBroadcasting ? 'ON' : 'OFF'}
+            </button>
+
+            {sessionCode && (
+              <a
+                href={`/screen?code=${sessionCode}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  color: 'var(--color-ally)',
+                  fontSize: '0.85rem',
+                  textDecoration: 'none',
+                  padding: '6px 10px',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  backgroundColor: 'var(--color-surface-elevated)',
+                }}
+              >
+                TV共有URL ↗
+              </a>
+            )}
+
             <button
               onClick={handleUndo}
               style={{
@@ -966,6 +1409,164 @@ export const CombatView: React.FC<CombatViewProps> = ({
           })}
         </div>
       </div>
+
+      {/* Board View Section */}
+      {boardData ? (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: '8px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                盤面: {boardData.board.name}
+              </span>
+              {boardData.board.background_image_visibility === 'gm' && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', backgroundColor: 'rgba(235, 179, 58, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--color-warning)' }}>
+                  ⚠ この背景は GM のみの画像です。TV に出すには公開設定を変えてください
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={handleAutoPlaceTokens}
+                style={{
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-border-light)',
+                  color: 'var(--color-text)',
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                未配置の参加者コマを配置
+              </button>
+              {boards.length > 1 && (
+                <select
+                  value={boardData.board.id}
+                  onChange={(e) => handleSelectBoard(e.target.value)}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                    fontSize: '0.8rem',
+                  }}
+                >
+                  {boards.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <BoardView
+            board={boardData.board}
+            objects={boardData.objects}
+            tokens={boardData.tokens}
+            drops={boardData.drops}
+            combat={combat}
+            activeParticipantId={activePart?.id}
+            targetParticipantId={targetParticipantId}
+            mode={selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}
+            reachableCells={reachableCells}
+            destination={destination}
+            onSelectDestination={(dest) => setDestination(dest)}
+            losLine={
+              losInfo
+                ? {
+                    x1: losInfo.x1,
+                    y1: losInfo.y1,
+                    x2: losInfo.x2,
+                    y2: losInfo.y2,
+                    status: losInfo.status,
+                  }
+                : null
+            }
+            isGm={true}
+            onUpdateObject={handleUpdateObject}
+            onDeleteObject={handleDeleteObject}
+            onCreateObject={handleCreateObject}
+            onMoveToken={handleMoveToken}
+            onSelectDrop={(drop) => {
+              setSelectedActionKey('pickup');
+              setPickupDropId(drop.id);
+            }}
+            onSelectParticipant={(pid) => setTargetParticipantId(pid)}
+          />
+        </div>
+      ) : (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px dashed var(--color-border)',
+            borderRadius: '8px',
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+            盤面が設定されていません。既存の盤面を選択するか、新規作成してください。
+          </span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {boards.length > 0 && (
+              <select
+                onChange={(e) => {
+                  if (e.target.value) handleSelectBoard(e.target.value);
+                }}
+                defaultValue=""
+                style={{
+                  padding: '6px 10px',
+                  backgroundColor: 'var(--color-bg)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  color: 'var(--color-text)',
+                  fontSize: '0.85rem',
+                }}
+              >
+                <option value="" disabled>盤面を選択...</option>
+                {boards.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={handleCreateBoard}
+              style={{
+                backgroundColor: 'var(--color-ally)',
+                color: '#000',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '4px',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+              }}
+            >
+              + 盤面を作成
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Tab Switcher */}
       <div
@@ -1114,6 +1715,99 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     ) : null;
                   })()}
 
+                  {/* Movement Action Guide */}
+                  {['move', 'run'].includes(selectedActionKey) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                        盤面の青いマスをクリックして移動先を選択してください。
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.9rem' }}>
+                        <span>
+                          移動先: <strong>{destination ? `(${destination.x}, ${destination.y})` : '未選択'}</strong>
+                        </span>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                          <input
+                            type="checkbox"
+                            checked={forceMove}
+                            onChange={(e) => setForceMove(e.target.checked)}
+                          />
+                          強制移動 (GM: 障害物・移動範囲を無視)
+                        </label>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleConfirmMove}
+                        disabled={!destination || isApplying}
+                        style={{
+                          backgroundColor: destination ? 'var(--color-ally)' : 'var(--color-surface)',
+                          color: destination ? '#000' : 'var(--color-text-muted)',
+                          border: 'none',
+                          padding: '10px',
+                          borderRadius: '4px',
+                          fontWeight: 700,
+                          cursor: destination ? 'pointer' : 'not-allowed',
+                        }}
+                      >
+                        {isApplying ? '移動反映中...' : '移動を確定して反映'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Pickup Action Guide */}
+                  {selectedActionKey === 'pickup' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                        足元または隣接マスにある落とし物を所持品に戻します。
+                      </div>
+                      {nearbyDrops.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>拾うアイテムを選択:</span>
+                          <select
+                            value={pickupDropId || ''}
+                            onChange={(e) => setPickupDropId(e.target.value)}
+                            style={{
+                              padding: '6px 10px',
+                              backgroundColor: 'var(--color-bg)',
+                              border: '1px solid var(--color-border-light)',
+                              borderRadius: '4px',
+                              color: 'var(--color-text)',
+                            }}
+                          >
+                            <option value="">落とし物を選択...</option>
+                            {nearbyDrops.map((d) => {
+                              const name = (d.inventory_entry as any)?.name || 'アイテム';
+                              return (
+                                <option key={d.id} value={d.id}>
+                                  {name} ({d.x}, {d.y})
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={handleConfirmPickup}
+                            disabled={!pickupDropId || isApplying}
+                            style={{
+                              backgroundColor: pickupDropId ? 'var(--color-ally)' : 'var(--color-surface)',
+                              color: pickupDropId ? '#000' : 'var(--color-text-muted)',
+                              border: 'none',
+                              padding: '10px',
+                              borderRadius: '4px',
+                              fontWeight: 700,
+                              cursor: pickupDropId ? 'pointer' : 'not-allowed',
+                            }}
+                          >
+                            {isApplying ? '反映中...' : '拾って所持品に戻す'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.85rem', color: 'var(--color-warning)' }}>
+                          足元・隣接マスに拾える落とし物はありません。
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Weapon Selection (for ranged / melee / reload) */}
                   {['ranged', 'aimed', 'autofire', 'melee', 'reload'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1239,22 +1933,200 @@ export const CombatView: React.FC<CombatViewProps> = ({
                       </div>
 
                       {['ranged', 'aimed', 'autofire'].includes(selectedActionKey) && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                          <span style={{ fontSize: '0.85rem' }}>距離 (m):</span>
-                          <input
-                            type="number"
-                            min={0}
-                            value={distanceM}
-                            onChange={(e) => setDistanceM(Number(e.target.value) || 0)}
-                            style={{
-                              width: '60px',
-                              padding: '4px 6px',
-                              backgroundColor: 'var(--color-bg)',
-                              border: '1px solid var(--color-border-light)',
-                              borderRadius: '4px',
-                              color: 'var(--color-text)',
-                            }}
-                          />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.85rem' }}>距離 (m):</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={distanceM}
+                              onChange={(e) => setDistanceM(Number(e.target.value) || 0)}
+                              style={{
+                                width: '60px',
+                                padding: '4px 6px',
+                                backgroundColor: 'var(--color-bg)',
+                                border: '1px solid var(--color-border-light)',
+                                borderRadius: '4px',
+                                color: 'var(--color-text)',
+                              }}
+                            />
+                            {losInfo && (
+                              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                                (盤面自動: {losInfo.autoDistanceM}m)
+                              </span>
+                            )}
+                          </div>
+
+                          {/* LoS Status Badge & Override */}
+                          {losInfo && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.85rem',
+                                  fontWeight: 700,
+                                  color:
+                                    losInfo.status === 'clear'
+                                      ? 'var(--color-ally)'
+                                      : losInfo.status === 'cover'
+                                      ? 'var(--color-warning)'
+                                      : 'var(--color-danger)',
+                                }}
+                              >
+                                {losInfo.status === 'clear'
+                                  ? '射線: ○ クリア'
+                                  : losInfo.status === 'cover'
+                                  ? `射線: △ 遮蔽越し (${losInfo.hitCoverObject?.label || '遮蔽物'} HP:${losInfo.hitCoverObject?.cover_hp ?? '未設定'})`
+                                  : '射線: × 射撃不可'}
+                              </span>
+
+                              <select
+                                value={losOverride}
+                                onChange={(e) => setLosOverride(e.target.value as any)}
+                                style={{
+                                  padding: '2px 6px',
+                                  backgroundColor: 'var(--color-bg)',
+                                  border: '1px solid var(--color-border-light)',
+                                  borderRadius: '4px',
+                                  color: 'var(--color-text)',
+                                  fontSize: '0.75rem',
+                                }}
+                              >
+                                <option value="auto">射線: 自動判定</option>
+                                <option value="clear">強制: 通る (クリア)</option>
+                                <option value="cover">強制: 遮蔽越し</option>
+                                <option value="blocked">強制: 撃てない</option>
+                              </select>
+                            </div>
+                          )}
+
+                          {/* Cover Rule Warning & Damage input */}
+                          {(losInfo?.status === 'cover' || losOverride === 'cover') && (
+                            <div
+                              style={{
+                                padding: '8px 10px',
+                                backgroundColor: 'rgba(235, 179, 58, 0.15)',
+                                borderLeft: '3px solid var(--color-warning)',
+                                fontSize: '0.8rem',
+                                color: 'var(--color-warning)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '6px',
+                              }}
+                            >
+                              <span>
+                                遮蔽物越し（ルール確認中 Issue #5）。遮蔽物に当てるかは GM が決める
+                              </span>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 600 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={hitCover}
+                                  onChange={(e) => setHitCover(e.target.checked)}
+                                />
+                                遮蔽物に当てる
+                              </label>
+                              {hitCover && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  {boardData && (
+                                    <select
+                                      value={coverObjectId || losInfo?.hitCoverObject?.id || ''}
+                                      onChange={(e) => {
+                                        const selId = e.target.value || null;
+                                        setCoverObjectId(selId);
+                                        const obj = boardData.objects.find((o) => o.id === selId);
+                                        if (obj?.cover_hp !== null && obj?.cover_hp !== undefined) {
+                                          setCoverHpInput(String(obj.cover_hp));
+                                        } else {
+                                          setCoverHpInput('');
+                                        }
+                                      }}
+                                      style={{
+                                        padding: '4px 8px',
+                                        backgroundColor: 'var(--color-bg)',
+                                        border: '1px solid var(--color-border-light)',
+                                        borderRadius: '4px',
+                                        color: 'var(--color-text)',
+                                        fontSize: '0.85rem',
+                                      }}
+                                    >
+                                      <option value="">(対象遮蔽物)</option>
+                                      {boardData.objects
+                                        .filter((o) => o.blocks_los === 'partial' || o.cover_hp !== null)
+                                        .map((o) => (
+                                          <option key={o.id} value={o.id}>
+                                            {o.label || '遮蔽物'} (HP: {o.cover_hp ?? '不明'})
+                                          </option>
+                                        ))}
+                                    </select>
+                                  )}
+
+                                  {(() => {
+                                    const activeObj =
+                                      (coverObjectId && boardData?.objects.find((o) => o.id === coverObjectId)) ||
+                                      losInfo?.hitCoverObject;
+                                    const isHpEmpty = !activeObj || activeObj.cover_hp === null || activeObj.cover_hp === undefined;
+                                    return isHpEmpty ? (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <span style={{ fontSize: '0.85rem', color: 'var(--color-warning)' }}>
+                                          遮蔽物のHP:
+                                        </span>
+                                        <input
+                                          type="number"
+                                          min={1}
+                                          placeholder="遮蔽物HP"
+                                          value={coverHpInput}
+                                          onChange={(e) => setCoverHpInput(e.target.value)}
+                                          style={{
+                                            width: '70px',
+                                            padding: '3px 6px',
+                                            backgroundColor: 'var(--color-bg)',
+                                            border: '1px solid var(--color-warning)',
+                                            borderRadius: '4px',
+                                            color: 'var(--color-text)',
+                                            fontSize: '0.85rem',
+                                          }}
+                                        />
+                                      </div>
+                                    ) : null;
+                                  })()}
+
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <span style={{ fontSize: '0.85rem' }}>遮蔽物へのダメージ:</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      placeholder="ダメージ値"
+                                      value={coverDamageInput}
+                                      onChange={(e) => setCoverDamageInput(e.target.value)}
+                                      style={{
+                                        width: '70px',
+                                        padding: '3px 6px',
+                                        backgroundColor: 'var(--color-bg)',
+                                        border: '1px solid var(--color-border-light)',
+                                        borderRadius: '4px',
+                                        color: 'var(--color-text)',
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Melee adjacency notice */}
+                      {['melee', 'brawl'].includes(selectedActionKey) && meleeBlocked && (
+                        <div
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: 'rgba(235, 75, 75, 0.15)',
+                            borderLeft: '3px solid var(--color-danger)',
+                            color: 'var(--color-danger)',
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                          }}
+                        >
+                          ⚠ 近接攻撃・格闘は隣接（1マス）の対象のみ可能です（現在 {losInfo?.distSquares} マス離れています）
                         </div>
                       )}
 
@@ -1596,19 +2468,26 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   {/* Calculate preview button */}
                   <button
                     onClick={handleCalculateAction}
-                    disabled={isResolving}
+                    disabled={isResolving || isCoverHpNeededAndMissing}
+                    title={isCoverHpNeededAndMissing ? '遮蔽物のHPを入力するまで計算できません' : undefined}
                     style={{
                       backgroundColor: 'var(--color-surface)',
                       border: '1px solid var(--color-ally)',
-                      color: 'var(--color-ally)',
+                      color: isCoverHpNeededAndMissing ? 'var(--color-text-muted)' : 'var(--color-ally)',
+                      opacity: isCoverHpNeededAndMissing ? 0.6 : 1,
                       padding: '8px',
                       borderRadius: '4px',
                       fontWeight: 700,
-                      cursor: 'pointer',
+                      cursor: isCoverHpNeededAndMissing ? 'not-allowed' : 'pointer',
                     }}
                   >
                     {isResolving ? '計算中...' : '判定と反映内容を計算'}
                   </button>
+                  {isCoverHpNeededAndMissing && (
+                    <div style={{ color: 'var(--color-warning)', fontSize: '0.8rem', marginTop: '4px' }}>
+                      ※ 遮蔽物のHPを入力するまで計算できません
+                    </div>
+                  )}
 
                   {/* Preview of changes */}
                   {previewResult && (
@@ -1747,9 +2626,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
   function renderParticipantCard(p: CombatParticipant, isCurrentTurn: boolean) {
     const char = p.character;
     const isAlly = p.side === 'ally';
+    const hasHp = char?.hp !== undefined && char?.hp !== null;
     const hp = char?.hp ?? 0;
     const hpMax = char?.hp_max ?? 1;
-    const hpPercent = Math.min(100, Math.max(0, (hp / hpMax) * 100));
+    const hpPercent = hasHp ? Math.min(100, Math.max(0, (hp / hpMax) * 100)) : 0;
 
     let hpColor = isAlly ? 'var(--color-ally)' : 'var(--color-enemy)';
     if (hp < hpMax / 2 && hp > 0) hpColor = 'var(--color-warning)';
@@ -1805,25 +2685,27 @@ export const CombatView: React.FC<CombatViewProps> = ({
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '2px' }}>
             <span>HP</span>
-            <span>{hp} / {hpMax}</span>
+            <span>{hasHp ? `${hp} / ${hpMax}` : '—'}</span>
           </div>
-          <div
-            style={{
-              height: '6px',
-              backgroundColor: 'var(--color-surface-elevated)',
-              borderRadius: '3px',
-              overflow: 'hidden',
-            }}
-          >
+          {hasHp && (
             <div
               style={{
-                width: `${hpPercent}%`,
-                height: '100%',
-                backgroundColor: hpColor,
-                transition: 'width 0.3s ease',
+                height: '6px',
+                backgroundColor: 'var(--color-surface-elevated)',
+                borderRadius: '3px',
+                overflow: 'hidden',
               }}
-            />
-          </div>
+            >
+              <div
+                style={{
+                  width: `${hpPercent}%`,
+                  height: '100%',
+                  backgroundColor: hpColor,
+                  transition: 'width 0.3s ease',
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* SP & Ammo */}

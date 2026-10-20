@@ -93,12 +93,126 @@ describe('Saves & Load operations (phase 2 §6 & §9)', () => {
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.format).toBe('cpgm-save');
-      expect(parsed.data.version).toBe(3);
+      expect(parsed.data.version).toBe(4);
       expect(parsed.data.characters.length).toBeGreaterThanOrEqual(4);
       expect(Array.isArray(parsed.data.combats)).toBe(true);
       expect(Array.isArray(parsed.data.combat_participants)).toBe(true);
       expect(Array.isArray(parsed.data.combat_log)).toBe(true);
+      expect(Array.isArray(parsed.data.boards)).toBe(true);
+      expect(Array.isArray(parsed.data.board_objects)).toBe(true);
+      expect(Array.isArray(parsed.data.board_tokens)).toBe(true);
+      expect(Array.isArray(parsed.data.board_drops)).toBe(true);
     }
+  });
+
+  it('supports version 4 save and load with board tables, and backwards compatibility for versions 1~3 (Phase 4b §1, §9)', async () => {
+    // 1. Create a board and objects
+    const boardRes = await app.request('/api/boards', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${gmToken}`,
+      },
+      body: JSON.stringify({
+        name: '倉庫街 (v4 テスト)',
+        grid: { cols: 20, rows: 15, cell_m: 2 },
+      }),
+    });
+    expect(boardRes.status).toBe(201);
+    const { board } = await boardRes.json();
+
+    const objRes = await app.request(`/api/boards/${board.id}/objects`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${gmToken}`,
+      },
+      body: JSON.stringify({
+        kind: 'crate',
+        label: '木箱A',
+        x: 3,
+        y: 4,
+        w: 1,
+        h: 1,
+        blocks_los: 'partial',
+        cover_hp: 15,
+        cover_hp_max: 15,
+      }),
+    });
+    expect(objRes.status).toBe(201);
+
+    // Create v4 save
+    const saveRes = await app.request('/api/saves', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${gmToken}`,
+      },
+      body: JSON.stringify({ name: 'Version 4 Board Save' }),
+    });
+    expect(saveRes.status).toBe(201);
+    const { save: v4Save } = await saveRes.json();
+
+    // Verify file content has v4 and boards data
+    const fileRes = await app.request(`/api/saves/${v4Save.id}/file`, {
+      headers: { Authorization: `Bearer ${gmToken}` },
+    });
+    const fileData = await fileRes.json();
+    expect(fileData.version).toBe(4);
+    expect(fileData.boards.some((b: any) => b.id === board.id)).toBe(true);
+    expect(fileData.board_objects.some((o: any) => o.label === '木箱A')).toBe(true);
+
+    // Load v4 save back
+    const loadRes = await app.request(`/api/saves/${v4Save.id}/load`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${gmToken}` },
+    });
+    expect(loadRes.status).toBe(200);
+
+    // Verify restored board
+    const getBoardRes = await app.request(`/api/boards/${board.id}`);
+    expect(getBoardRes.status).toBe(200);
+    const getBoardData = await getBoardRes.json();
+    expect(getBoardData.board.objects).toHaveLength(1);
+    expect(getBoardData.board.objects[0].label).toBe('木箱A');
+
+    // 2. Backwards compatibility: load a mock version 3 save (without boards tables)
+    const v3SaveContent = {
+      format: 'cpgm-save',
+      version: 3,
+      savedAt: Date.now(),
+      name: 'Legacy v3 Save',
+      characters: fileData.characters,
+      money_log: [],
+      char_log: [],
+      app_settings: {},
+      shops: [],
+      shop_stock: [],
+      transactions: [],
+      character_submissions: [],
+      skill_notes: [],
+      combats: [],
+      combat_participants: [],
+      combat_log: [],
+      // boards fields omitted
+    };
+
+    const importV3Res = await app.request('/api/saves/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${gmToken}`,
+      },
+      body: JSON.stringify(v3SaveContent),
+    });
+    expect(importV3Res.status).toBe(201);
+    const { save: importedV3 } = await importV3Res.json();
+
+    const loadV3Res = await app.request(`/api/saves/${importedV3.id}/load`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${gmToken}` },
+    });
+    expect(loadV3Res.status).toBe(200);
   });
 
   it('rejects corrupted or schema-invalid files during import', async () => {

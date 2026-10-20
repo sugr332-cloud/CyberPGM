@@ -116,7 +116,22 @@ export const CombatParticipantSchema = z.object({
 export interface CombatChange {
   target_id: string; // character_id or participant_id
   target_name: string;
-  field: 'hp' | 'sp_head' | 'sp_body' | 'ammo' | 'inventory' | 'status' | 'crit_injuries' | 'dropped' | 'out' | 'state' | 'custom';
+  field:
+    | 'hp'
+    | 'sp_head'
+    | 'sp_body'
+    | 'ammo'
+    | 'inventory'
+    | 'status'
+    | 'crit_injuries'
+    | 'dropped'
+    | 'out'
+    | 'state'
+    | 'token_position'
+    | 'cover_hp'
+    | 'board_drop'
+    | 'board_drop_remove'
+    | 'custom';
   before?: unknown;
   after?: unknown;
   desc: string;
@@ -125,7 +140,23 @@ export interface CombatChange {
 export const CombatChangeSchema = z.object({
   target_id: z.string(),
   target_name: z.string(),
-  field: z.enum(['hp', 'sp_head', 'sp_body', 'ammo', 'inventory', 'status', 'crit_injuries', 'dropped', 'out', 'state', 'custom']),
+  field: z.enum([
+    'hp',
+    'sp_head',
+    'sp_body',
+    'ammo',
+    'inventory',
+    'status',
+    'crit_injuries',
+    'dropped',
+    'out',
+    'state',
+    'token_position',
+    'cover_hp',
+    'board_drop',
+    'board_drop_remove',
+    'custom',
+  ]),
   before: z.unknown().optional(),
   after: z.unknown().optional(),
   desc: z.string(),
@@ -161,6 +192,7 @@ export const CombatLogEntrySchema = z.object({
 
 export interface Combat {
   id: string;
+  board_id?: string | null;
   status: 'setup' | 'active' | 'ended';
   round: number;
   turn_index: number;
@@ -173,6 +205,7 @@ export interface Combat {
 
 export const CombatSchema = z.object({
   id: z.string(),
+  board_id: z.string().nullable().optional(),
   status: z.enum(['setup', 'active', 'ended']).default('setup'),
   round: z.number().int().default(1),
   turn_index: z.number().int().default(0),
@@ -183,6 +216,7 @@ export const CombatSchema = z.object({
 
 // Request schemas
 export const CreateCombatInputSchema = z.object({
+  board_id: z.string().nullable().optional(),
   settings: CombatSettingsSchema.optional(),
 });
 
@@ -244,6 +278,14 @@ export const ResolveActionInputSchema = z.object({
   actor_id: z.string(),
   target_id: z.string().optional(),
   distance_m: z.number().optional(),
+  destination: z.object({ x: z.number().int(), y: z.number().int() }).optional(),
+  force_move: z.boolean().optional(),
+  los_override: z.enum(['clear', 'cover', 'blocked']).optional(),
+  hit_cover: z.boolean().optional(),
+  cover_object_id: z.string().optional(),
+  cover_current_hp: z.number().int().nonnegative().nullable().optional(),
+  cover_damage: z.number().optional(),
+  pickup_drop_id: z.string().optional(),
   weapon_id: z.string().optional(),
   weapon_entry_id: z.string().optional(),
   ammo_spent: z.number().int().nonnegative().optional(),

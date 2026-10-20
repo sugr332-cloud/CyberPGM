@@ -17,6 +17,10 @@ import {
   combats,
   combat_participants,
   combat_log,
+  boards,
+  board_objects,
+  board_tokens,
+  board_drops,
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
@@ -76,9 +80,20 @@ export function buildSaveData(name: string): SaveFile {
   const participantRows = db.select().from(combat_participants).all();
   const logRows = db.select().from(combat_log).all();
 
+  const boardRows = db.select().from(boards).all().map((b) => ({
+    ...b,
+    grid: JSON.parse(b.grid || '{}'),
+  }));
+  const objectRows = db.select().from(board_objects).all();
+  const tokenRows = db.select().from(board_tokens).all();
+  const dropRows = db.select().from(board_drops).all().map((d) => ({
+    ...d,
+    inventory_entry: JSON.parse(d.inventory_entry || '{}'),
+  }));
+
   return {
     format: 'cpgm-save',
-    version: 3,
+    version: 4,
     savedAt: Date.now(),
     name,
     characters: chars,
@@ -93,6 +108,10 @@ export function buildSaveData(name: string): SaveFile {
     combats: combatRows,
     combat_participants: participantRows,
     combat_log: logRows,
+    boards: boardRows,
+    board_objects: objectRows,
+    board_tokens: tokenRows,
+    board_drops: dropRows,
   };
 }
 
@@ -417,19 +436,100 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
       }
     }
 
-    // Restore combat tables (version 3)
+    // Restore board and combat tables (version 4)
     sqlite.prepare('DELETE FROM combat_log').run();
     sqlite.prepare('DELETE FROM combat_participants').run();
     sqlite.prepare('DELETE FROM combats').run();
+    sqlite.prepare('DELETE FROM board_drops').run();
+    sqlite.prepare('DELETE FROM board_tokens').run();
+    sqlite.prepare('DELETE FROM board_objects').run();
+    sqlite.prepare('DELETE FROM boards').run();
+
+    if (data.boards && (data.boards as any[]).length > 0) {
+      const insertBoard = sqlite.prepare(`
+        INSERT INTO boards (id, name, background_image_id, grid, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const b of data.boards as any[]) {
+        insertBoard.run(
+          b.id,
+          b.name,
+          b.background_image_id ?? null,
+          typeof b.grid === 'string' ? b.grid : JSON.stringify(b.grid || {}),
+          b.created_at,
+          b.updated_at,
+        );
+      }
+    }
+
+    if (data.board_objects && (data.board_objects as any[]).length > 0) {
+      const insertObj = sqlite.prepare(`
+        INSERT INTO board_objects (
+          id, board_id, kind, label, x, y, w, h, rotation, passable, blocks_los, cover_hp, cover_hp_max
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const o of data.board_objects as any[]) {
+        insertObj.run(
+          o.id,
+          o.board_id,
+          o.kind,
+          o.label,
+          o.x,
+          o.y,
+          o.w,
+          o.h,
+          o.rotation ?? 0,
+          o.passable ? 1 : 0,
+          o.blocks_los || 'none',
+          o.cover_hp ?? null,
+          o.cover_hp_max ?? null,
+        );
+      }
+    }
+
+    if (data.board_tokens && (data.board_tokens as any[]).length > 0) {
+      const insertToken = sqlite.prepare(`
+        INSERT INTO board_tokens (id, board_id, character_id, x, y, gm_only)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const t of data.board_tokens as any[]) {
+        insertToken.run(
+          t.id,
+          t.board_id,
+          t.character_id ?? null,
+          t.x,
+          t.y,
+          t.gm_only ? 1 : 0,
+        );
+      }
+    }
+
+    if (data.board_drops && (data.board_drops as any[]).length > 0) {
+      const insertDrop = sqlite.prepare(`
+        INSERT INTO board_drops (id, board_id, x, y, inventory_entry, from_character_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const d of data.board_drops as any[]) {
+        insertDrop.run(
+          d.id,
+          d.board_id,
+          d.x,
+          d.y,
+          typeof d.inventory_entry === 'string' ? d.inventory_entry : JSON.stringify(d.inventory_entry || {}),
+          d.from_character_id ?? null,
+        );
+      }
+    }
 
     if (data.combats && data.combats.length > 0) {
       const insertCombat = sqlite.prepare(`
-        INSERT INTO combats (id, status, round, turn_index, settings, created_at, ended_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO combats (id, board_id, status, round, turn_index, settings, created_at, ended_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const cb of data.combats as any[]) {
         insertCombat.run(
           cb.id,
+          cb.board_id ?? null,
           cb.status,
           cb.round,
           cb.turn_index,

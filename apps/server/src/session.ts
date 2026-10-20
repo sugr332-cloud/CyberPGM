@@ -9,11 +9,12 @@ import {
   SessionInfo,
   WsNotifyKind,
 } from '@cyberpgm/shared';
+import { woundState } from '@cyberpgm/rules';
 import { getCharacterSheetById } from './character-helper.js';
 
 export interface ConnectedClient {
   ws: WSContext;
-  role: 'gm' | 'player';
+  role: 'gm' | 'player' | 'screen';
   deviceId: string;
   characterId?: string | null;
 }
@@ -31,9 +32,19 @@ export class SessionManager {
   private sessionCode: string;
   private clients = new Set<ConnectedClient>();
   private pendingClaims = new Map<string, ClaimRequest>();
+  private combatProvider: (() => any) | null = null;
+  private boardProvider: ((id: string) => any) | null = null;
 
   constructor() {
     this.sessionCode = generateSessionCode();
+  }
+
+  public setCombatProvider(fn: () => any): void {
+    this.combatProvider = fn;
+  }
+
+  public setBoardProvider(fn: (id: string) => any): void {
+    this.boardProvider = fn;
   }
 
   public getSessionCode(): string {
@@ -225,6 +236,242 @@ export class SessionManager {
       type: 'combat:update',
       payload: combat,
     });
+    this.broadcastScreenUpdate();
+  }
+
+  /**
+   * Broadcasts board state update to all GM clients.
+   */
+  public broadcastBoardUpdate(board: object | null): void {
+    this.sendToGm({
+      type: 'board:update',
+      payload: board,
+    });
+    this.broadcastScreenUpdate();
+  }
+
+  /**
+   * Builds sanitized payload for TV screen (/screen).
+   * Enemies have NO hp/sp numbers (only name and wound state).
+   * GM-only tokens and hidden enemies are omitted.
+   * Background image is omitted if visibility is 'gm'.
+   */
+  public buildScreenPayload(): Record<string, unknown> {
+    if (!this.combatProvider) {
+      return { active: false };
+    }
+    const combat = this.combatProvider();
+    if (!combat || combat.status === 'ended') {
+      return { active: false };
+    }
+
+    const broadcastToTv = combat.settings?.broadcastToTv !== false;
+    if (!broadcastToTv) {
+      return { active: false };
+    }
+
+    // Sanitize combat participants
+    const sanitizedParticipants = (combat.participants || []).map((p: any) => {
+      if (p.side === 'ally') {
+        return {
+          id: p.id,
+          character_id: p.character_id,
+          name: p.name,
+          side: p.side,
+          initiative: p.initiative,
+          order_index: p.order_index,
+          active: p.active,
+          out: p.out,
+          character: p.character
+            ? {
+                id: p.character.id,
+                name: p.character.name,
+                role: p.character.role,
+                image_path: p.character.image_path,
+                hp: p.character.hp,
+                hp_max: p.character.hp_max,
+                sp_head: p.character.sp_head,
+                sp_body: p.character.sp_body,
+                status: p.character.status,
+                crit_injuries: p.character.crit_injuries,
+              }
+            : null,
+        };
+      }
+
+      // Enemy: ONLY name, image_path, wound state, status, crit_injuries.
+      // NO hp, hp_max, sp_head, sp_body numbers!
+      let woundLabel = '健康';
+      let woundCode: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
+      if (p.character) {
+        const state = woundState(p.character.hp, p.character.hp_max);
+        if (state === 'dead' || p.character.hp <= 0) {
+          woundLabel = '死亡';
+          woundCode = 'dead';
+        } else if (state === 'mortally') {
+          woundLabel = '瀕死';
+          woundCode = 'mortally';
+        } else if (state === 'seriously') {
+          woundLabel = '重傷';
+          woundCode = 'seriously';
+        }
+      }
+
+      return {
+        id: p.id,
+        character_id: p.character_id,
+        name: p.name,
+        side: p.side,
+        initiative: p.initiative,
+        order_index: p.order_index,
+        active: p.active,
+        out: p.out,
+        wound_state: woundLabel,
+        wound_code: woundCode,
+        character: p.character
+          ? {
+              id: p.character.id,
+              name: p.character.name,
+              role: p.character.role,
+              image_path: p.character.image_path,
+              wound_state: woundLabel,
+              status: p.character.status,
+              crit_injuries: p.character.crit_injuries,
+            }
+          : null,
+      };
+    });
+
+    let sanitizedBoard: any = null;
+    if (combat.board_id && this.boardProvider) {
+      const b = this.boardProvider(combat.board_id);
+      if (b) {
+        // If background image visibility is 'gm', omit image path on TV!
+        const bgPath = b.background_image_visibility === 'gm' ? null : b.background_image_path;
+
+        // Collect hidden enemy character IDs
+        const hiddenEnemyCharIds = new Set<string>();
+        for (const p of combat.participants || []) {
+          if (p.side === 'enemy' && p.character?.status?.includes('隠れている') && p.character_id) {
+            hiddenEnemyCharIds.add(p.character_id);
+          }
+        }
+
+        // Filter tokens: omit gm_only and hidden enemies, and enrich with name/side/wound_state
+        const filteredTokens = (b.tokens || [])
+          .filter((t: any) => {
+            if (t.gm_only) return false;
+            if (t.character_id && hiddenEnemyCharIds.has(t.character_id)) return false;
+            return true;
+          })
+          .map((t: any) => {
+            const part = (combat.participants || []).find(
+              (p: any) =>
+                (p.character_id && p.character_id === t.character_id) ||
+                p.id === t.character_id,
+            );
+            if (!part) {
+              return {
+                ...t,
+                name: t.character_id ? '不明' : '—',
+                side: null,
+                wound_state: null,
+                hp: null,
+                hp_max: null,
+              };
+            }
+
+            let woundCode: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
+            if (part.character) {
+              const hp = part.character.hp;
+              const maxHp = part.character.hp_max;
+              if (hp <= 0) woundCode = 'dead';
+              else woundCode = woundState(hp, maxHp);
+            }
+
+            if (part.side === 'ally') {
+              return {
+                ...t,
+                character_id: part.character_id,
+                name: part.name,
+                side: 'ally',
+                wound_state: woundCode,
+                hp: part.character?.hp ?? null,
+                hp_max: part.character?.hp_max ?? null,
+              };
+            }
+
+            // Enemy token: ONLY name, side, wound_state (NO hp / hp_max!)
+            return {
+              ...t,
+              character_id: part.character_id,
+              name: part.name,
+              side: 'enemy',
+              wound_state: woundCode,
+              hp: null,
+              hp_max: null,
+            };
+          });
+
+        sanitizedBoard = {
+          ...b,
+          background_image_path: bgPath,
+          tokens: filteredTokens,
+        };
+      }
+    }
+
+    return {
+      active: true,
+      combat: {
+        id: combat.id,
+        status: combat.status,
+        round: combat.round,
+        turn_index: combat.turn_index,
+        participants: sanitizedParticipants,
+      },
+      board: sanitizedBoard,
+      objects: sanitizedBoard?.objects || [],
+      tokens: sanitizedBoard?.tokens || [],
+      drops: sanitizedBoard?.drops || [],
+    };
+  }
+
+  /**
+   * Broadcasts screen update to all TV clients (/screen).
+   */
+  public broadcastScreenUpdate(): void {
+    const payload = this.buildScreenPayload();
+    const msg = JSON.stringify({
+      type: 'screen:update',
+      payload,
+    });
+    for (const client of this.clients) {
+      if (client.role === 'screen') {
+        try {
+          client.ws.send(msg);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  /**
+   * Sends initial screen payload to a freshly connected screen client.
+   */
+  public sendInitialScreenUpdate(ws: WSContext): void {
+    const payload = this.buildScreenPayload();
+    try {
+      ws.send(
+        JSON.stringify({
+          type: 'screen:update',
+          payload,
+        }),
+      );
+    } catch {
+      // ignore
+    }
   }
 
   /**

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 export interface UseWebSocketOptions {
-  token: string | null;
+  token?: string | null;
+  sessionCode?: string | null;
   onMessage?: (type: string, payload: unknown) => void;
 }
 
-export function useWebSocket({ token, onMessage }: UseWebSocketOptions) {
+export function useWebSocket({ token, sessionCode, onMessage }: UseWebSocketOptions) {
   const [isConnected, setIsConnected] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -16,7 +17,7 @@ export function useWebSocket({ token, onMessage }: UseWebSocketOptions) {
   onMessageRef.current = onMessage;
 
   const connect = useCallback(() => {
-    if (!token) {
+    if (!token && !sessionCode) {
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -27,7 +28,10 @@ export function useWebSocket({ token, onMessage }: UseWebSocketOptions) {
     }
 
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${proto}//${window.location.host}/ws?token=${encodeURIComponent(token)}`;
+    const query = token
+      ? `token=${encodeURIComponent(token)}`
+      : `session=${encodeURIComponent(sessionCode || '')}&role=screen`;
+    const wsUrl = `${proto}//${window.location.host}/ws?${query}`;
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -72,7 +76,7 @@ export function useWebSocket({ token, onMessage }: UseWebSocketOptions) {
       reconnectAttempts.current += 1;
       reconnectTimeout.current = setTimeout(connect, delay);
     }
-  }, [token]);
+  }, [token, sessionCode]);
 
   useEffect(() => {
     connect();
