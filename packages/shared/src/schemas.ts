@@ -263,6 +263,15 @@ export const SaveFileSchema = z.object({
   board_objects: z.array(z.unknown()).optional().default([]),
   board_tokens: z.array(z.unknown()).optional().default([]),
   board_drops: z.array(z.unknown()).optional().default([]),
+  scenarios: z.array(z.unknown()).optional().default([]),
+  scenario_versions: z.array(z.unknown()).optional().default([]),
+  scenes: z.array(z.unknown()).optional().default([]),
+  scene_links: z.array(z.unknown()).optional().default([]),
+  scene_choices: z.array(z.unknown()).optional().default([]),
+  clues: z.array(z.unknown()).optional().default([]),
+  handouts: z.array(z.unknown()).optional().default([]),
+  encounters: z.array(z.unknown()).optional().default([]),
+  random_tables: z.array(z.unknown()).optional().default([]),
 });
 
 export const WsClientMessageSchema = z.discriminatedUnion('type', [

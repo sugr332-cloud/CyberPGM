@@ -337,6 +337,15 @@ export interface SaveFile {
   board_objects?: unknown[];
   board_tokens?: unknown[];
   board_drops?: unknown[];
+  scenarios?: unknown[];
+  scenario_versions?: unknown[];
+  scenes?: unknown[];
+  scene_links?: unknown[];
+  scene_choices?: unknown[];
+  clues?: unknown[];
+  handouts?: unknown[];
+  encounters?: unknown[];
+  random_tables?: unknown[];
 }
 
 export interface Shop {

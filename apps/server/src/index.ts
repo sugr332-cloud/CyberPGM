@@ -18,6 +18,7 @@ import { characterCreationRoutes } from './routes/character-creation.js';
 import { skillNotesRoutes } from './routes/skill-notes.js';
 import { combatRoutes, getCurrentCombat } from './routes/combat.js';
 import { boardsRoutes, getHydratedBoard } from './routes/boards.js';
+import { scenariosRouter } from './routes/scenarios.js';
 import { db } from './db/client.js';
 import { initPhase3bData } from './db/init-phase3b.js';
 import { initPhase4aData } from './db/init-phase4a.js';
@@ -53,6 +54,7 @@ app.route('/api', characterCreationRoutes);
 app.route('/api', skillNotesRoutes);
 app.route('/api', combatRoutes);
 app.route('/api', boardsRoutes);
+app.route('/api/scenarios', scenariosRouter);
 
 // Configure session providers
 sessionManager.setCombatProvider(getCurrentCombat);

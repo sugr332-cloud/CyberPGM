@@ -57,6 +57,13 @@
       "when": 1792502685821,
       "tag": "0007_minor_purple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792509283274,
+      "tag": "0008_wise_corsair",
+      "breakpoints": true
     }
   ]
 }

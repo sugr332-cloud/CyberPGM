@@ -20,6 +20,15 @@ import {
   BoardObject,
   BoardToken,
   BoardDrop,
+  Scenario,
+  ScenarioFull,
+  Scene,
+  SceneLink,
+  SceneChoice,
+  Clue,
+  Handout,
+  Encounter,
+  RandomTable,
 } from '@cyberpgm/shared';
 
 export const API_BASE = '';
@@ -574,4 +583,315 @@ export const api = {
       },
       getGmToken(),
     ),
+
+  // Scenarios
+  listScenarios: () =>
+    request<{ scenarios: Scenario[] }>('/api/scenarios', {}, getGmToken()),
+
+  getScenario: (id: string) =>
+    request<ScenarioFull>(`/api/scenarios/${id}`, {}, getGmToken()),
+
+  createScenario: (data: { title: string; summary?: string; meta?: any; use_template?: boolean }) =>
+    request<ScenarioFull>(
+      '/api/scenarios',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  updateScenario: (id: string, data: { title?: string; summary?: string; meta?: any; save_version?: boolean }) =>
+    request<ScenarioFull>(
+      `/api/scenarios/${id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteScenario: (id: string) =>
+    request<{ success: boolean }>(
+      `/api/scenarios/${id}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
+
+  duplicateScenario: (id: string) =>
+    request<ScenarioFull>(
+      `/api/scenarios/${id}/duplicate`,
+      {
+        method: 'POST',
+      },
+      getGmToken(),
+    ),
+
+  exportScenario: (id: string) =>
+    request<ScenarioFull>(`/api/scenarios/${id}/export`, {}, getGmToken()),
+
+  importScenario: (data: ScenarioFull) =>
+    request<ScenarioFull>(
+      '/api/scenarios/import',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  listScenarioVersions: (id: string) =>
+    request<{ versions: Array<{ id: string; scenario_id: string; version: number; saved_at: number }> }>(
+      `/api/scenarios/${id}/versions`,
+      {},
+      getGmToken(),
+    ),
+
+  restoreScenarioVersion: (id: string, vid: string) =>
+    request<ScenarioFull>(
+      `/api/scenarios/${id}/versions/${vid}/restore`,
+      {
+        method: 'POST',
+      },
+      getGmToken(),
+    ),
+
+  // Scene & Sub-entities
+  createScene: (scenarioId: string, data: any) =>
+    request<Scene>(
+      `/api/scenarios/${scenarioId}/scenes`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  updateScene: (sceneId: string, data: any) =>
+    request<Scene>(
+      `/api/scenarios/scenes/${sceneId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteScene: (sceneId: string) =>
+    request<{ success: boolean }>(
+      `/api/scenarios/scenes/${sceneId}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
+
+  createSceneLink: (scenarioId: string, data: { from_scene_id: string; to_scene_id: string; condition?: string }) =>
+    request<SceneLink>(
+      `/api/scenarios/${scenarioId}/links`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  updateSceneLink: (linkId: string, data: { condition?: string; from_scene_id?: string; to_scene_id?: string }) =>
+    request<SceneLink>(
+      `/api/scenarios/links/${linkId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteSceneLink: (linkId: string) =>
+    request<{ success: boolean }>(
+      `/api/scenarios/links/${linkId}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
+
+  createSceneChoice: (sceneId: string, data: any) =>
+    request<SceneChoice>(
+      `/api/scenarios/scenes/${sceneId}/choices`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  updateSceneChoice: (choiceId: string, data: any) =>
+    request<SceneChoice>(
+      `/api/scenarios/choices/${choiceId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteSceneChoice: (choiceId: string) =>
+    request<{ success: boolean }>(
+      `/api/scenarios/choices/${choiceId}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
+
+  createClue: (scenarioId: string, data: any) =>
+    request<Clue>(
+      `/api/scenarios/${scenarioId}/clues`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  updateClue: (clueId: string, data: any) =>
+    request<Clue>(
+      `/api/scenarios/clues/${clueId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteClue: (clueId: string) =>
+    request<{ success: boolean }>(
+      `/api/scenarios/clues/${clueId}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
+
+  createHandout: (scenarioId: string, data: any) =>
+    request<Handout>(
+      `/api/scenarios/${scenarioId}/handouts`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  updateHandout: (handoutId: string, data: any) =>
+    request<Handout>(
+      `/api/scenarios/handouts/${handoutId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteHandout: (handoutId: string) =>
+    request<{ success: boolean }>(
+      `/api/scenarios/handouts/${handoutId}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
+
+  createEncounter: (scenarioId: string, data: any) =>
+    request<Encounter>(
+      `/api/scenarios/${scenarioId}/encounters`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  updateEncounter: (encounterId: string, data: any) =>
+    request<Encounter>(
+      `/api/scenarios/encounters/${encounterId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteEncounter: (encounterId: string) =>
+    request<{ success: boolean }>(
+      `/api/scenarios/encounters/${encounterId}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
+
+  // Random Tables
+  listRandomTables: (scenarioId?: string) =>
+    request<{ tables: RandomTable[] }>(
+      scenarioId ? `/api/scenarios/random-tables?scenario_id=${scenarioId}` : '/api/scenarios/random-tables',
+      {},
+      getGmToken(),
+    ),
+
+  createRandomTable: (data: any) =>
+    request<RandomTable>(
+      '/api/scenarios/random-tables',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  updateRandomTable: (id: string, data: any) =>
+    request<RandomTable>(
+      `/api/scenarios/random-tables/${id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+      getGmToken(),
+    ),
+
+  deleteRandomTable: (id: string) =>
+    request<{ success: boolean }>(
+      `/api/scenarios/random-tables/${id}`,
+      {
+        method: 'DELETE',
+      },
+      getGmToken(),
+    ),
+
+  rollRandomTable: (id: string, roll?: number) =>
+    request<{ table_id: string; title: string; dice: string; roll: number; row: any; matched_row: any }>(
+      `/api/scenarios/random-tables/${id}/roll`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ roll }),
+      },
+      getGmToken(),
+    ),
+
+  // Images
+  listImages: (filters?: { origin?: string; source_book?: string; visibility?: string; q?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.origin) params.set('origin', filters.origin);
+    if (filters?.source_book) params.set('source_book', filters.source_book);
+    if (filters?.visibility) params.set('visibility', filters.visibility);
+    if (filters?.q) params.set('q', filters.q);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return request<{ images: Array<{ id: string; title: string | null; path: string; origin: string; visibility: string; source_book: string | null; source_page: number | null }> }>(
+      `/api/images${qs}`,
+      {},
+      getGmToken(),
+    );
+  },
 };

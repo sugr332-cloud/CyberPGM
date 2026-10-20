@@ -21,6 +21,7 @@
     "db:migrate": "tsx apps/server/src/db/migrate.ts",
     "seed:demo": "tsx apps/server/src/db/seed-demo.ts",
     "import:fvtt": "tsx tools/import-fvtt/src/index.ts",
+    "import:images": "tsx tools/import-images/src/index.ts",
     "gen:skills": "tsx tools/gen-skill-catalog/src/index.ts"
   },
   "devDependencies": {

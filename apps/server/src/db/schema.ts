@@ -74,6 +74,7 @@ export const cyberwares = sqliteTable('cyberwares', {
 export const images = sqliteTable('images', {
   id: text('id').primaryKey(),
   item_id: text('item_id').references(() => items.id, { onDelete: 'cascade' }),
+  title: text('title'),
   path: text('path').notNull(),
   origin: text('origin').notNull(),
   license: text('license'),
@@ -319,6 +320,112 @@ export const combat_log = sqliteTable('combat_log', {
   at: integer('at').notNull(),
 });
 
+// Phase 5a Scenario Maker Tables
+export const scenarios = sqliteTable('scenarios', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  summary: text('summary').notNull().default(''),
+  meta: text('meta').notNull().default('{}'), // JSON: { players_min?, players_max?, hours?, reward_note?, tags?: [], shop_ids?: [] }
+  version: integer('version').notNull().default(1),
+  created_at: integer('created_at').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
+export const scenario_versions = sqliteTable('scenario_versions', {
+  id: text('id').primaryKey(),
+  scenario_id: text('scenario_id')
+    .notNull()
+    .references(() => scenarios.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  snapshot: text('snapshot').notNull(), // JSON
+  saved_at: integer('saved_at').notNull(),
+});
+
+export const scenes = sqliteTable('scenes', {
+  id: text('id').primaryKey(),
+  scenario_id: text('scenario_id')
+    .notNull()
+    .references(() => scenarios.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  read_aloud: text('read_aloud').notNull().default(''),
+  gm_notes: text('gm_notes').notNull().default(''),
+  location: text('location').notNull().default(''),
+  npc_ids: text('npc_ids').notNull().default('[]'), // JSON array of character IDs
+  position: text('position').notNull().default('{"x":100,"y":100}'), // JSON: { x: number, y: number }
+  background_image_id: text('background_image_id').references(() => images.id, { onDelete: 'set null' }),
+  board_id: text('board_id').references(() => boards.id, { onDelete: 'set null' }),
+  sort_index: integer('sort_index').notNull().default(0),
+});
+
+export const scene_links = sqliteTable('scene_links', {
+  id: text('id').primaryKey(),
+  scenario_id: text('scenario_id')
+    .notNull()
+    .references(() => scenarios.id, { onDelete: 'cascade' }),
+  from_scene_id: text('from_scene_id')
+    .notNull()
+    .references(() => scenes.id, { onDelete: 'cascade' }),
+  to_scene_id: text('to_scene_id')
+    .notNull()
+    .references(() => scenes.id, { onDelete: 'cascade' }),
+  condition: text('condition').notNull().default(''),
+});
+
+export const scene_choices = sqliteTable('scene_choices', {
+  id: text('id').primaryKey(),
+  scene_id: text('scene_id')
+    .notNull()
+    .references(() => scenes.id, { onDelete: 'cascade' }),
+  label: text('label').notNull(),
+  skill_key: text('skill_key'),
+  dv: integer('dv'),
+  who: text('who').notNull().default('全員'),
+  on_success: text('on_success').notNull().default('[]'), // JSON array of ChoiceOutcome
+  on_failure: text('on_failure').notNull().default('[]'), // JSON array of ChoiceOutcome
+  sort_index: integer('sort_index').notNull().default(0),
+});
+
+export const clues = sqliteTable('clues', {
+  id: text('id').primaryKey(),
+  scenario_id: text('scenario_id')
+    .notNull()
+    .references(() => scenarios.id, { onDelete: 'cascade' }),
+  scene_id: text('scene_id').references(() => scenes.id, { onDelete: 'set null' }),
+  title: text('title').notNull(),
+  body: text('body').notNull().default(''),
+  image_id: text('image_id').references(() => images.id, { onDelete: 'set null' }),
+});
+
+export const handouts = sqliteTable('handouts', {
+  id: text('id').primaryKey(),
+  scenario_id: text('scenario_id')
+    .notNull()
+    .references(() => scenarios.id, { onDelete: 'cascade' }),
+  scene_id: text('scene_id').references(() => scenes.id, { onDelete: 'set null' }),
+  title: text('title').notNull(),
+  body: text('body').notNull().default(''),
+  image_id: text('image_id').references(() => images.id, { onDelete: 'set null' }),
+});
+
+export const encounters = sqliteTable('encounters', {
+  id: text('id').primaryKey(),
+  scenario_id: text('scenario_id')
+    .notNull()
+    .references(() => scenarios.id, { onDelete: 'cascade' }),
+  scene_id: text('scene_id').references(() => scenes.id, { onDelete: 'set null' }),
+  title: text('title').notNull(),
+  participants: text('participants').notNull().default('[]'), // JSON array: { character_id, side, count, x?, y? }[]
+  notes: text('notes').notNull().default(''),
+});
+
+export const random_tables = sqliteTable('random_tables', {
+  id: text('id').primaryKey(),
+  scenario_id: text('scenario_id').references(() => scenarios.id, { onDelete: 'cascade' }), // null for global/common tables
+  title: text('title').notNull(),
+  dice: text('dice').notNull(), // 'd6', 'd10', '2d6', etc.
+  rows: text('rows').notNull().default('[]'), // JSON array: { from, to, text }[]
+});
+
 // Relations
 export const itemsRelations = relations(items, ({ one, many }) => ({
   weapon: one(weapons, {
@@ -487,5 +594,115 @@ export const combatLogRelations = relations(combat_log, ({ one }) => ({
   combat: one(combats, {
     fields: [combat_log.combat_id],
     references: [combats.id],
+  }),
+}));
+
+export const scenariosRelations = relations(scenarios, ({ many }) => ({
+  versions: many(scenario_versions),
+  scenes: many(scenes),
+  links: many(scene_links),
+  clues: many(clues),
+  handouts: many(handouts),
+  encounters: many(encounters),
+  random_tables: many(random_tables),
+}));
+
+export const scenarioVersionsRelations = relations(scenario_versions, ({ one }) => ({
+  scenario: one(scenarios, {
+    fields: [scenario_versions.scenario_id],
+    references: [scenarios.id],
+  }),
+}));
+
+export const scenesRelations = relations(scenes, ({ one, many }) => ({
+  scenario: one(scenarios, {
+    fields: [scenes.scenario_id],
+    references: [scenarios.id],
+  }),
+  backgroundImage: one(images, {
+    fields: [scenes.background_image_id],
+    references: [images.id],
+  }),
+  board: one(boards, {
+    fields: [scenes.board_id],
+    references: [boards.id],
+  }),
+  choices: many(scene_choices),
+  clues: many(clues),
+  handouts: many(handouts),
+  encounters: many(encounters),
+  incomingLinks: many(scene_links, { relationName: 'incomingLinks' }),
+  outgoingLinks: many(scene_links, { relationName: 'outgoingLinks' }),
+}));
+
+export const sceneLinksRelations = relations(scene_links, ({ one }) => ({
+  scenario: one(scenarios, {
+    fields: [scene_links.scenario_id],
+    references: [scenarios.id],
+  }),
+  fromScene: one(scenes, {
+    fields: [scene_links.from_scene_id],
+    references: [scenes.id],
+    relationName: 'outgoingLinks',
+  }),
+  toScene: one(scenes, {
+    fields: [scene_links.to_scene_id],
+    references: [scenes.id],
+    relationName: 'incomingLinks',
+  }),
+}));
+
+export const sceneChoicesRelations = relations(scene_choices, ({ one }) => ({
+  scene: one(scenes, {
+    fields: [scene_choices.scene_id],
+    references: [scenes.id],
+  }),
+}));
+
+export const cluesRelations = relations(clues, ({ one }) => ({
+  scenario: one(scenarios, {
+    fields: [clues.scenario_id],
+    references: [scenarios.id],
+  }),
+  scene: one(scenes, {
+    fields: [clues.scene_id],
+    references: [scenes.id],
+  }),
+  image: one(images, {
+    fields: [clues.image_id],
+    references: [images.id],
+  }),
+}));
+
+export const handoutsRelations = relations(handouts, ({ one }) => ({
+  scenario: one(scenarios, {
+    fields: [handouts.scenario_id],
+    references: [scenarios.id],
+  }),
+  scene: one(scenes, {
+    fields: [handouts.scene_id],
+    references: [scenes.id],
+  }),
+  image: one(images, {
+    fields: [handouts.image_id],
+    references: [images.id],
+  }),
+}));
+
+export const encountersRelations = relations(encounters, ({ one }) => ({
+  scenario: one(scenarios, {
+    fields: [encounters.scenario_id],
+    references: [scenarios.id],
+  }),
+  scene: one(scenes, {
+    fields: [encounters.scene_id],
+    references: [scenes.id],
+  }),
+}));
+
+export const randomTablesRelations = relations(random_tables, ({ one }) => ({
+  scenario: one(scenarios, {
+    fields: [random_tables.scenario_id],
+    references: [scenarios.id],
   }),
 }));

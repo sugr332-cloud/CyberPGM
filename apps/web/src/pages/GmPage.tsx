@@ -18,6 +18,7 @@ import { ShopView } from '../components/ShopView.js';
 import { SkillsView } from '../components/SkillsView.js';
 import { CharacterReceptionView } from '../components/CharacterReceptionView.js';
 import { CombatView } from '../components/CombatView.js';
+import { ScenarioMakerView } from '../components/ScenarioMakerView.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -1083,6 +1084,8 @@ export const GmPage: React.FC = () => {
           <ShopView characters={characters} onRefreshCharacters={refreshAllData} />
         ) : activeTab === 'skills' ? (
           <SkillsView characters={characters} />
+        ) : activeTab === 'scenario' ? (
+          <ScenarioMakerView characters={characters} />
         ) : (
           /* Placeholder for other tabs */
           <div
@@ -1096,7 +1099,6 @@ export const GmPage: React.FC = () => {
             }}
           >
             <h2 style={{ fontSize: '1.25rem', color: 'var(--color-text)', marginBottom: '8px' }}>
-              {activeTab === 'scenario' && 'シナリオタブ（Phase 5 で実装）'}
               {activeTab === 'db' && 'DBタブ（Phase 3 で実装）'}
             </h2>
             <p style={{ fontSize: '0.875rem' }}>この機能は後のフェーズで実装されます。</p>

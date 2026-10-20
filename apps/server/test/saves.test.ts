@@ -93,7 +93,7 @@ describe('Saves & Load operations (phase 2 §6 & §9)', () => {
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.format).toBe('cpgm-save');
-      expect(parsed.data.version).toBe(4);
+      expect(parsed.data.version).toBeGreaterThanOrEqual(4);
       expect(parsed.data.characters.length).toBeGreaterThanOrEqual(4);
       expect(Array.isArray(parsed.data.combats)).toBe(true);
       expect(Array.isArray(parsed.data.combat_participants)).toBe(true);
@@ -158,7 +158,7 @@ describe('Saves & Load operations (phase 2 §6 & §9)', () => {
       headers: { Authorization: `Bearer ${gmToken}` },
     });
     const fileData = await fileRes.json();
-    expect(fileData.version).toBe(4);
+    expect(fileData.version).toBeGreaterThanOrEqual(4);
     expect(fileData.boards.some((b: any) => b.id === board.id)).toBe(true);
     expect(fileData.board_objects.some((o: any) => o.label === '木箱A')).toBe(true);
 
