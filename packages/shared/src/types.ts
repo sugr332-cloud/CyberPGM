@@ -144,6 +144,13 @@ export interface RuleConstant {
   note: string | null;
 }
 
+export interface DvTableEntry {
+  range: [number, number];
+  dv: number | string;
+}
+
+export type DvTable = DvTableEntry[];
+
 export interface ImportRun {
   id: string;
   source: string;
