@@ -108,6 +108,7 @@ export interface Board {
   grid: BoardGrid;
   created_at: number;
   updated_at: number;
+  fog?: { x: number; y: number }[];
   objects?: BoardObject[];
   tokens?: BoardToken[];
   drops?: BoardDrop[];
@@ -122,6 +123,7 @@ export const BoardSchema = z.object({
   grid: BoardGridSchema,
   created_at: z.number().int(),
   updated_at: z.number().int(),
+  fog: z.array(z.object({ x: z.number().int(), y: z.number().int() })).optional().default([]),
   objects: z.array(BoardObjectSchema).optional(),
   tokens: z.array(BoardTokenSchema).optional(),
   drops: z.array(BoardDropSchema).optional(),

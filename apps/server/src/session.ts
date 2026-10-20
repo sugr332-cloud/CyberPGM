@@ -34,6 +34,7 @@ export class SessionManager {
   private pendingClaims = new Map<string, ClaimRequest>();
   private combatProvider: (() => any) | null = null;
   private boardProvider: ((id: string) => any) | null = null;
+  private storyProvider: (() => any) | null = null;
 
   constructor() {
     this.sessionCode = generateSessionCode();
@@ -45,6 +46,10 @@ export class SessionManager {
 
   public setBoardProvider(fn: (id: string) => any): void {
     this.boardProvider = fn;
+  }
+
+  public setStoryProvider(fn: () => any): void {
+    this.storyProvider = fn;
   }
 
   public getSessionCode(): string {
@@ -253,26 +258,61 @@ export class SessionManager {
   /**
    * Builds sanitized payload for TV screen (/screen).
    * Enemies have NO hp/sp numbers (only name and wound state).
-   * GM-only tokens and hidden enemies are omitted.
+   * GM-only tokens, hidden enemies, and tokens/objects in fog are omitted.
    * Background image is omitted if visibility is 'gm'.
    */
   public buildScreenPayload(): Record<string, unknown> {
-    if (!this.combatProvider) {
-      return { active: false };
-    }
-    const combat = this.combatProvider();
-    if (!combat || combat.status === 'ended') {
-      return { active: false };
-    }
+    const combat = this.combatProvider ? this.combatProvider() : null;
+    const isCombatActive = combat && combat.status !== 'ended' && combat.settings?.broadcastToTv !== false;
 
-    const broadcastToTv = combat.settings?.broadcastToTv !== false;
-    if (!broadcastToTv) {
-      return { active: false };
-    }
+    if (isCombatActive) {
+      // Sanitize combat participants
+      const sanitizedParticipants = (combat.participants || []).map((p: any) => {
+        if (p.side === 'ally') {
+          return {
+            id: p.id,
+            character_id: p.character_id,
+            name: p.name,
+            side: p.side,
+            initiative: p.initiative,
+            order_index: p.order_index,
+            active: p.active,
+            out: p.out,
+            character: p.character
+              ? {
+                  id: p.character.id,
+                  name: p.character.name,
+                  role: p.character.role,
+                  image_path: p.character.image_path,
+                  hp: p.character.hp,
+                  hp_max: p.character.hp_max,
+                  sp_head: p.character.sp_head,
+                  sp_body: p.character.sp_body,
+                  status: p.character.status,
+                  crit_injuries: p.character.crit_injuries,
+                }
+              : null,
+          };
+        }
 
-    // Sanitize combat participants
-    const sanitizedParticipants = (combat.participants || []).map((p: any) => {
-      if (p.side === 'ally') {
+        // Enemy: ONLY name, image_path, wound state, status, crit_injuries.
+        // NO hp, hp_max, sp_head, sp_body numbers!
+        let woundLabel = '健康';
+        let woundCode: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
+        if (p.character) {
+          const state = woundState(p.character.hp, p.character.hp_max);
+          if (state === 'dead' || p.character.hp <= 0) {
+            woundLabel = '死亡';
+            woundCode = 'dead';
+          } else if (state === 'mortally') {
+            woundLabel = '瀕死';
+            woundCode = 'mortally';
+          } else if (state === 'seriously') {
+            woundLabel = '重傷';
+            woundCode = 'seriously';
+          }
+        }
+
         return {
           id: p.id,
           character_id: p.character_id,
@@ -282,159 +322,207 @@ export class SessionManager {
           order_index: p.order_index,
           active: p.active,
           out: p.out,
+          wound_state: woundLabel,
+          wound_code: woundCode,
           character: p.character
             ? {
                 id: p.character.id,
                 name: p.character.name,
                 role: p.character.role,
                 image_path: p.character.image_path,
-                hp: p.character.hp,
-                hp_max: p.character.hp_max,
-                sp_head: p.character.sp_head,
-                sp_body: p.character.sp_body,
+                wound_state: woundLabel,
                 status: p.character.status,
                 crit_injuries: p.character.crit_injuries,
               }
             : null,
         };
-      }
+      });
 
-      // Enemy: ONLY name, image_path, wound state, status, crit_injuries.
-      // NO hp, hp_max, sp_head, sp_body numbers!
-      let woundLabel = '健康';
-      let woundCode: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
-      if (p.character) {
-        const state = woundState(p.character.hp, p.character.hp_max);
-        if (state === 'dead' || p.character.hp <= 0) {
-          woundLabel = '死亡';
-          woundCode = 'dead';
-        } else if (state === 'mortally') {
-          woundLabel = '瀕死';
-          woundCode = 'mortally';
-        } else if (state === 'seriously') {
-          woundLabel = '重傷';
-          woundCode = 'seriously';
-        }
-      }
+      let sanitizedBoard: any = null;
+      if (combat.board_id && this.boardProvider) {
+        const b = this.boardProvider(combat.board_id);
+        if (b) {
+          // If background image visibility is 'gm', omit image path on TV!
+          const bgPath = b.background_image_visibility === 'gm' ? null : b.background_image_path;
 
-      return {
-        id: p.id,
-        character_id: p.character_id,
-        name: p.name,
-        side: p.side,
-        initiative: p.initiative,
-        order_index: p.order_index,
-        active: p.active,
-        out: p.out,
-        wound_state: woundLabel,
-        wound_code: woundCode,
-        character: p.character
-          ? {
-              id: p.character.id,
-              name: p.character.name,
-              role: p.character.role,
-              image_path: p.character.image_path,
-              wound_state: woundLabel,
-              status: p.character.status,
-              crit_injuries: p.character.crit_injuries,
-            }
-          : null,
-      };
-    });
-
-    let sanitizedBoard: any = null;
-    if (combat.board_id && this.boardProvider) {
-      const b = this.boardProvider(combat.board_id);
-      if (b) {
-        // If background image visibility is 'gm', omit image path on TV!
-        const bgPath = b.background_image_visibility === 'gm' ? null : b.background_image_path;
-
-        // Collect hidden enemy character IDs
-        const hiddenEnemyCharIds = new Set<string>();
-        for (const p of combat.participants || []) {
-          if (p.side === 'enemy' && p.character?.status?.includes('隠れている') && p.character_id) {
-            hiddenEnemyCharIds.add(p.character_id);
+          // Build fog coordinate set for server-side fog filtering
+          const fogList: Array<{ x: number; y: number }> = b.fog || [];
+          const fogSet = new Set<string>();
+          for (const f of fogList) {
+            fogSet.add(`${f.x},${f.y}`);
           }
-        }
 
-        // Filter tokens: omit gm_only and hidden enemies, and enrich with name/side/wound_state
-        const filteredTokens = (b.tokens || [])
-          .filter((t: any) => {
-            if (t.gm_only) return false;
-            if (t.character_id && hiddenEnemyCharIds.has(t.character_id)) return false;
-            return true;
-          })
-          .map((t: any) => {
-            const part = (combat.participants || []).find(
-              (p: any) =>
-                (p.character_id && p.character_id === t.character_id) ||
-                p.id === t.character_id,
-            );
-            if (!part) {
-              return {
-                ...t,
-                name: t.character_id ? '不明' : '—',
-                side: null,
-                wound_state: null,
-                hp: null,
-                hp_max: null,
-              };
+          // Collect hidden enemy character IDs
+          const hiddenEnemyCharIds = new Set<string>();
+          for (const p of combat.participants || []) {
+            if (p.side === 'enemy' && p.character?.status?.includes('隠れている') && p.character_id) {
+              hiddenEnemyCharIds.add(p.character_id);
             }
+          }
 
-            let woundCode: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
-            if (part.character) {
-              const hp = part.character.hp;
-              const maxHp = part.character.hp_max;
-              if (hp <= 0) woundCode = 'dead';
-              else woundCode = woundState(hp, maxHp);
-            }
+          // Filter tokens: omit gm_only, hidden enemies, and tokens inside fog
+          const filteredTokens = (b.tokens || [])
+            .filter((t: any) => {
+              if (t.gm_only) return false;
+              if (t.character_id && hiddenEnemyCharIds.has(t.character_id)) return false;
+              if (fogSet.has(`${t.x},${t.y}`)) return false;
+              return true;
+            })
+            .map((t: any) => {
+              const part = (combat.participants || []).find(
+                (p: any) =>
+                  (p.character_id && p.character_id === t.character_id) ||
+                  p.id === t.character_id,
+              );
+              if (!part) {
+                return {
+                  ...t,
+                  name: t.character_id ? '不明' : '—',
+                  side: null,
+                  wound_state: null,
+                  hp: null,
+                  hp_max: null,
+                };
+              }
 
-            if (part.side === 'ally') {
+              let woundCode: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
+              if (part.character) {
+                const hp = part.character.hp;
+                const maxHp = part.character.hp_max;
+                if (hp <= 0) woundCode = 'dead';
+                else woundCode = woundState(hp, maxHp);
+              }
+
+              if (part.side === 'ally') {
+                return {
+                  ...t,
+                  character_id: part.character_id,
+                  name: part.name,
+                  side: 'ally',
+                  wound_state: woundCode,
+                  hp: part.character?.hp ?? null,
+                  hp_max: part.character?.hp_max ?? null,
+                };
+              }
+
+              // Enemy token: ONLY name, side, wound_state (NO hp / hp_max!)
               return {
                 ...t,
                 character_id: part.character_id,
                 name: part.name,
-                side: 'ally',
+                side: 'enemy',
                 wound_state: woundCode,
-                hp: part.character?.hp ?? null,
-                hp_max: part.character?.hp_max ?? null,
+                hp: null,
+                hp_max: null,
               };
-            }
+            });
 
-            // Enemy token: ONLY name, side, wound_state (NO hp / hp_max!)
-            return {
-              ...t,
-              character_id: part.character_id,
-              name: part.name,
-              side: 'enemy',
-              wound_state: woundCode,
-              hp: null,
-              hp_max: null,
-            };
+          // Filter objects: omit objects inside fog
+          const filteredObjects = (b.objects || []).filter((o: any) => {
+            const w = o.w || 1;
+            const h = o.h || 1;
+            for (let dx = 0; dx < w; dx++) {
+              for (let dy = 0; dy < h; dy++) {
+                if (fogSet.has(`${o.x + dx},${o.y + dy}`)) {
+                  return false;
+                }
+              }
+            }
+            return true;
           });
 
-        sanitizedBoard = {
-          ...b,
-          background_image_path: bgPath,
-          tokens: filteredTokens,
+          sanitizedBoard = {
+            ...b,
+            background_image_path: bgPath,
+            fog: fogList,
+            tokens: filteredTokens,
+            objects: filteredObjects,
+          };
+        }
+      }
+
+      return {
+        active: true,
+        mode: 'combat',
+        combat: {
+          id: combat.id,
+          status: combat.status,
+          round: combat.round,
+          turn_index: combat.turn_index,
+          participants: sanitizedParticipants,
+        },
+        board: sanitizedBoard,
+        objects: sanitizedBoard?.objects || [],
+        tokens: sanitizedBoard?.tokens || [],
+        drops: sanitizedBoard?.drops || [],
+      };
+    }
+
+    // When combat is not active, check story projection
+    if (this.storyProvider) {
+      const storyScreen = this.storyProvider();
+      if (storyScreen && storyScreen.active) {
+        let sanitizedStoryBoard: any = null;
+        if (storyScreen.board_id && this.boardProvider) {
+          const b = this.boardProvider(storyScreen.board_id);
+          if (b) {
+            const bgPath = b.background_image_visibility === 'gm' ? null : b.background_image_path;
+            const fogList: Array<{ x: number; y: number }> = b.fog || [];
+            const fogSet = new Set<string>();
+            for (const f of fogList) {
+              fogSet.add(`${f.x},${f.y}`);
+            }
+
+            const filteredTokens = (b.tokens || [])
+              .filter((t: any) => {
+                if (t.gm_only) return false;
+                if (fogSet.has(`${t.x},${t.y}`)) return false;
+                return true;
+              })
+              .map((t: any) => ({
+                ...t,
+                wound_state: null,
+                hp: null,
+                hp_max: null,
+              }));
+
+            const filteredObjects = (b.objects || []).filter((o: any) => {
+              const w = o.w || 1;
+              const h = o.h || 1;
+              for (let dx = 0; dx < w; dx++) {
+                for (let dy = 0; dy < h; dy++) {
+                  if (fogSet.has(`${o.x + dx},${o.y + dy}`)) {
+                    return false;
+                  }
+                }
+              }
+              return true;
+            });
+
+            sanitizedStoryBoard = {
+              ...b,
+              background_image_path: bgPath,
+              fog: fogList,
+              tokens: filteredTokens,
+              objects: filteredObjects,
+            };
+          }
+        }
+
+        return {
+          active: true,
+          mode: 'story',
+          board: sanitizedStoryBoard,
+          objects: sanitizedStoryBoard?.objects || [],
+          tokens: sanitizedStoryBoard?.tokens || [],
+          drops: sanitizedStoryBoard?.drops || [],
+          background_image_path: storyScreen.background_image_path || null,
+          tv_handout: storyScreen.tv_handout || null,
         };
       }
     }
 
-    return {
-      active: true,
-      combat: {
-        id: combat.id,
-        status: combat.status,
-        round: combat.round,
-        turn_index: combat.turn_index,
-        participants: sanitizedParticipants,
-      },
-      board: sanitizedBoard,
-      objects: sanitizedBoard?.objects || [],
-      tokens: sanitizedBoard?.tokens || [],
-      drops: sanitizedBoard?.drops || [],
-    };
+    return { active: false };
   }
 
   /**
@@ -567,6 +655,83 @@ export class SessionManager {
     this.sendToGm({
       type: 'combat:roll',
       payload: data,
+    });
+  }
+
+  /**
+   * Broadcasts revealed handouts/clues update to player and GM clients.
+   */
+  public broadcastHandouts(payload: object): void {
+    const msg = JSON.stringify({
+      type: 'handouts:update',
+      payload,
+    });
+    for (const client of this.clients) {
+      if (client.role === 'player' || client.role === 'gm') {
+        try {
+          client.ws.send(msg);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  /**
+   * Broadcasts display update (e.g. GM-projected image) to players.
+   */
+  public broadcastDisplayUpdate(imagePath: string | null): void {
+    const msg = JSON.stringify({
+      type: 'display:update',
+      payload: { image_path: imagePath },
+    });
+    for (const client of this.clients) {
+      if (client.role === 'player') {
+        try {
+          client.ws.send(msg);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  /**
+   * Broadcasts choices to player clients.
+   */
+  public broadcastStoryChoices(payload: object): void {
+    const msg = JSON.stringify({
+      type: 'story:choices',
+      payload,
+    });
+    for (const client of this.clients) {
+      if (client.role === 'player' || client.role === 'gm') {
+        try {
+          client.ws.send(msg);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  /**
+   * Broadcasts story check update to GM clients.
+   */
+  public broadcastStoryCheckUpdate(sessionId: string): void {
+    this.sendToGm({
+      type: 'story:check_update',
+      payload: { scenario_session_id: sessionId },
+    });
+  }
+
+  /**
+   * Sends story check evaluation result to a specific character.
+   */
+  public sendStoryResult(characterId: string, result: object): void {
+    this.sendToCharacter(characterId, {
+      type: 'story:result',
+      payload: result,
     });
   }
 

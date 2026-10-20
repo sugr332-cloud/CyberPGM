@@ -232,6 +232,7 @@ export const boards = sqliteTable('boards', {
   name: text('name').notNull(),
   background_image_id: text('background_image_id').references(() => images.id, { onDelete: 'set null' }),
   grid: text('grid').notNull().default('{}'), // JSON: { show, cell_m, origin_x, origin_y, cell_px, cols, rows }
+  fog: text('fog').notNull().default('[]'), // JSON array: { x: number, y: number }[]
   created_at: integer('created_at').notNull(),
   updated_at: integer('updated_at').notNull(),
 });
@@ -355,6 +356,7 @@ export const scenes = sqliteTable('scenes', {
   background_image_id: text('background_image_id').references(() => images.id, { onDelete: 'set null' }),
   board_id: text('board_id').references(() => boards.id, { onDelete: 'set null' }),
   sort_index: integer('sort_index').notNull().default(0),
+  is_adhoc: integer('is_adhoc', { mode: 'boolean' }).notNull().default(false),
 });
 
 export const scene_links = sqliteTable('scene_links', {
@@ -424,6 +426,47 @@ export const random_tables = sqliteTable('random_tables', {
   title: text('title').notNull(),
   dice: text('dice').notNull(), // 'd6', 'd10', '2d6', etc.
   rows: text('rows').notNull().default('[]'), // JSON array: { from, to, text }[]
+});
+
+// Phase 5b Scenario Play Tables
+export const scenario_sessions = sqliteTable('scenario_sessions', {
+  id: text('id').primaryKey(),
+  scenario_id: text('scenario_id')
+    .notNull()
+    .references(() => scenarios.id, { onDelete: 'cascade' }),
+  current_scene_id: text('current_scene_id').references(() => scenes.id, { onDelete: 'set null' }),
+  started_at: integer('started_at').notNull(),
+  ended_at: integer('ended_at'),
+  revealed: text('revealed').notNull().default('{"clue_ids":[],"handout_ids":[]}'), // JSON: { clue_ids: string[], handout_ids: string[] }
+});
+
+export const session_log = sqliteTable('session_log', {
+  id: text('id').primaryKey(),
+  scenario_session_id: text('scenario_session_id')
+    .notNull()
+    .references(() => scenario_sessions.id, { onDelete: 'cascade' }),
+  at: integer('at').notNull(),
+  kind: text('kind').notNull(), // 'note' | 'scene' | 'check' | 'combat' | 'transaction' | 'money' | 'reveal'
+  text: text('text').notNull(),
+  ref: text('ref'), // JSON string: { combat_id?: string, check_id?: string, scene_id?: string, transaction_id?: string, ... }
+});
+
+export const story_checks = sqliteTable('story_checks', {
+  id: text('id').primaryKey(),
+  scenario_session_id: text('scenario_session_id')
+    .notNull()
+    .references(() => scenario_sessions.id, { onDelete: 'cascade' }),
+  scene_id: text('scene_id').references(() => scenes.id, { onDelete: 'set null' }),
+  choice_id: text('choice_id').references(() => scene_choices.id, { onDelete: 'set null' }),
+  actor_character_id: text('actor_character_id')
+    .notNull()
+    .references(() => characters.id, { onDelete: 'cascade' }),
+  skill_key: text('skill_key'),
+  dv: integer('dv'),
+  opposed: text('opposed'), // JSON: { target_character_id: string, skill_key?: string, roll?: number, rolls?: number[] }
+  rolls: text('rolls').notNull().default('[]'), // JSON number[]
+  result: text('result'), // 'success' | 'failure' | 'draw'
+  applied_log_id: text('applied_log_id'),
 });
 
 // Relations
@@ -704,5 +747,44 @@ export const randomTablesRelations = relations(random_tables, ({ one }) => ({
   scenario: one(scenarios, {
     fields: [random_tables.scenario_id],
     references: [scenarios.id],
+  }),
+}));
+
+export const scenarioSessionsRelations = relations(scenario_sessions, ({ one, many }) => ({
+  scenario: one(scenarios, {
+    fields: [scenario_sessions.scenario_id],
+    references: [scenarios.id],
+  }),
+  currentScene: one(scenes, {
+    fields: [scenario_sessions.current_scene_id],
+    references: [scenes.id],
+  }),
+  logs: many(session_log),
+  checks: many(story_checks),
+}));
+
+export const sessionLogRelations = relations(session_log, ({ one }) => ({
+  session: one(scenario_sessions, {
+    fields: [session_log.scenario_session_id],
+    references: [scenario_sessions.id],
+  }),
+}));
+
+export const storyChecksRelations = relations(story_checks, ({ one }) => ({
+  session: one(scenario_sessions, {
+    fields: [story_checks.scenario_session_id],
+    references: [scenario_sessions.id],
+  }),
+  scene: one(scenes, {
+    fields: [story_checks.scene_id],
+    references: [scenes.id],
+  }),
+  choice: one(scene_choices, {
+    fields: [story_checks.choice_id],
+    references: [scene_choices.id],
+  }),
+  actorCharacter: one(characters, {
+    fields: [story_checks.actor_character_id],
+    references: [characters.id],
   }),
 }));

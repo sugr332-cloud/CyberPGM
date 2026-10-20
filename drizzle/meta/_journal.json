@@ -64,6 +64,13 @@
       "when": 1792509283274,
       "tag": "0008_wise_corsair",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792537455862,
+      "tag": "0009_little_makkari",
+      "breakpoints": true
     }
   ]
 }

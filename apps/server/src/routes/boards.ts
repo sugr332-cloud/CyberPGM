@@ -65,6 +65,7 @@ export function getHydratedBoard(boardId: string): Board | null {
     name: b.name,
     background_image_id: b.background_image_id,
     grid: JSON.parse(b.grid || '{"show":true,"cell_m":2,"origin_x":0,"origin_y":0,"cell_px":40,"cols":20,"rows":15}'),
+    fog: JSON.parse(b.fog || '[]'),
     created_at: b.created_at,
     updated_at: b.updated_at,
     objects: objects.map((o) => ({
@@ -163,6 +164,32 @@ boardsRoutes.patch('/boards/:id', requireGm, async (c) => {
   sessionManager.broadcastScreenUpdate();
 
   return c.json({ board: updated });
+});
+
+// PATCH /api/boards/:id/fog: Update board fog (hidden cells)
+boardsRoutes.patch('/boards/:id/fog', requireGm, async (c) => {
+  const id = c.req.param('id')!;
+  const body = await c.req.json();
+  const fog = Array.isArray(body.fog) ? body.fog : [];
+
+  const existing = db.select().from(boards).where(eq(boards.id, id)).get();
+  if (!existing) {
+    return c.json({ error: 'Board not found' }, 404);
+  }
+
+  db.update(boards)
+    .set({
+      fog: JSON.stringify(fog),
+      updated_at: Date.now(),
+    })
+    .where(eq(boards.id, id))
+    .run();
+
+  const updated = getHydratedBoard(id);
+  sessionManager.broadcastBoardUpdate(updated);
+  sessionManager.broadcastScreenUpdate();
+
+  return c.json({ board: updated, fog });
 });
 
 // DELETE /api/boards/:id: Delete a board

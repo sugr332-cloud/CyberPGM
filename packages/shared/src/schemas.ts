@@ -272,6 +272,9 @@ export const SaveFileSchema = z.object({
   handouts: z.array(z.unknown()).optional().default([]),
   encounters: z.array(z.unknown()).optional().default([]),
   random_tables: z.array(z.unknown()).optional().default([]),
+  scenario_sessions: z.array(z.unknown()).optional().default([]),
+  session_log: z.array(z.unknown()).optional().default([]),
+  story_checks: z.array(z.unknown()).optional().default([]),
 });
 
 export const WsClientMessageSchema = z.discriminatedUnion('type', [

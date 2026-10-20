@@ -19,6 +19,7 @@ import { SkillsView } from '../components/SkillsView.js';
 import { CharacterReceptionView } from '../components/CharacterReceptionView.js';
 import { CombatView } from '../components/CombatView.js';
 import { ScenarioMakerView } from '../components/ScenarioMakerView.js';
+import { ScenarioPlayView } from '../components/ScenarioPlayView.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -48,6 +49,7 @@ export const GmPage: React.FC = () => {
 
   // GM Main View State
   const [activeTab, setActiveTab] = useState<'pc' | 'combat' | 'scenario' | 'shop' | 'skills' | 'db'>('pc');
+  const [scenarioSubMode, setScenarioSubMode] = useState<'maker' | 'play'>('maker');
   const [isMobile, setIsMobile] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth <= 640;
@@ -1104,7 +1106,51 @@ export const GmPage: React.FC = () => {
         ) : activeTab === 'skills' ? (
           <SkillsView characters={characters} />
         ) : activeTab === 'scenario' ? (
-          <ScenarioMakerView characters={characters} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', height: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>モード:</span>
+              <div style={{ display: 'flex', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '2px' }}>
+                <button
+                  type="button"
+                  onClick={() => setScenarioSubMode('maker')}
+                  style={{
+                    padding: '4px 14px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    backgroundColor: scenarioSubMode === 'maker' ? 'var(--color-ally)' : 'transparent',
+                    color: scenarioSubMode === 'maker' ? '#000' : 'var(--color-text-muted)',
+                    fontWeight: scenarioSubMode === 'maker' ? 700 : 500,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  作る
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScenarioSubMode('play')}
+                  style={{
+                    padding: '4px 14px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    backgroundColor: scenarioSubMode === 'play' ? 'var(--color-ally)' : 'transparent',
+                    color: scenarioSubMode === 'play' ? '#000' : 'var(--color-text-muted)',
+                    fontWeight: scenarioSubMode === 'play' ? 700 : 500,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  進める
+                </button>
+              </div>
+            </div>
+
+            {scenarioSubMode === 'maker' ? (
+              <ScenarioMakerView characters={characters} />
+            ) : (
+              <ScenarioPlayView characters={characters} />
+            )}
+          </div>
         ) : (
           /* Placeholder for other tabs */
           <div

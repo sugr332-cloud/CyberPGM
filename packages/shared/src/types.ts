@@ -346,6 +346,9 @@ export interface SaveFile {
   handouts?: unknown[];
   encounters?: unknown[];
   random_tables?: unknown[];
+  scenario_sessions?: unknown[];
+  session_log?: unknown[];
+  story_checks?: unknown[];
 }
 
 export interface Shop {

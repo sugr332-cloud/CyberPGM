@@ -51,6 +51,7 @@ export const SceneSchema = z.object({
   background_image_id: z.string().nullable().optional(),
   board_id: z.string().nullable().optional(),
   sort_index: z.number().int().default(0),
+  is_adhoc: z.boolean().default(false),
 });
 export type Scene = z.infer<typeof SceneSchema>;
 
@@ -247,3 +248,68 @@ export function validateRandomTableRanges(
 export function evaluateRandomTableRoll(rows: RandomTableRow[], roll: number): RandomTableRow | null {
   return rows.find((r) => r.from <= roll && roll <= r.to) || null;
 }
+
+// ==========================================
+// Phase 5b Scenario Play Schemas & Types
+// ==========================================
+
+export const RevealedDataSchema = z.object({
+  clue_ids: z.array(z.string()).default([]),
+  handout_ids: z.array(z.string()).default([]),
+});
+export type RevealedData = z.infer<typeof RevealedDataSchema>;
+
+export const ScenarioSessionSchema = z.object({
+  id: z.string(),
+  scenario_id: z.string(),
+  current_scene_id: z.string().nullable().optional(),
+  started_at: z.number(),
+  ended_at: z.number().nullable().optional(),
+  revealed: RevealedDataSchema.default({ clue_ids: [], handout_ids: [] }),
+});
+export type ScenarioSession = z.infer<typeof ScenarioSessionSchema>;
+
+export const SessionLogKindEnum = z.enum([
+  'note',
+  'scene',
+  'check',
+  'combat',
+  'transaction',
+  'money',
+  'reveal',
+]);
+export type SessionLogKind = z.infer<typeof SessionLogKindEnum>;
+
+export const SessionLogEntrySchema = z.object({
+  id: z.string(),
+  scenario_session_id: z.string(),
+  at: z.number(),
+  kind: SessionLogKindEnum,
+  text: z.string(),
+  ref: z.record(z.any()).nullable().optional(),
+});
+export type SessionLogEntry = z.infer<typeof SessionLogEntrySchema>;
+
+export const OpposedCheckInfoSchema = z.object({
+  target_character_id: z.string(),
+  skill_key: z.string().optional(),
+  roll: z.number().optional(),
+  rolls: z.array(z.number()).optional(),
+});
+export type OpposedCheckInfo = z.infer<typeof OpposedCheckInfoSchema>;
+
+export const StoryCheckSchema = z.object({
+  id: z.string(),
+  scenario_session_id: z.string(),
+  scene_id: z.string().nullable().optional(),
+  choice_id: z.string().nullable().optional(),
+  actor_character_id: z.string(),
+  skill_key: z.string().nullable().optional(),
+  dv: z.number().int().nullable().optional(),
+  opposed: OpposedCheckInfoSchema.nullable().optional(),
+  rolls: z.array(z.number()).default([]),
+  result: z.enum(['success', 'failure', 'draw']).nullable().optional(),
+  applied_log_id: z.string().nullable().optional(),
+});
+export type StoryCheck = z.infer<typeof StoryCheckSchema>;
+
