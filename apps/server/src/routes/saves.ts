@@ -21,6 +21,15 @@ import {
   board_objects,
   board_tokens,
   board_drops,
+  scenarios,
+  scenario_versions,
+  scenes,
+  scene_links,
+  scene_choices,
+  clues,
+  handouts,
+  encounters,
+  random_tables,
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
@@ -91,9 +100,19 @@ export function buildSaveData(name: string): SaveFile {
     inventory_entry: JSON.parse(d.inventory_entry || '{}'),
   }));
 
+  const scenarioRows = db.select().from(scenarios).all();
+  const versionRows = db.select().from(scenario_versions).all();
+  const sceneRows = db.select().from(scenes).all();
+  const linkRows = db.select().from(scene_links).all();
+  const choiceRows = db.select().from(scene_choices).all();
+  const clueRows = db.select().from(clues).all();
+  const handoutRows = db.select().from(handouts).all();
+  const encounterRows = db.select().from(encounters).all();
+  const randomTableRows = db.select().from(random_tables).all();
+
   return {
     format: 'cpgm-save',
-    version: 4,
+    version: 5,
     savedAt: Date.now(),
     name,
     characters: chars,
@@ -112,6 +131,15 @@ export function buildSaveData(name: string): SaveFile {
     board_objects: objectRows,
     board_tokens: tokenRows,
     board_drops: dropRows,
+    scenarios: scenarioRows,
+    scenario_versions: versionRows,
+    scenes: sceneRows,
+    scene_links: linkRows,
+    scene_choices: choiceRows,
+    clues: clueRows,
+    handouts: handoutRows,
+    encounters: encounterRows,
+    random_tables: randomTableRows,
   };
 }
 
@@ -584,6 +612,176 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
           typeof cl.changes === 'string' ? cl.changes : JSON.stringify(cl.changes || []),
           cl.undone ? 1 : 0,
           cl.at,
+        );
+      }
+    }
+
+    // Restore scenario tables (version 5)
+    sqlite.prepare('DELETE FROM random_tables').run();
+    sqlite.prepare('DELETE FROM encounters').run();
+    sqlite.prepare('DELETE FROM handouts').run();
+    sqlite.prepare('DELETE FROM clues').run();
+    sqlite.prepare('DELETE FROM scene_choices').run();
+    sqlite.prepare('DELETE FROM scene_links').run();
+    sqlite.prepare('DELETE FROM scenes').run();
+    sqlite.prepare('DELETE FROM scenario_versions').run();
+    sqlite.prepare('DELETE FROM scenarios').run();
+
+    if (data.scenarios && (data.scenarios as any[]).length > 0) {
+      const insertScenario = sqlite.prepare(`
+        INSERT INTO scenarios (id, title, summary, meta, version, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const sc of data.scenarios as any[]) {
+        insertScenario.run(
+          sc.id,
+          sc.title,
+          sc.summary ?? '',
+          typeof sc.meta === 'string' ? sc.meta : JSON.stringify(sc.meta || {}),
+          sc.version ?? 1,
+          sc.created_at,
+          sc.updated_at,
+        );
+      }
+    }
+
+    if (data.scenario_versions && (data.scenario_versions as any[]).length > 0) {
+      const insertVer = sqlite.prepare(`
+        INSERT INTO scenario_versions (id, scenario_id, version, snapshot, saved_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      for (const sv of data.scenario_versions as any[]) {
+        insertVer.run(
+          sv.id,
+          sv.scenario_id,
+          sv.version,
+          typeof sv.snapshot === 'string' ? sv.snapshot : JSON.stringify(sv.snapshot || {}),
+          sv.saved_at,
+        );
+      }
+    }
+
+    if (data.scenes && (data.scenes as any[]).length > 0) {
+      const insertScene = sqlite.prepare(`
+        INSERT INTO scenes (id, scenario_id, title, read_aloud, gm_notes, location, npc_ids, position, background_image_id, board_id, sort_index)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const s of data.scenes as any[]) {
+        insertScene.run(
+          s.id,
+          s.scenario_id,
+          s.title,
+          s.read_aloud ?? '',
+          s.gm_notes ?? '',
+          s.location ?? '',
+          typeof s.npc_ids === 'string' ? s.npc_ids : JSON.stringify(s.npc_ids || []),
+          typeof s.position === 'string' ? s.position : JSON.stringify(s.position || { x: 100, y: 100 }),
+          s.background_image_id ?? null,
+          s.board_id ?? null,
+          s.sort_index ?? 0,
+        );
+      }
+    }
+
+    if (data.scene_links && (data.scene_links as any[]).length > 0) {
+      const insertLink = sqlite.prepare(`
+        INSERT INTO scene_links (id, scenario_id, from_scene_id, to_scene_id, condition)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      for (const l of data.scene_links as any[]) {
+        insertLink.run(
+          l.id,
+          l.scenario_id,
+          l.from_scene_id,
+          l.to_scene_id,
+          l.condition ?? '',
+        );
+      }
+    }
+
+    if (data.scene_choices && (data.scene_choices as any[]).length > 0) {
+      const insertChoice = sqlite.prepare(`
+        INSERT INTO scene_choices (id, scene_id, label, skill_key, dv, who, on_success, on_failure, sort_index)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const c of data.scene_choices as any[]) {
+        insertChoice.run(
+          c.id,
+          c.scene_id,
+          c.label,
+          c.skill_key ?? null,
+          c.dv ?? null,
+          c.who ?? '全員',
+          typeof c.on_success === 'string' ? c.on_success : JSON.stringify(c.on_success || []),
+          typeof c.on_failure === 'string' ? c.on_failure : JSON.stringify(c.on_failure || []),
+          c.sort_index ?? 0,
+        );
+      }
+    }
+
+    if (data.clues && (data.clues as any[]).length > 0) {
+      const insertClue = sqlite.prepare(`
+        INSERT INTO clues (id, scenario_id, scene_id, title, body, image_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const cl of data.clues as any[]) {
+        insertClue.run(
+          cl.id,
+          cl.scenario_id,
+          cl.scene_id ?? null,
+          cl.title,
+          cl.body ?? '',
+          cl.image_id ?? null,
+        );
+      }
+    }
+
+    if (data.handouts && (data.handouts as any[]).length > 0) {
+      const insertHandout = sqlite.prepare(`
+        INSERT INTO handouts (id, scenario_id, scene_id, title, body, image_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const h of data.handouts as any[]) {
+        insertHandout.run(
+          h.id,
+          h.scenario_id,
+          h.scene_id ?? null,
+          h.title,
+          h.body ?? '',
+          h.image_id ?? null,
+        );
+      }
+    }
+
+    if (data.encounters && (data.encounters as any[]).length > 0) {
+      const insertEncounter = sqlite.prepare(`
+        INSERT INTO encounters (id, scenario_id, scene_id, title, participants, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const e of data.encounters as any[]) {
+        insertEncounter.run(
+          e.id,
+          e.scenario_id,
+          e.scene_id ?? null,
+          e.title,
+          typeof e.participants === 'string' ? e.participants : JSON.stringify(e.participants || []),
+          e.notes ?? '',
+        );
+      }
+    }
+
+    if (data.random_tables && (data.random_tables as any[]).length > 0) {
+      const insertTable = sqlite.prepare(`
+        INSERT INTO random_tables (id, scenario_id, title, dice, rows)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      for (const rt of data.random_tables as any[]) {
+        insertTable.run(
+          rt.id,
+          rt.scenario_id ?? null,
+          rt.title,
+          rt.dice,
+          typeof rt.rows === 'string' ? rt.rows : JSON.stringify(rt.rows || []),
         );
       }
     }

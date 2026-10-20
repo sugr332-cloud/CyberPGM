@@ -18,6 +18,7 @@ import { ShopView } from '../components/ShopView.js';
 import { SkillsView } from '../components/SkillsView.js';
 import { CharacterReceptionView } from '../components/CharacterReceptionView.js';
 import { CombatView } from '../components/CombatView.js';
+import { ScenarioMakerView } from '../components/ScenarioMakerView.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -47,6 +48,20 @@ export const GmPage: React.FC = () => {
 
   // GM Main View State
   const [activeTab, setActiveTab] = useState<'pc' | 'combat' | 'scenario' | 'shop' | 'skills' | 'db'>('pc');
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth <= 640;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 640);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const [characters, setCharacters] = useState<CharacterSheet[]>([]);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [moneyLogs, setMoneyLogs] = useState<MoneyLogEntry[]>([]);
@@ -444,6 +459,7 @@ export const GmPage: React.FC = () => {
         display: 'flex',
         flexDirection: 'column',
         backgroundColor: 'var(--color-bg)',
+        paddingBottom: isMobile ? '56px' : '0',
       }}
     >
       {/* Top Header */}
@@ -452,17 +468,17 @@ export const GmPage: React.FC = () => {
           height: '60px',
           borderBottom: '1px solid var(--color-border)',
           backgroundColor: 'var(--color-surface)',
-          padding: '0 24px',
+          padding: isMobile ? '0 12px' : '0 24px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '16px' }}>
           <span
             style={{
               fontFamily: 'var(--font-display)',
-              fontSize: '1.25rem',
+              fontSize: isMobile ? '1.1rem' : '1.25rem',
               fontWeight: 700,
               color: 'var(--color-accent)',
               letterSpacing: '1px',
@@ -484,52 +500,55 @@ export const GmPage: React.FC = () => {
             GM
           </span>
 
-          {/* Navigation Tabs */}
-          <nav style={{ display: 'flex', gap: '4px', marginLeft: '24px' }}>
-            {[
-              { id: 'pc', label: 'PC' },
-              { id: 'combat', label: '戦闘' },
-              { id: 'scenario', label: 'シナリオ' },
-              { id: 'shop', label: '商店' },
-              { id: 'skills', label: '技能' },
-              { id: 'db', label: 'DB' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                style={{
-                  background: activeTab === tab.id ? 'var(--color-surface-elevated)' : 'none',
-                  border: 'none',
-                  borderBottom: activeTab === tab.id ? '2px solid var(--color-ally)' : 'none',
-                  color: activeTab === tab.id ? 'var(--color-text)' : 'var(--color-text-muted)',
-                  fontWeight: activeTab === tab.id ? 700 : 500,
-                  padding: '8px 16px',
-                  cursor: 'pointer',
-                  borderRadius: '4px 4px 0 0',
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+          {/* Navigation Tabs (Desktop only) */}
+          {!isMobile && (
+            <nav style={{ display: 'flex', gap: '4px', marginLeft: '24px' }}>
+              {[
+                { id: 'pc', label: 'PC' },
+                { id: 'combat', label: '戦闘' },
+                { id: 'scenario', label: 'シナリオ' },
+                { id: 'shop', label: '商店' },
+                { id: 'skills', label: '技能' },
+                { id: 'db', label: 'DB' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                  style={{
+                    background: activeTab === tab.id ? 'var(--color-surface-elevated)' : 'none',
+                    border: 'none',
+                    borderBottom: activeTab === tab.id ? '2px solid var(--color-ally)' : 'none',
+                    color: activeTab === tab.id ? 'var(--color-text)' : 'var(--color-text-muted)',
+                    fontWeight: activeTab === tab.id ? 700 : 500,
+                    padding: '8px 16px',
+                    cursor: 'pointer',
+                    borderRadius: '4px 4px 0 0',
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
 
         {/* Header Right Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '6px' : '12px' }}>
           <button
             onClick={handleOpenQr}
             style={{
               backgroundColor: 'var(--color-surface-elevated)',
               border: '1px solid var(--color-border-light)',
               color: 'var(--color-text)',
-              padding: '8px 14px',
+              padding: isMobile ? '6px 8px' : '8px 14px',
               borderRadius: '6px',
-              fontSize: '0.85rem',
+              fontSize: isMobile ? '0.75rem' : '0.85rem',
               fontWeight: 600,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
+              whiteSpace: 'nowrap',
             }}
           >
             参加用 QR
@@ -540,17 +559,18 @@ export const GmPage: React.FC = () => {
               backgroundColor: 'var(--color-surface-elevated)',
               border: '1px solid var(--color-border-light)',
               color: 'var(--color-text)',
-              padding: '8px 14px',
+              padding: isMobile ? '6px 8px' : '8px 14px',
               borderRadius: '6px',
-              fontSize: '0.85rem',
+              fontSize: isMobile ? '0.75rem' : '0.85rem',
               fontWeight: 600,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
+              whiteSpace: 'nowrap',
             }}
           >
-            保存・読み込み
+            {isMobile ? '保存・読込' : '保存・読み込み'}
           </button>
         </div>
       </header>
@@ -1083,6 +1103,8 @@ export const GmPage: React.FC = () => {
           <ShopView characters={characters} onRefreshCharacters={refreshAllData} />
         ) : activeTab === 'skills' ? (
           <SkillsView characters={characters} />
+        ) : activeTab === 'scenario' ? (
+          <ScenarioMakerView characters={characters} />
         ) : (
           /* Placeholder for other tabs */
           <div
@@ -1096,7 +1118,6 @@ export const GmPage: React.FC = () => {
             }}
           >
             <h2 style={{ fontSize: '1.25rem', color: 'var(--color-text)', marginBottom: '8px' }}>
-              {activeTab === 'scenario' && 'シナリオタブ（Phase 5 で実装）'}
               {activeTab === 'db' && 'DBタブ（Phase 3 で実装）'}
             </h2>
             <p style={{ fontSize: '0.875rem' }}>この機能は後のフェーズで実装されます。</p>
@@ -1939,6 +1960,58 @@ export const GmPage: React.FC = () => {
             </div>
           </form>
         </div>
+      )}
+
+      {/* Mobile Bottom Navigation Tabs */}
+      {isMobile && (
+        <nav
+          data-testid="gm-bottom-nav"
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '56px',
+            backgroundColor: 'var(--color-surface)',
+            borderTop: '1px solid var(--color-border)',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(6, 1fr)',
+            zIndex: 100,
+          }}
+        >
+          {[
+            { id: 'pc', label: 'PC' },
+            { id: 'combat', label: '戦闘' },
+            { id: 'scenario', label: 'シナリオ' },
+            { id: 'shop', label: '商店' },
+            { id: 'skills', label: '技能' },
+            { id: 'db', label: 'DB' },
+          ].map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                data-testid={`gm-tab-${tab.id}`}
+                onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderTop: isActive ? '2px solid var(--color-ally)' : '2px solid transparent',
+                  color: isActive ? 'var(--color-ally)' : 'var(--color-text-muted)',
+                  fontWeight: isActive ? 700 : 500,
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '4px 0',
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
       )}
 
       <Footer />
