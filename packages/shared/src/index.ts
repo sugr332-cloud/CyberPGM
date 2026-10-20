@@ -5,3 +5,6 @@ export * from './paths.js';
 export * from './schemas.js';
 export * from './disclaimer.js';
 export * from './skills.js';
+export * from './weapons.js';
+export * from './roles.js';
+export * from './creation.js';

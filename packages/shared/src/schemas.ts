@@ -251,6 +251,8 @@ export const SaveFileSchema = z.object({
   shops: z.array(ShopSchema).optional().default([]),
   shop_stock: z.array(ShopStockItemSchema).optional().default([]),
   transactions: z.array(TransactionSchema).optional().default([]),
+  character_submissions: z.array(z.unknown()).optional().default([]),
+  skill_notes: z.array(z.unknown()).optional().default([]),
 });
 
 export const WsClientMessageSchema = z.discriminatedUnion('type', [

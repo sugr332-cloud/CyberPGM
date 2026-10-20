@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   CharacterSheet,
   CharLogEntry,
@@ -17,6 +17,7 @@ import { useWebSocket } from '../hooks/useWebSocket.js';
 import { Footer } from '../components/Footer.js';
 
 export const PlayerPage: React.FC = () => {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [token, setToken] = useState<string | null>(getPlayerToken());
 
@@ -208,6 +209,27 @@ export const PlayerPage: React.FC = () => {
             >
               {isJoining ? '確認中…' : 'セッションに参加する'}
             </button>
+
+            <div style={{ textAlign: 'center', marginTop: '4px' }}>
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', margin: '4px 0 8px 0' }}>または</div>
+              <button
+                type="button"
+                onClick={() => navigate('/player/create' + (joinCode ? `?join=${joinCode}` : ''))}
+                style={{
+                  width: '100%',
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-ally)',
+                  color: 'var(--color-ally)',
+                  borderRadius: '6px',
+                  padding: '12px',
+                  fontWeight: 700,
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ＋ 新しくキャラを作る
+              </button>
+            </div>
           </form>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -311,6 +333,26 @@ export const PlayerPage: React.FC = () => {
                   )}
                 </button>
               ))}
+            </div>
+
+            <div style={{ marginTop: '8px' }}>
+              <button
+                type="button"
+                onClick={() => navigate('/player/create' + (joinCode ? `?join=${joinCode}` : ''))}
+                style={{
+                  width: '100%',
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-ally)',
+                  color: 'var(--color-ally)',
+                  borderRadius: '6px',
+                  padding: '12px',
+                  fontWeight: 700,
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ＋ 新しくキャラを作る
+              </button>
             </div>
           </div>
         )}

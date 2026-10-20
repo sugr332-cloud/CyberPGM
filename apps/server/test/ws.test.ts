@@ -145,5 +145,13 @@ describe('WebSocket synchronization (phase 2 §5 & §9)', () => {
 
     wsA.close();
     wsB.close();
+    // Wait for WS close propagation
+    await new Promise((res) => setTimeout(res, 50));
+  });
+
+  afterAll(async () => {
+    if (serverInstance) {
+      await serverInstance.close();
+    }
   });
 });

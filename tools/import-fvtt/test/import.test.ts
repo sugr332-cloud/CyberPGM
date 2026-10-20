@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import Database from 'better-sqlite3';
 import { runImport, findAttribution } from '../src/importer.js';
 
 describe('FVTT Importer', () => {
-  const testDbPath = path.resolve(process.cwd(), 'data/test_import.db');
+  const testDbPath = path.join(os.tmpdir(), 'cyberpgm-test-import.db');
   const fixtureSrcDir = path.resolve(process.cwd(), 'tools/import-fvtt/test/fixtures');
 
   function initTestDb() {

@@ -6,6 +6,9 @@ import {
   ItemPatchInput,
   Transaction,
   InventoryEntry,
+  formatWeaponType,
+  formatWeaponMagazineAndAmmo,
+  WEAPON_TYPES,
 } from '@cyberpgm/shared';
 import { api, getGmToken } from '../api.js';
 
@@ -922,15 +925,11 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                 }}
               >
                 <option value="">すべて</option>
-                <option value="pistol">ピストル</option>
-                <option value="smg">サブマシンガン</option>
-                <option value="shotgun">ショットガン</option>
-                <option value="assault_rifle">アサルトライフル</option>
-                <option value="sniper_rifle">スナイパーライフル</option>
-                <option value="heavy_weapon">重火器</option>
-                <option value="melee_weapon">近接武器</option>
-                <option value="bow_crossbow">弓・クロスボウ</option>
-                <option value="exotic">エキゾチック</option>
+                {Object.values(WEAPON_TYPES).map((w) => (
+                  <option key={w.key} value={w.key}>
+                    {w.nameJa}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -1183,7 +1182,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                       <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                         {item.kind === 'weapon' && (
                           <span>
-                            {item.weapon_type || '武器'} · {item.damage || '—'} · ROF {item.rof ?? '—'}
+                            {formatWeaponType(item.weapon_type)} · {item.damage || '—'} · ROF {item.rof ?? '—'}
                           </span>
                         )}
                         {item.kind === 'armor' && (
@@ -1488,7 +1487,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--color-text-muted)' }}>武器種別:</span>
-                        <span>{selectedItem.weapon.weapon_type || selectedItem.weapon_type || '—'}</span>
+                        <span>{formatWeaponType(selectedItem.weapon.weapon_type || selectedItem.weapon_type)}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--color-text-muted)' }}>ダメージ / ROF:</span>
@@ -1499,7 +1498,10 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--color-text-muted)' }}>装弾数 / 弾薬:</span>
                         <span>
-                          {selectedItem.weapon.magazine_max ?? '—'}発 ({selectedItem.weapon.ammo_types || '—'})
+                          {formatWeaponMagazineAndAmmo(
+                            selectedItem.weapon.magazine_max,
+                            selectedItem.weapon.ammo_types,
+                          )}
                         </span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>

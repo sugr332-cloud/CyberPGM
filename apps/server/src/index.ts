@@ -14,6 +14,10 @@ import { savesRoutes } from './routes/saves.js';
 import { settingsRoutes } from './routes/settings.js';
 import { shopsRoutes } from './routes/shops.js';
 import { commerceRoutes } from './routes/commerce.js';
+import { characterCreationRoutes } from './routes/character-creation.js';
+import { skillNotesRoutes } from './routes/skill-notes.js';
+import { db } from './db/client.js';
+import { initPhase3bData } from './db/init-phase3b.js';
 import { verifyToken, authMiddleware } from './auth.js';
 import { sessionManager } from './session.js';
 import { createDailyBackup } from './config.js';
@@ -42,6 +46,11 @@ app.route('/api/items', itemsRouter);
 app.route('/api/images', imagesRouter);
 app.route('/api/shops', shopsRoutes);
 app.route('/api', commerceRoutes);
+app.route('/api', characterCreationRoutes);
+app.route('/api', skillNotesRoutes);
+
+// Initialize Phase 3b data (skill notes, creation method)
+initPhase3bData(db);
 
 // WebSocket endpoint
 app.get(

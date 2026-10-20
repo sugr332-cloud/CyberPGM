@@ -323,6 +323,8 @@ export interface SaveFile {
   shops?: Shop[];
   shop_stock?: ShopStockItem[];
   transactions?: Transaction[];
+  character_submissions?: unknown[];
+  skill_notes?: unknown[];
 }
 
 export interface Shop {
