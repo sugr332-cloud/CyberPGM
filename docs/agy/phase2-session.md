@@ -145,3 +145,17 @@ SPEC §6 から、Phase 2 で使うものだけ作る。
 - `npm run lint`、`npm run typecheck`、`npm test`、E2E が通る
 - `npm start` で起動し、同じ PC のブラウザで GM 画面と、LAN IP の URL を開いたプレイヤー画面が動く（curl でも `http://<LAN IP>:8787/api/health` を確認する）
 - 報告に、起動手順、スクリーンショット、実機で確認してほしいこと、ファイアウォールでつながらなかったときの手順（あれば）を書く
+
+## 13. レビュー指摘 02（2026-10-20 Claude。同じブランチで直して報告 02 を出す）
+
+Phase 2 は、待ち受けが 127.0.0.1 と LAN の IP だけになっていること、認証・403・保存・WebSocket・E2E がそろっていることを確認した。次の 4 点を直す。
+
+1. **【最優先】フッターの文言が誤り**: `apps/web/src/components/Footer.tsx` の「Cyberpunk RED is a trademark of R. Talsorian Games, Inc. and used with permission.」は、**許可を得ていないのに許可があると書いている**。SPEC §3 と README のとおり、RTG Homebrew Content Policy の免責表示に置き換える:
+   - `CyberPGM is unofficial content provided under the Homebrew Content Policy of R. Talsorian Games and is not approved or endorsed by RTG. This content references materials that are the property of R. Talsorian Games and its licensees.`
+   - 続けて FVTT のクレジット: 「データ: Cyberpunk RED - Core（Foundry VTT システム、GPLv3）。アイコン: game-icons.net ほか（CC-BY 3.0 など。詳細は CREDITS.md）」
+   - 文言は `packages/shared` に定数として置き、web のフッターと README で同じものを使う。2 行目の日本語の注記（「非公式のファン作成ツール…」）は残してよい
+2. **技能名が内部キーのまま**（`handgun`、`evasion` など）: `packages/shared` に技能のカタログ（key、表示名、能力値、区分、基本技能か、×2 か、英語版の出典ページ）を作り、キャラシートは表示名を出す。値は FVTT の `src/packs/internal/skills/*.yaml` から取る（stat・category・basic・difficulty・sources）。表示名は次の仮訳を使う（Issue #11 で日本語版と照合する。カタログに `provisional: true` を持たせる）: perception 知覚 / tracking 追跡 / concentration 集中 / athletics 運動 / stealth 隠密 / education 教養 / brawling 格闘 / evasion 回避 / melee_weapon 近接武器 / handgun 拳銃 / shoulder_arms 肩撃ち武器 / autofire オートファイア / persuasion 説得 / trading 取引 / streetwise 裏社会の事情通 / conversation 会話 / human_perception 人間の洞察 / first_aid 応急手当 / basic_tech 基礎技術 / electronics_security_tech 電子工学/セキュリティ / cybertech サイバーテック。ほかの技能は英語名のまま `provisional: true` で入れる
+3. **絵文字**: GM 画面のボタンの「📱」「💾」を外す（デザインの決まり。必要ならモックと同じ線のアイコンを SVG で）
+4. **PIN の総当たり対策**: `/api/auth/gm` で、同じ IP から 5 回続けて失敗したら 60 秒受け付けない（429）。PIN の比較は `crypto.timingSafeEqual` を使う。テストを足す
+
+指摘 1 と 2 は E2E のスクリーンショットも撮り直して、報告 02 に貼る。
