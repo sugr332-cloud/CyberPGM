@@ -8,7 +8,8 @@
     "rootDir": "./src"
   },
   "references": [
-    { "path": "../../packages/shared" }
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/rules" }
   ],
   "include": ["src/**/*"]
 }

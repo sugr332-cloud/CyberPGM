@@ -15,6 +15,13 @@
       "when": 1792474000000,
       "tag": "0001_migrate_fvtt_icon_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792474457059,
+      "tag": "0002_dazzling_amazoness",
+      "breakpoints": true
     }
   ]
 }
