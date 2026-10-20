@@ -4,10 +4,12 @@ import { images } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-
 import { getProjectRoot } from '@cyberpgm/shared';
+import { authMiddleware } from '../auth.js';
 
 export const imagesRouter = new Hono();
+
+imagesRouter.use('*', authMiddleware);
 
 // GET /api/images/:id - serve image file by image ID
 imagesRouter.get('/:id', async (c) => {
@@ -21,8 +23,14 @@ imagesRouter.get('/:id', async (c) => {
     return c.json({ error: 'Image not found' }, 404);
   }
 
-  // TODO: Phase 1 authentication check - if imageRecord.visibility === 'gm',
-  // verify user has GM permission. For Phase 0, return the image for development/debug purposes.
+  // Phase 2 visibility permission check:
+  // if imageRecord.visibility === 'gm', verify user has GM permission.
+  if (imageRecord.visibility === 'gm') {
+    const role = c.get('role');
+    if (role !== 'gm') {
+      return c.json({ error: 'Forbidden: Image is GM-only' }, 403);
+    }
+  }
 
   const baseDir = path.resolve(getProjectRoot(), 'data/images');
   const filePath = path.resolve(baseDir, imageRecord.path);

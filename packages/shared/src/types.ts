@@ -192,3 +192,142 @@ export const ItemsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(200).default(50),
   offset: z.coerce.number().min(0).default(0),
 });
+
+// Phase 2 Types
+
+export interface CharacterStats {
+  int: number;
+  ref: number;
+  dex: number;
+  tech: number;
+  cool: number;
+  will: number;
+  luck: number;
+  move: number;
+  body: number;
+  emp: number;
+}
+
+export interface CyberwareEntry {
+  item_id?: string;
+  name: string;
+  type?: string;
+  static_loss?: number;
+}
+
+export interface Character {
+  id: string;
+  kind: 'pc' | 'npc' | 'mook';
+  name: string;
+  role: string;
+  image_id?: string | null;
+  image_path?: string | null;
+  stats: CharacterStats;
+  skills: Record<string, number>;
+  hp: number;
+  hp_max: number;
+  sp_head: number;
+  sp_body: number;
+  humanity: number;
+  emp_max: number;
+  cyberware: CyberwareEntry[];
+  weapons: string[];
+  inventory: unknown[];
+  status: string[];
+  crit_injuries: unknown[];
+  eb: number;
+  notes_gm?: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CharacterSheetSkillItem {
+  key: string;
+  name: string;
+  statKey: keyof CharacterStats;
+  statValue: number;
+  level: number;
+  base: number; // statValue + level - woundPenalty
+}
+
+export interface CharacterSheet extends Character {
+  maxHumanity: number;
+  currentEmp: number;
+  woundState: 'ok' | 'seriously' | 'mortally' | 'dead';
+  woundPenalty: number;
+  skillsList: CharacterSheetSkillItem[];
+}
+
+export interface DeviceInfo {
+  id: string;
+  role: 'gm' | 'player';
+  character_id?: string | null;
+  character_name?: string | null;
+  label?: string | null;
+  last_seen_at: number;
+  online: boolean;
+}
+
+export interface SessionInfo {
+  code: string;
+  joinUrl: string;
+  qrSvg: string;
+  devices: DeviceInfo[];
+}
+
+export interface MoneyLogEntry {
+  id: string;
+  character_id: string;
+  character_name?: string;
+  amount: number;
+  reason: string;
+  balance_after: number;
+  at: number;
+}
+
+export interface CharLogEntry {
+  id: string;
+  character_id: string;
+  text: string;
+  at: number;
+}
+
+export interface AppSettings {
+  starting_funds: number | null;
+}
+
+export interface SaveFile {
+  format: 'cpgm-save';
+  version: number;
+  savedAt: number;
+  name: string;
+  characters: Character[];
+  money_log: MoneyLogEntry[];
+  char_log: CharLogEntry[];
+  app_settings: Record<string, unknown>;
+}
+
+export interface SaveSummary {
+  id: string;
+  name: string;
+  kind: 'manual' | 'auto';
+  summary: string | null;
+  file: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export type WsNotifyKind = 'money' | 'info';
+
+export interface WsNotifyPayload {
+  kind: WsNotifyKind;
+  title: string;
+  body: string;
+}
+
+export interface WsClaimRequestPayload {
+  requestId: string;
+  character_id: string;
+  character_name: string;
+  deviceLabel?: string;
+}

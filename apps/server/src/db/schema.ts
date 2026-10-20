@@ -98,6 +98,76 @@ export const import_runs = sqliteTable('import_runs', {
   report: text('report'),
 });
 
+export const characters = sqliteTable('characters', {
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull().default('pc'),
+  name: text('name').notNull(),
+  role: text('role').notNull(),
+  image_id: text('image_id').references(() => images.id, { onDelete: 'set null' }),
+  stats: text('stats').notNull(), // JSON: { int, ref, dex, tech, cool, will, luck, move, body, emp }
+  skills: text('skills').notNull().default('{}'), // JSON: { [skillKey: string]: number }
+  hp: integer('hp').notNull(),
+  hp_max: integer('hp_max').notNull(),
+  sp_head: integer('sp_head').notNull().default(0),
+  sp_body: integer('sp_body').notNull().default(0),
+  humanity: integer('humanity').notNull(),
+  emp_max: integer('emp_max').notNull(),
+  cyberware: text('cyberware').notNull().default('[]'), // JSON: [{ item_id, name, type, static_loss }]
+  weapons: text('weapons').notNull().default('[]'), // JSON: string[] or item summary
+  inventory: text('inventory').notNull().default('[]'), // JSON
+  status: text('status').notNull().default('[]'), // JSON: string[]
+  crit_injuries: text('crit_injuries').notNull().default('[]'), // JSON
+  eb: integer('eb').notNull().default(0),
+  notes_gm: text('notes_gm'),
+  created_at: integer('created_at').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
+export const devices = sqliteTable('devices', {
+  id: text('id').primaryKey(),
+  token_hash: text('token_hash').notNull().unique(),
+  role: text('role').notNull(), // 'gm' | 'player'
+  character_id: text('character_id').references(() => characters.id, { onDelete: 'set null' }),
+  label: text('label'),
+  last_seen_at: integer('last_seen_at').notNull(),
+  revoked: integer('revoked', { mode: 'boolean' }).notNull().default(false),
+});
+
+export const money_log = sqliteTable('money_log', {
+  id: text('id').primaryKey(),
+  character_id: text('character_id')
+    .notNull()
+    .references(() => characters.id, { onDelete: 'cascade' }),
+  amount: integer('amount').notNull(),
+  reason: text('reason').notNull(),
+  balance_after: integer('balance_after').notNull(),
+  at: integer('at').notNull(),
+});
+
+export const char_log = sqliteTable('char_log', {
+  id: text('id').primaryKey(),
+  character_id: text('character_id')
+    .notNull()
+    .references(() => characters.id, { onDelete: 'cascade' }),
+  text: text('text').notNull(),
+  at: integer('at').notNull(),
+});
+
+export const saves = sqliteTable('saves', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  kind: text('kind').notNull().default('manual'), // 'manual' | 'auto'
+  summary: text('summary'),
+  file: text('file').notNull(), // relative path from data/saves/
+  created_at: integer('created_at').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
+export const app_settings = sqliteTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(), // JSON
+});
+
 // Relations
 export const itemsRelations = relations(items, ({ one, many }) => ({
   weapon: one(weapons, {
@@ -140,5 +210,36 @@ export const imagesRelations = relations(images, ({ one }) => ({
   item: one(items, {
     fields: [images.item_id],
     references: [items.id],
+  }),
+}));
+
+export const charactersRelations = relations(characters, ({ one, many }) => ({
+  image: one(images, {
+    fields: [characters.image_id],
+    references: [images.id],
+  }),
+  devices: many(devices),
+  moneyLogs: many(money_log),
+  charLogs: many(char_log),
+}));
+
+export const devicesRelations = relations(devices, ({ one }) => ({
+  character: one(characters, {
+    fields: [devices.character_id],
+    references: [characters.id],
+  }),
+}));
+
+export const moneyLogRelations = relations(money_log, ({ one }) => ({
+  character: one(characters, {
+    fields: [money_log.character_id],
+    references: [characters.id],
+  }),
+}));
+
+export const charLogRelations = relations(char_log, ({ one }) => ({
+  character: one(characters, {
+    fields: [char_log.character_id],
+    references: [characters.id],
   }),
 }));

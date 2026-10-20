@@ -3,8 +3,11 @@ import { db } from '../db/client.js';
 import { items } from '../db/schema.js';
 import { eq, or, like, and, sql } from 'drizzle-orm';
 import { ItemsQuerySchema } from '@cyberpgm/shared';
+import { requireAuth } from '../auth.js';
 
 export const itemsRouter = new Hono();
+
+itemsRouter.use('*', requireAuth);
 
 // GET /api/items - list items with filtering and search
 itemsRouter.get('/', async (c) => {
