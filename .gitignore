@@ -3,4 +3,5 @@ dist/
 # ルールブック由来のデータ・画像・取り込み結果はリポジトリに含めない（docs/SPEC.md §3）
 data/
 *.db
+*.tsbuildinfo
 .env
