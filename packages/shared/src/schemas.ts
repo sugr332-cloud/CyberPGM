@@ -20,6 +20,28 @@ export const CyberwareEntrySchema = z.object({
   static_loss: z.number().int().nonnegative().optional(),
 });
 
+export const InventoryEntrySchema = z.object({
+  entry_id: z.string(),
+  item_id: z.string().optional(),
+  name: z.string(),
+  qty: z.number().int().positive().default(1),
+  equipped: z.boolean().optional(),
+  notes: z.string().optional(),
+});
+
+export const InventoryFlexibleSchema = z.preprocess((val) => {
+  if (typeof val === 'string') {
+    return {
+      entry_id: 'legacy-' + Math.random().toString(36).slice(2),
+      name: val,
+      qty: 1,
+    };
+  }
+  return val;
+}, InventoryEntrySchema);
+
+export const CharacterInventorySchema = z.array(InventoryFlexibleSchema).default([]);
+
 export const CharacterSchema = z.object({
   id: z.string(),
   kind: z.enum(['pc', 'npc', 'mook']).default('pc'),
@@ -36,7 +58,7 @@ export const CharacterSchema = z.object({
   emp_max: z.number().int().positive(),
   cyberware: z.array(CyberwareEntrySchema).default([]),
   weapons: z.array(z.string()).default([]),
-  inventory: z.array(z.unknown()).default([]),
+  inventory: z.array(InventoryFlexibleSchema).default([]),
   status: z.array(z.string()).default([]),
   crit_injuries: z.array(z.unknown()).default([]),
   eb: z.number().int().default(0),
@@ -106,6 +128,101 @@ export const SaveUpdateInputSchema = z.object({
   name: z.string().min(1),
 });
 
+export const ShopSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  price_multiplier: z.number().default(1.0),
+  buyback_rate: z.number().default(0.5),
+  categories: z.array(z.string()).default([]),
+  created_at: z.number().int(),
+  updated_at: z.number().int(),
+});
+
+export const ShopStockItemSchema = z.object({
+  id: z.string(),
+  shop_id: z.string(),
+  item_id: z.string(),
+  quantity: z.number().int().nonnegative().nullable(),
+});
+
+export const TransactionLineSchema = z.object({
+  item_id: z.string(),
+  name: z.string(),
+  qty: z.number().int().positive(),
+  unit_price: z.number().int(),
+  overridden: z.boolean().optional(),
+});
+
+export const TransactionSchema = z.object({
+  id: z.string(),
+  character_id: z.string(),
+  shop_id: z.string().nullable().optional(),
+  kind: z.enum(['buy', 'sell']),
+  lines: z.array(TransactionLineSchema),
+  total_eb: z.number().int(),
+  at: z.number().int(),
+});
+
+export const ShopCreateInputSchema = z.object({
+  name: z.string().min(1),
+  price_multiplier: z.number().min(0).default(1.0),
+  buyback_rate: z.number().min(0).max(2).default(0.5),
+  categories: z.array(z.string()).default([]),
+});
+
+export const ShopUpdateInputSchema = ShopCreateInputSchema.partial();
+
+export const ShopStockSetInputSchema = z.object({
+  item_id: z.string(),
+  quantity: z.number().int().nonnegative().nullable(),
+});
+
+export const PurchaseLineInputSchema = z.object({
+  item_id: z.string(),
+  qty: z.number().int().positive().default(1),
+  unit_price_override: z.number().int().nonnegative().optional(),
+});
+
+export const InstallCyberwareInputSchema = z.object({
+  item_id: z.string(),
+  humanity_loss: z.number().int().nonnegative().optional(),
+});
+
+export const PurchaseInputSchema = z.object({
+  character_id: z.string(),
+  shop_id: z.string().nullable().optional(),
+  lines: z.array(PurchaseLineInputSchema).min(1),
+  install_cyberware: z.array(InstallCyberwareInputSchema).optional(),
+});
+
+export const SellEntryInputSchema = z.object({
+  entry_id: z.string(),
+  qty: z.number().int().positive().default(1),
+});
+
+export const SellInputSchema = z.object({
+  character_id: z.string(),
+  shop_id: z.string().nullable().optional(),
+  entries: z.array(SellEntryInputSchema).min(1),
+});
+
+export const ItemPatchInputSchema = z.object({
+  name_ja_override: z.string().nullable().optional(),
+  summary_ja: z.string().nullable().optional(),
+  source_page_ja: z.number().int().nullable().optional(),
+  verify_status: z.enum(['official_verified', 'unofficial', 'unverified', 'homebrew']).optional(),
+  tags: z.array(z.string()).optional(),
+  notes: z.string().nullable().optional(),
+});
+
+export const PriceCategoryConfigSchema = z.object({
+  key: z.string(),
+  max: z.number().int(),
+  label_ja: z.string().optional(),
+});
+
+export const PriceCategoriesSettingSchema = z.array(PriceCategoryConfigSchema);
+
 export const SaveFileSchema = z.object({
   format: z.literal('cpgm-save'),
   version: z.number().int().positive(),
@@ -131,6 +248,9 @@ export const SaveFileSchema = z.object({
     }),
   ),
   app_settings: z.record(z.string(), z.unknown()),
+  shops: z.array(ShopSchema).optional().default([]),
+  shop_stock: z.array(ShopStockItemSchema).optional().default([]),
+  transactions: z.array(TransactionSchema).optional().default([]),
 });
 
 export const WsClientMessageSchema = z.discriminatedUnion('type', [

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 
 export const items = sqliteTable('items', {
@@ -168,6 +168,40 @@ export const app_settings = sqliteTable('app_settings', {
   value: text('value').notNull(), // JSON
 });
 
+export const shops = sqliteTable('shops', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  price_multiplier: real('price_multiplier').notNull().default(1.0),
+  buyback_rate: real('buyback_rate').notNull().default(0.5),
+  categories: text('categories').notNull().default('[]'), // JSON: string[]
+  created_at: integer('created_at').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
+export const shop_stock = sqliteTable('shop_stock', {
+  id: text('id').primaryKey(),
+  shop_id: text('shop_id')
+    .notNull()
+    .references(() => shops.id, { onDelete: 'cascade' }),
+  item_id: text('item_id')
+    .notNull()
+    .references(() => items.id, { onDelete: 'cascade' }),
+  quantity: integer('quantity'), // null = unlimited
+});
+
+export const transactions = sqliteTable('transactions', {
+  id: text('id').primaryKey(),
+  character_id: text('character_id')
+    .notNull()
+    .references(() => characters.id, { onDelete: 'cascade' }),
+  shop_id: text('shop_id')
+    .references(() => shops.id, { onDelete: 'set null' }),
+  kind: text('kind').notNull(), // 'buy' | 'sell'
+  lines: text('lines').notNull(), // JSON: [{ item_id, name, qty, unit_price, overridden }]
+  total_eb: integer('total_eb').notNull(),
+  at: integer('at').notNull(),
+});
+
 // Relations
 export const itemsRelations = relations(items, ({ one, many }) => ({
   weapon: one(weapons, {
@@ -221,6 +255,7 @@ export const charactersRelations = relations(characters, ({ one, many }) => ({
   devices: many(devices),
   moneyLogs: many(money_log),
   charLogs: many(char_log),
+  transactions: many(transactions),
 }));
 
 export const devicesRelations = relations(devices, ({ one }) => ({
@@ -241,5 +276,32 @@ export const charLogRelations = relations(char_log, ({ one }) => ({
   character: one(characters, {
     fields: [char_log.character_id],
     references: [characters.id],
+  }),
+}));
+
+export const shopsRelations = relations(shops, ({ many }) => ({
+  stock: many(shop_stock),
+  transactions: many(transactions),
+}));
+
+export const shopStockRelations = relations(shop_stock, ({ one }) => ({
+  shop: one(shops, {
+    fields: [shop_stock.shop_id],
+    references: [shops.id],
+  }),
+  item: one(items, {
+    fields: [shop_stock.item_id],
+    references: [items.id],
+  }),
+}));
+
+export const transactionsRelations = relations(transactions, ({ one }) => ({
+  character: one(characters, {
+    fields: [transactions.character_id],
+    references: [characters.id],
+  }),
+  shop: one(shops, {
+    fields: [transactions.shop_id],
+    references: [shops.id],
   }),
 }));

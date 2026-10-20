@@ -5,6 +5,7 @@ import {
   CharLogEntry,
   WsNotifyPayload,
   formatSkillName,
+  InventoryEntry,
 } from '@cyberpgm/shared';
 import {
   api,
@@ -647,6 +648,61 @@ export const PlayerPage: React.FC = () => {
             ) : (
               <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
                 装着なし
+              </span>
+            )}
+          </div>
+
+          {/* Inventory */}
+          <div
+            data-testid="player-inventory-card"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '8px',
+              padding: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>所持品</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                {sheet.inventory.length} 件
+              </span>
+            </div>
+            {sheet.inventory.length > 0 ? (
+              <div
+                data-testid="player-inventory-list"
+                style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}
+              >
+                {sheet.inventory.map((item: InventoryEntry, i: number) => (
+                  <div
+                    key={item.entry_id || i}
+                    data-testid="player-inventory-item"
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '8px 10px',
+                      borderRadius: '4px',
+                      backgroundColor: 'var(--color-surface-elevated)',
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    <span style={{ fontWeight: 500 }}>{item.name}</span>
+                    <span
+                      style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.8rem',
+                        color: 'var(--color-text-muted)',
+                      }}
+                    >
+                      × {item.qty}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                所持品なし
               </span>
             )}
           </div>

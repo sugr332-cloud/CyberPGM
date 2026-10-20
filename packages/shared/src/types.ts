@@ -188,8 +188,14 @@ export interface ImportReport {
 
 export const ItemsQuerySchema = z.object({
   kind: z.string().optional(),
+  price_category: z.string().optional(),
+  weapon_type: z.string().optional(),
+  concealable: z.coerce.boolean().optional(),
+  quality: z.string().optional(),
+  verify_status: z.string().optional(),
+  sort: z.enum(['price_asc', 'price_desc', 'name_asc', 'name_desc', 'damage_desc', 'sp_desc']).optional(),
   q: z.string().optional(),
-  limit: z.coerce.number().min(1).max(200).default(50),
+  limit: z.coerce.number().min(1).max(1000).default(200),
   offset: z.coerce.number().min(0).default(0),
 });
 
@@ -215,6 +221,15 @@ export interface CyberwareEntry {
   static_loss?: number;
 }
 
+export interface InventoryEntry {
+  entry_id: string;
+  item_id?: string;
+  name: string;
+  qty: number;
+  equipped?: boolean;
+  notes?: string;
+}
+
 export interface Character {
   id: string;
   kind: 'pc' | 'npc' | 'mook';
@@ -232,7 +247,7 @@ export interface Character {
   emp_max: number;
   cyberware: CyberwareEntry[];
   weapons: string[];
-  inventory: unknown[];
+  inventory: InventoryEntry[];
   status: string[];
   crit_injuries: unknown[];
   eb: number;
@@ -305,6 +320,91 @@ export interface SaveFile {
   money_log: MoneyLogEntry[];
   char_log: CharLogEntry[];
   app_settings: Record<string, unknown>;
+  shops?: Shop[];
+  shop_stock?: ShopStockItem[];
+  transactions?: Transaction[];
+}
+
+export interface Shop {
+  id: string;
+  name: string;
+  price_multiplier: number;
+  buyback_rate: number;
+  categories: string[];
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ShopStockItem {
+  id: string;
+  shop_id: string;
+  item_id: string;
+  quantity: number | null; // null = unlimited
+  item?: Item;
+}
+
+export interface TransactionLine {
+  item_id: string;
+  name: string;
+  qty: number;
+  unit_price: number;
+  overridden?: boolean;
+}
+
+export interface Transaction {
+  id: string;
+  character_id: string;
+  character_name?: string;
+  shop_id: string | null;
+  shop_name?: string | null;
+  kind: 'buy' | 'sell';
+  lines: TransactionLine[];
+  total_eb: number;
+  at: number;
+}
+
+export interface PurchaseLineInput {
+  item_id: string;
+  qty: number;
+  unit_price_override?: number;
+}
+
+export interface InstallCyberwareInput {
+  item_id: string;
+  humanity_loss?: number;
+}
+
+export interface PurchaseInput {
+  character_id: string;
+  shop_id?: string | null;
+  lines: PurchaseLineInput[];
+  install_cyberware?: InstallCyberwareInput[];
+}
+
+export interface SellEntryInput {
+  entry_id: string;
+  qty: number;
+}
+
+export interface SellInput {
+  character_id: string;
+  shop_id?: string | null;
+  entries: SellEntryInput[];
+}
+
+export interface PriceCategoryConfig {
+  key: string;
+  max: number;
+  label_ja?: string;
+}
+
+export interface ItemPatchInput {
+  name_ja_override?: string | null;
+  summary_ja?: string | null;
+  source_page_ja?: number | null;
+  verify_status?: 'official_verified' | 'unofficial' | 'unverified' | 'homebrew';
+  tags?: string[];
+  notes?: string | null;
 }
 
 export interface SaveSummary {

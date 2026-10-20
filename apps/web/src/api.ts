@@ -5,6 +5,13 @@ import {
   SaveSummary,
   MoneyLogEntry,
   CharLogEntry,
+  Shop,
+  ShopStockItem,
+  Transaction,
+  PurchaseInput,
+  SellInput,
+  PriceCategoryConfig,
+  ItemPatchInput,
 } from '@cyberpgm/shared';
 
 export const API_BASE = '';
@@ -192,5 +199,120 @@ export const api = {
     request<{ save: SaveSummary }>('/api/saves/import', {
       method: 'POST',
       body: jsonText,
+    }, getGmToken()),
+
+  // Catalog & Items
+  getItems: (params?: Record<string, string | number | boolean | undefined>) => {
+    const query = new URLSearchParams();
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== '') {
+          query.set(k, String(v));
+        }
+      }
+    }
+    const qStr = query.toString();
+    return request<{
+      items: any[];
+      total: number;
+      category_counts: Record<string, number>;
+    }>(`/api/items${qStr ? `?${qStr}` : ''}`, {}, getGmToken());
+  },
+
+  getItem: (id: string) =>
+    request<any>(`/api/items/${id}`, {}, getGmToken()),
+
+  updateItem: (id: string, data: ItemPatchInput) =>
+    request<any>(`/api/items/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  uploadItemImage: (id: string, formData: FormData) =>
+    request<any>(`/api/items/${id}/images`, {
+      method: 'POST',
+      body: formData,
+    }, getGmToken()),
+
+  updateImage: (id: string, data: { visibility?: 'gm' | 'players'; is_primary?: boolean }) =>
+    request<any>(`/api/images/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  deleteImage: (id: string) =>
+    request<{ success: boolean; deleted: string }>(`/api/images/${id}`, {
+      method: 'DELETE',
+    }, getGmToken()),
+
+  // Shops
+  getShops: () =>
+    request<{ shops: Shop[] }>('/api/shops', {}, getGmToken()),
+
+  createShop: (data: { name: string; price_multiplier?: number; buyback_rate?: number; categories?: string[] }) =>
+    request<Shop>('/api/shops', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  updateShop: (id: string, data: Partial<{ name: string; price_multiplier: number; buyback_rate: number; categories: string[] }>) =>
+    request<Shop>(`/api/shops/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  deleteShop: (id: string) =>
+    request<{ success: boolean; deleted: string }>(`/api/shops/${id}`, {
+      method: 'DELETE',
+    }, getGmToken()),
+
+  getShopStock: (shopId: string) =>
+    request<{ stock: Array<{ id: string; shop_id: string; item_id: string; quantity: number | null; item: any }> }>(
+      `/api/shops/${shopId}/stock`,
+      {},
+      getGmToken(),
+    ),
+
+  setShopStock: (shopId: string, item_id: string, quantity: number | null) =>
+    request<ShopStockItem>(`/api/shops/${shopId}/stock`, {
+      method: 'POST',
+      body: JSON.stringify({ item_id, quantity }),
+    }, getGmToken()),
+
+  deleteShopStock: (shopId: string, item_id: string) =>
+    request<{ success: boolean; deleted: string }>(`/api/shops/${shopId}/stock/${item_id}`, {
+      method: 'DELETE',
+    }, getGmToken()),
+
+  // Commerce & Transactions
+  purchase: (data: PurchaseInput) =>
+    request<{ success: boolean; total_eb: number; character: CharacterSheet }>('/api/purchase', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  sell: (data: SellInput) =>
+    request<{ success: boolean; total_refund: number; character: CharacterSheet }>('/api/sell', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  getTransactions: (character_id?: string) => {
+    const qStr = character_id ? `?character_id=${encodeURIComponent(character_id)}` : '';
+    return request<{ transactions: Array<Transaction & { character_name?: string; shop_name?: string }> }>(
+      `/api/transactions${qStr}`,
+      {},
+      getGmToken(),
+    );
+  },
+
+  // Price Categories Settings
+  getPriceCategories: () =>
+    request<{ categories: PriceCategoryConfig[] }>('/api/settings/price-categories', {}, getGmToken()),
+
+  updatePriceCategories: (categories: PriceCategoryConfig[]) =>
+    request<{ success: boolean; categories: PriceCategoryConfig[] }>('/api/settings/price-categories', {
+      method: 'PUT',
+      body: JSON.stringify({ categories }),
     }, getGmToken()),
 };

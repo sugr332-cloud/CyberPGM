@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
 import { images } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getProjectRoot } from '@cyberpgm/shared';
-import { authMiddleware } from '../auth.js';
+import { authMiddleware, requireGm } from '../auth.js';
+import { z } from 'zod';
 
 export const imagesRouter = new Hono();
 
@@ -64,4 +65,69 @@ imagesRouter.get('/:id', async (c) => {
     c.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
   }
   return c.body(fileBuffer);
+});
+
+const ImagePatchSchema = z.object({
+  visibility: z.enum(['gm', 'players']).optional(),
+  is_primary: z.boolean().optional(),
+});
+
+// PATCH /api/images/:id - update visibility or is_primary status (GM only)
+imagesRouter.patch('/:id', requireGm, async (c) => {
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'Image id is required' }, 400);
+  const existing = await db.select().from(images).where(eq(images.id, id)).get();
+  if (!existing) {
+    return c.json({ error: 'Image not found' }, 404);
+  }
+
+  const body = await c.req.json();
+  const parsed = ImagePatchSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid update data', details: parsed.error.issues }, 400);
+  }
+
+  if (parsed.data.is_primary && existing.item_id) {
+    // Clear other primary images for this item
+    db.update(images)
+      .set({ is_primary: false })
+      .where(and(eq(images.item_id, existing.item_id), eq(images.is_primary, true)))
+      .run();
+  }
+
+  const updates: Partial<typeof images.$inferInsert> = {};
+  if (parsed.data.visibility !== undefined) updates.visibility = parsed.data.visibility;
+  if (parsed.data.is_primary !== undefined) updates.is_primary = parsed.data.is_primary;
+
+  db.update(images).set(updates).where(eq(images.id, id)).run();
+
+  const updated = await db.select().from(images).where(eq(images.id, id)).get();
+  return c.json(updated);
+});
+
+// DELETE /api/images/:id - delete image (GM only)
+imagesRouter.delete('/:id', requireGm, async (c) => {
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'Image id is required' }, 400);
+  const existing = await db.select().from(images).where(eq(images.id, id)).get();
+  if (!existing) {
+    return c.json({ error: 'Image not found' }, 404);
+  }
+
+  db.delete(images).where(eq(images.id, id)).run();
+
+  // If file is in user uploads, remove physical file
+  if (existing.path.startsWith('user/')) {
+    const baseDir = path.resolve(getProjectRoot(), 'data/images');
+    const fullPath = path.resolve(baseDir, existing.path);
+    if (fullPath.startsWith(baseDir) && fs.existsSync(fullPath)) {
+      try {
+        fs.unlinkSync(fullPath);
+      } catch {
+        // ignore disk removal failure
+      }
+    }
+  }
+
+  return c.json({ success: true, deleted: id });
 });

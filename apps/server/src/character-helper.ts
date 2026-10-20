@@ -9,6 +9,7 @@ import {
   CyberwareEntry,
   formatSkillName,
   getSkillDef,
+  CharacterInventorySchema,
 } from '@cyberpgm/shared';
 import { maxHumanity, currentEmp, woundState, woundPenalty } from '@cyberpgm/rules';
 
@@ -33,7 +34,7 @@ export function formatCharacterRow(row: typeof characters.$inferSelect, imagePat
     emp_max: row.emp_max,
     cyberware: JSON.parse(row.cyberware) as CyberwareEntry[],
     weapons: JSON.parse(row.weapons) as string[],
-    inventory: JSON.parse(row.inventory) as unknown[],
+    inventory: CharacterInventorySchema.parse(JSON.parse(row.inventory || '[]')),
     status: JSON.parse(row.status) as string[],
     crit_injuries: JSON.parse(row.crit_injuries) as unknown[],
     eb: row.eb,
