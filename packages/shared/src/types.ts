@@ -101,6 +101,8 @@ export interface Weapon {
   dv_table_key: string | null;
   ammo_types: string | null; // JSON array string
   is_ranged: boolean | null;
+  suppressive?: boolean | null;
+  ignore_armor_percent?: number | null;
 }
 
 export interface Armor {
@@ -225,8 +227,11 @@ export interface InventoryEntry {
   entry_id: string;
   item_id?: string;
   name: string;
+  kind?: string;
   qty: number;
   equipped?: boolean;
+  ammo?: number;
+  ignore_armor_percent?: number | null;
   notes?: string;
 }
 
@@ -325,6 +330,9 @@ export interface SaveFile {
   transactions?: Transaction[];
   character_submissions?: unknown[];
   skill_notes?: unknown[];
+  combats?: unknown[];
+  combat_participants?: unknown[];
+  combat_log?: unknown[];
 }
 
 export interface Shop {

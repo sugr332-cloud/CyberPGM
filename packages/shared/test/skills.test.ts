@@ -6,6 +6,7 @@ import {
   SKILL_CATALOG,
   getSkillDef,
   formatSkillName,
+  skillNameToKey,
 } from '../src/index.js';
 
 describe('disclaimer constants', () => {
@@ -46,5 +47,20 @@ describe('skills catalog and formatting', () => {
     expect(autofire?.multiplier).toBe(2);
     expect(autofire?.difficulty).toBe('difficult');
     expect(autofire?.sources[0]?.book).toBe('Cyberpunk RED');
+  });
+
+  it('converts various skill name formats to canonical catalog key', () => {
+    expect(skillNameToKey('Handgun')).toBe('handgun');
+    expect(skillNameToKey('handgun')).toBe('handgun');
+    expect(skillNameToKey('Evasion')).toBe('evasion');
+    expect(skillNameToKey('Melee Weapon')).toBe('melee_weapon');
+    expect(skillNameToKey('MeleeWeapon')).toBe('melee_weapon');
+    expect(skillNameToKey('melee_weapon')).toBe('melee_weapon');
+    expect(skillNameToKey('Shoulder Arms')).toBe('shoulder_arms');
+    expect(skillNameToKey('Brawling')).toBe('brawling');
+    expect(skillNameToKey('Autofire')).toBe('autofire');
+    expect(skillNameToKey('拳銃')).toBe('handgun');
+    expect(skillNameToKey('回避')).toBe('evasion');
+    expect(skillNameToKey('近接武器')).toBe('melee_weapon');
   });
 });

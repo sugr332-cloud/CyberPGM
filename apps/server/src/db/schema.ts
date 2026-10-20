@@ -42,6 +42,8 @@ export const weapons = sqliteTable('weapons', {
   dv_table_key: text('dv_table_key'),
   ammo_types: text('ammo_types'),
   is_ranged: integer('is_ranged', { mode: 'boolean' }),
+  suppressive: integer('suppressive', { mode: 'boolean' }),
+  ignore_armor_percent: integer('ignore_armor_percent'),
 });
 
 export const armors = sqliteTable('armors', {
@@ -224,6 +226,49 @@ export const skill_notes = sqliteTable('skill_notes', {
   updated_at: integer('updated_at').notNull(),
 });
 
+export const combats = sqliteTable('combats', {
+  id: text('id').primaryKey(),
+  status: text('status').notNull().default('setup'), // 'setup' | 'active' | 'ended'
+  round: integer('round').notNull().default(1),
+  turn_index: integer('turn_index').notNull().default(0),
+  settings: text('settings').notNull().default('{}'), // JSON
+  created_at: integer('created_at').notNull(),
+  ended_at: integer('ended_at'),
+});
+
+export const combat_participants = sqliteTable('combat_participants', {
+  id: text('id').primaryKey(),
+  combat_id: text('combat_id')
+    .notNull()
+    .references(() => combats.id, { onDelete: 'cascade' }),
+  character_id: text('character_id').references(() => characters.id, { onDelete: 'set null' }),
+  side: text('side').notNull().default('enemy'), // 'ally' | 'enemy'
+  name: text('name').notNull(),
+  initiative: integer('initiative').notNull().default(0),
+  initiative_roll: text('initiative_roll').notNull().default('{}'), // JSON
+  order_index: integer('order_index').notNull().default(0),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  out: integer('out', { mode: 'boolean' }).notNull().default(false),
+  move_used: integer('move_used', { mode: 'boolean' }).notNull().default(false),
+  action_used: integer('action_used', { mode: 'boolean' }).notNull().default(false),
+  state: text('state').notNull().default('{}'), // JSON
+});
+
+export const combat_log = sqliteTable('combat_log', {
+  id: text('id').primaryKey(),
+  combat_id: text('combat_id')
+    .notNull()
+    .references(() => combats.id, { onDelete: 'cascade' }),
+  round: integer('round').notNull(),
+  actor_id: text('actor_id').notNull(),
+  action_key: text('action_key').notNull(),
+  input: text('input').notNull().default('{}'), // JSON
+  breakdown: text('breakdown').notNull().default('{}'), // JSON
+  changes: text('changes').notNull().default('[]'), // JSON
+  undone: integer('undone', { mode: 'boolean' }).notNull().default(false),
+  at: integer('at').notNull(),
+});
+
 // Relations
 export const itemsRelations = relations(items, ({ one, many }) => ({
   weapon: one(weapons, {
@@ -325,5 +370,28 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   shop: one(shops, {
     fields: [transactions.shop_id],
     references: [shops.id],
+  }),
+}));
+
+export const combatsRelations = relations(combats, ({ many }) => ({
+  participants: many(combat_participants),
+  logs: many(combat_log),
+}));
+
+export const combatParticipantsRelations = relations(combat_participants, ({ one }) => ({
+  combat: one(combats, {
+    fields: [combat_participants.combat_id],
+    references: [combats.id],
+  }),
+  character: one(characters, {
+    fields: [combat_participants.character_id],
+    references: [characters.id],
+  }),
+}));
+
+export const combatLogRelations = relations(combat_log, ({ one }) => ({
+  combat: one(combats, {
+    fields: [combat_log.combat_id],
+    references: [combats.id],
   }),
 }));

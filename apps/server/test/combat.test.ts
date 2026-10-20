@@ -1,0 +1,1077 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { app } from '../src/index.js';
+import { db, sqlite } from '../src/db/client.js';
+import {
+  characters,
+  weapons,
+  items,
+} from '../src/db/schema.js';
+import { generateUlid } from '@cyberpgm/shared';
+import { registerDevice } from '../src/auth.js';
+import { sessionManager } from '../src/session.js';
+
+describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
+  let authGm: { Authorization: string };
+  let pcId1: string;
+  let pcId2: string;
+  let mookId1: string;
+  let weaponIdPistol: string;
+  let weaponIdRifle: string;
+  let weaponIdMelee: string;
+
+  beforeEach(() => {
+    // Clear existing combat tables and characters
+    sqlite.prepare('DELETE FROM devices').run();
+    sqlite.prepare('DELETE FROM combat_log').run();
+    sqlite.prepare('DELETE FROM combat_participants').run();
+    sqlite.prepare('DELETE FROM combats').run();
+    sqlite.prepare('DELETE FROM characters').run();
+    sqlite.prepare('DELETE FROM weapons').run();
+    sqlite.prepare('DELETE FROM items').run();
+    sqlite.prepare('DELETE FROM rule_constants').run();
+
+    const gmDevice = registerDevice({ role: 'gm', label: 'GM Test' });
+    authGm = { Authorization: `Bearer ${gmDevice.token}` };
+
+    const now = Date.now();
+
+    // 1. Seed DV Tables into rule_constants
+    // Pistol DV table
+    sqlite
+      .prepare('INSERT INTO rule_constants (key, value, note) VALUES (?, ?, ?)')
+      .run(
+        'dv_table.Pistol',
+        JSON.stringify([
+          { range: [0, 6], dv: 13 },
+          { range: [7, 12], dv: 15 },
+          { range: [13, 25], dv: 20 },
+          { range: [26, 50], dv: 25 },
+          { range: [51, 100], dv: 30 },
+        ]),
+        'Pistol DV Table',
+      );
+
+    // Assault Rifle DV table & Autofire DV table (11.2)
+    sqlite
+      .prepare('INSERT INTO rule_constants (key, value, note) VALUES (?, ?, ?)')
+      .run(
+        'dv_table.Assault Rifle',
+        JSON.stringify([
+          { range: [0, 6], dv: 17 },
+          { range: [7, 12], dv: 16 },
+          { range: [13, 25], dv: 15 },
+          { range: [26, 50], dv: 20 },
+        ]),
+        'Assault Rifle DV Table',
+      );
+
+    sqlite
+      .prepare('INSERT INTO rule_constants (key, value, note) VALUES (?, ?, ?)')
+      .run(
+        'dv_table.DV Assault Rifle (Autofire)',
+        JSON.stringify([
+          { range: [0, 6], dv: 22 },
+          { range: [7, 12], dv: 20 },
+          { range: [13, 25], dv: 17 },
+          { range: [26, 50], dv: 20 },
+        ]),
+        'Assault Rifle Autofire DV Table',
+      );
+
+    // Critical injury table (11.8)
+    sqlite
+      .prepare('INSERT INTO rule_constants (key, value, note) VALUES (?, ?, ?)')
+      .run(
+        'critical_injury.body',
+        JSON.stringify([
+          {
+            range: [7, 7],
+            name: '<p>Foreign Object</p>',
+            summary: '<p>−2 to all actions until removed.</p>',
+          },
+        ]),
+        'Critical Injury Table Body',
+      );
+
+    // 2. Create Weapons
+    // Heavy Pistol (ROF 2, 8 rounds)
+    weaponIdPistol = 'item-pistol-1';
+    db.insert(items)
+      .values({
+        id: weaponIdPistol,
+        kind: 'weapon',
+        name_en: 'Heavy Pistol',
+        name_ja: 'ヘビーピストル',
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: now,
+        updated_at: now,
+      })
+      .run();
+
+    db.insert(weapons)
+      .values({
+        item_id: weaponIdPistol,
+        weapon_type: 'pistol',
+        skill: 'Handgun',
+        damage: '3d6',
+        rof: 2,
+        magazine_max: 8,
+        autofire: null,
+        suppressive: false,
+        dv_table_key: 'Pistol',
+        is_ranged: true,
+        ignore_armor_percent: 0,
+      })
+      .run();
+
+    // Assault Rifle (ROF 1, autofire cap 4, dvTable = DV Assault Rifle)
+    weaponIdRifle = 'item-rifle-1';
+    db.insert(items)
+      .values({
+        id: weaponIdRifle,
+        kind: 'weapon',
+        name_en: 'Assault Rifle',
+        name_ja: 'アサルト・ライフル',
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: now,
+        updated_at: now,
+      })
+      .run();
+
+    db.insert(weapons)
+      .values({
+        item_id: weaponIdRifle,
+        weapon_type: 'assault_rifle',
+        skill: 'Shoulder Arms',
+        damage: '5d6',
+        rof: 1,
+        magazine_max: 25,
+        autofire: 4,
+        suppressive: true,
+        dv_table_key: 'DV Assault Rifle',
+        is_ranged: true,
+        ignore_armor_percent: 0,
+      })
+      .run();
+
+    // Melee Weapon (Knife / Machete, ignore_armor_percent = 50)
+    weaponIdMelee = 'item-melee-1';
+    db.insert(items)
+      .values({
+        id: weaponIdMelee,
+        kind: 'weapon',
+        name_en: 'Combat Knife',
+        name_ja: 'コンバット・ナイフ',
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: now,
+        updated_at: now,
+      })
+      .run();
+
+    db.insert(weapons)
+      .values({
+        item_id: weaponIdMelee,
+        weapon_type: 'melee',
+        skill: 'Melee Weapon',
+        damage: '2d6',
+        rof: 2,
+        magazine_max: null,
+        autofire: null,
+        suppressive: false,
+        dv_table_key: null,
+        is_ranged: false,
+        ignore_armor_percent: 50,
+      })
+      .run();
+
+    // 3. Create PC 1: Viper (REF 8, handgun: 6, evasion: 6)
+    pcId1 = generateUlid();
+    db.insert(characters)
+      .values({
+        id: pcId1,
+        kind: 'pc',
+        name: 'ヴァイパー',
+        role: 'Solo',
+        stats: JSON.stringify({
+          int: 6,
+          ref: 8,
+          dex: 7,
+          tech: 4,
+          cool: 6,
+          will: 6,
+          luck: 5,
+          move: 6,
+          body: 7,
+          emp: 4,
+        }),
+        skills: JSON.stringify({ handgun: 6, evasion: 6, melee_weapon: 4, shoulder_arms: 5 }),
+        hp: 40,
+        hp_max: 40,
+        sp_head: 7,
+        sp_body: 7,
+        humanity: 40,
+        emp_max: 4,
+        weapons: JSON.stringify([weaponIdPistol]),
+        inventory: JSON.stringify([
+          {
+            entry_id: 'e1',
+            item_id: weaponIdPistol,
+            name: 'ヘビーピストル',
+            qty: 1,
+            equipped: true,
+            ammo: 8,
+          },
+          {
+            entry_id: 'e_ammo',
+            name: '大型拳銃用弾薬',
+            kind: 'ammo',
+            qty: 5,
+          },
+        ]),
+        status: '[]',
+        crit_injuries: '[]',
+        created_at: now,
+        updated_at: now,
+      })
+      .run();
+
+    // 4. Create PC 2: Nyx (DEX 5, evasion: 4)
+    pcId2 = generateUlid();
+    db.insert(characters)
+      .values({
+        id: pcId2,
+        kind: 'pc',
+        name: 'ニクス',
+        role: 'Netrunner',
+        stats: JSON.stringify({
+          int: 8,
+          ref: 6,
+          dex: 5,
+          tech: 7,
+          cool: 5,
+          will: 6,
+          luck: 6,
+          move: 5,
+          body: 5,
+          emp: 6,
+        }),
+        skills: JSON.stringify({ handgun: 4, evasion: 4 }),
+        hp: 35,
+        hp_max: 35,
+        sp_head: 4,
+        sp_body: 4,
+        humanity: 50,
+        emp_max: 6,
+        weapons: '[]',
+        inventory: '[]',
+        status: '[]',
+        crit_injuries: '[]',
+        created_at: now,
+        updated_at: now,
+      })
+      .run();
+
+    // 5. Create Mook: Ganger (HP 25, SP 7)
+    mookId1 = generateUlid();
+    db.insert(characters)
+      .values({
+        id: mookId1,
+        kind: 'mook',
+        name: 'ガンガー',
+        role: 'Mook',
+        stats: JSON.stringify({
+          int: 4,
+          ref: 6,
+          dex: 6,
+          tech: 3,
+          cool: 4,
+          will: 4,
+          luck: 0,
+          move: 4,
+          body: 6,
+          emp: 3,
+        }),
+        skills: JSON.stringify({ handgun: 4, evasion: 4 }),
+        hp: 25,
+        hp_max: 25,
+        sp_head: 7,
+        sp_body: 7,
+        humanity: 30,
+        emp_max: 3,
+        weapons: '[]',
+        inventory: '[]',
+        status: '[]',
+        crit_injuries: '[]',
+        created_at: now,
+        updated_at: now,
+      })
+      .run();
+
+    const pDevice = registerDevice({
+      role: 'player',
+      characterId: pcId1,
+      label: 'Viper Mobile',
+    });
+  });
+
+  async function createTestCombat() {
+    const res = await app.request('/api/combats', {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { autoRollPc: true, autoRollNpc: true } }),
+    });
+    const { combat } = await res.json();
+
+    // Add Ganger to combat
+    const addRes = await app.request(`/api/combats/${combat.id}/participants`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        character_id: mookId1,
+        name: 'ガンガー',
+        side: 'enemy',
+        count: 1,
+      }),
+    });
+    const addJson = await addRes.json();
+    return addJson.combat;
+  }
+
+  // 11.3: 技能値が0にならず、canonical keyから引かれて正しく計算されるテスト
+  it('11.3: resolves Viper base attack with Handgun (REF 8 + handgun 6 = 14) and Nyx defense (DEX 5 + evasion 4 = 9)', async () => {
+    const combat = await createTestCombat();
+    const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+    const pNyx = combat.participants.find((p: any) => p.name === 'ニクス');
+
+    // Resolve ranged attack from Viper to Nyx (distance 5m -> DV 13)
+    const resolveRes = await app.request(`/api/combats/${combat.id}/resolve`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'ranged',
+        actor_id: pViper.id,
+        target_id: pNyx.id,
+        distance_m: 5,
+        weapon_id: weaponIdPistol,
+        attack_roll: { first: 7 }, // 14 + 7 = 21
+        damage_dice: [3, 4, 5],
+      }),
+    });
+
+    expect(resolveRes.status).toBe(200);
+    const { result } = await resolveRes.json();
+    expect(result.success).toBe(true);
+    // Viper attack calculation should display REF 8 + 技能 6 = 14 (+ 出目 7 = 21)
+    expect(result.formula).toContain('REF 8 + 技能 6 + 出目 7');
+
+    // 2. Viper melee attacks Nyx -> Nyx defends with DEX 5 + 回避 4 + 出目 5 = 14
+    const resolveMelee = await app.request(`/api/combats/${combat.id}/resolve`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'melee',
+        actor_id: pViper.id,
+        target_id: pNyx.id,
+        weapon_id: weaponIdMelee,
+        attack_roll: { first: 8 },
+        defense_roll: { first: 5 }, // DEX 5 + evasion 4 + 5 = 14
+        damage_dice: [3, 4],
+      }),
+    });
+    expect(resolveMelee.status).toBe(200);
+    const meleeJson = await resolveMelee.json();
+    expect(meleeJson.result.success).toBe(true);
+    expect(meleeJson.result.formula).toContain('DEX 5 + 回避 4 + 出目 5');
+  });
+
+  // 11.1: 作り話の値を完全排除し、未入力項目を画面へ返すテスト
+  it('11.1: stops calculation and reports missing inputs when required data is not supplied', async () => {
+    const combat = await createTestCombat();
+    const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+    const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+    // Missing distance and attack roll
+    const resolveRes = await app.request(`/api/combats/${combat.id}/resolve`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'ranged',
+        actor_id: pViper.id,
+        target_id: pGanger.id,
+        weapon_id: weaponIdPistol,
+        // distance_m and attack_roll omitted
+      }),
+    });
+
+    const json = await resolveRes.json();
+    expect(json.result.success).toBe(false);
+    expect(json.result.missing_inputs).toBeDefined();
+    expect(json.result.missing_inputs).toContain('距離を入力してください');
+    expect(json.result.missing_inputs).toContain('出目を入力してください');
+    expect(json.result.changes.length).toBe(0);
+  });
+
+  // 11.2: オートファイアの DV 表が dv_table.${weapon.dv_table_key} (Autofire) から正しく引かれるテスト
+  it('11.2: resolves autofire using dv_table.${dvTableKey} (Autofire) and GM specified ammo_spent', async () => {
+    const combat = await createTestCombat();
+    const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+    const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+    // Equip assault rifle to Viper
+    const viperChar = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+    const inv = JSON.parse(viperChar.inventory);
+    inv.push({
+      entry_id: 'e_rifle',
+      item_id: weaponIdRifle,
+      name: 'アサルト・ライフル',
+      qty: 1,
+      equipped: true,
+      ammo: 25,
+    });
+    db.update(characters)
+      .set({ inventory: JSON.stringify(inv) })
+      .where(eq(characters.id, pcId1))
+      .run();
+
+    // Autofire at distance 15m (Assault Rifle Autofire DV at 13-25m is 17)
+    const resolveRes = await app.request(`/api/combats/${combat.id}/resolve`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'autofire',
+        actor_id: pViper.id,
+        target_id: pGanger.id,
+        weapon_id: weaponIdRifle,
+        distance_m: 15,
+        ammo_spent: 10,
+        attack_roll: { first: 8 }, // REF 8 + shoulder_arms 5 + 8 = 21 (DV 17 exceeds by 4)
+        damage_dice: [2, 2], // 4 * multiplier (cap 4) = 16 damage
+      }),
+    });
+
+    const json = await resolveRes.json();
+    expect(json.result.success).toBe(true);
+    expect(json.result.formula).toContain('難易度 17');
+    // Verify ammo consumed in changes is 10
+    const ammoChange = json.result.changes.find((c: any) => c.field === 'ammo');
+    expect(ammoChange.before).toBe(25);
+    expect(ammoChange.after).toBe(15);
+  });
+
+  // 11.4: 近接攻撃で weapons.ignore_armor_percent の値が適用されるテスト
+  it('11.4: resolves melee attack applying weapon ignore_armor_percent (50%) to target SP', async () => {
+    const combat = await createTestCombat();
+    const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+    const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+    // Viper attacks Ganger with Combat Knife (ignore_armor_percent: 50)
+    // Ganger SP body is 7. Half SP = Math.floor(7 * 0.5) = 3.
+    // Damage dice [4, 5] = 9. HP loss = 9 - 3 = 6. SP reduces to 6.
+    const resolveRes = await app.request(`/api/combats/${combat.id}/resolve`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'melee',
+        actor_id: pViper.id,
+        target_id: pGanger.id,
+        weapon_id: weaponIdMelee,
+        attack_roll: { first: 8 }, // DEX 7 + melee_weapon 4 + 8 = 19
+        defense_roll: { first: 3 }, // DEX 6 + evasion 4 + 3 = 13
+        damage_dice: [4, 5],
+      }),
+    });
+
+    const json = await resolveRes.json();
+    expect(json.result.success).toBe(true);
+    expect(json.result.formula).toContain('防具無視 50%');
+    const hpChange = json.result.changes.find((c: any) => c.field === 'hp');
+    expect(hpChange.before).toBe(25);
+    expect(hpChange.after).toBe(20); // Effective SP = round(7 * 0.5) = 4, 9 - 4 = 5 dmg -> 25 - 5 = 20
+  });
+
+  // 11.5: 弾数管理（8/8 -> 7/8、取り消しで8/8、リロードで満タンと予備弾薬消費）のテスト
+  it('11.5: tracks weapon ammo on attack, restores on undo, and refills on reload', async () => {
+    const combat = await createTestCombat();
+    const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+    const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+    // 1. Attack once -> ammo decreases from 8 to 7
+    const applyRes = await app.request(`/api/combats/${combat.id}/apply`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'ranged',
+        actor_id: pViper.id,
+        target_id: pGanger.id,
+        distance_m: 5,
+        weapon_id: weaponIdPistol,
+        attack_roll: { first: 7 },
+        damage_dice: [3, 3, 3],
+      }),
+    });
+
+    expect(applyRes.status).toBe(200);
+    const updatedChar1 = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+    const inv1 = JSON.parse(updatedChar1.inventory);
+    const pistol1 = inv1.find((i: any) => i.item_id === weaponIdPistol);
+    expect(pistol1.ammo).toBe(7);
+
+    // 2. Undo -> ammo restores to 8
+    const undoRes = await app.request(`/api/combats/${combat.id}/undo`, {
+      method: 'POST',
+      headers: authGm,
+    });
+    expect(undoRes.status).toBe(200);
+    const restoredChar = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+    const invRestored = JSON.parse(restoredChar.inventory);
+    const pistolRestored = invRestored.find((i: any) => i.item_id === weaponIdPistol);
+    expect(pistolRestored.ammo).toBe(8);
+
+    // 3. Shoot down to 0 and reload
+    pistolRestored.ammo = 0;
+    db.update(characters)
+      .set({ inventory: JSON.stringify(invRestored) })
+      .where(eq(characters.id, pcId1))
+      .run();
+
+    const reloadRes = await app.request(`/api/combats/${combat.id}/apply`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'reload',
+        actor_id: pViper.id,
+        weapon_id: weaponIdPistol,
+      }),
+    });
+    expect(reloadRes.status).toBe(200);
+    const reloadedChar = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+    const invReloaded = JSON.parse(reloadedChar.inventory);
+    const pistolReloaded = invReloaded.find((i: any) => i.item_id === weaponIdPistol);
+    expect(pistolReloaded.ammo).toBe(8); // magazine_max
+    // Spare ammo decreased by 1
+    const spareAmmo = invReloaded.find((i: any) => i.name === '大型拳銃用弾薬');
+    expect(spareAmmo.qty).toBe(4);
+  });
+
+  // 11.6: 出目 10 / 1 のとき追加ロールが未入力なら計算を止めるテスト
+  it('11.6: requires extra roll when attack or defense roll is 10 or 1', async () => {
+    const combat = await createTestCombat();
+    const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+    const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+    // Attack roll = 10 without extra
+    const resolveRes1 = await app.request(`/api/combats/${combat.id}/resolve`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'ranged',
+        actor_id: pViper.id,
+        target_id: pGanger.id,
+        distance_m: 5,
+        weapon_id: weaponIdPistol,
+        attack_roll: { first: 10 }, // extra omitted
+      }),
+    });
+    const json1 = await resolveRes1.json();
+    expect(json1.result.success).toBe(false);
+    expect(json1.result.missing_inputs).toContain(
+      '攻撃クリティカル: 追加出目 (1d10) を入力してください',
+    );
+
+    // With extra = 4
+    const resolveRes2 = await app.request(`/api/combats/${combat.id}/resolve`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'ranged',
+        actor_id: pViper.id,
+        target_id: pGanger.id,
+        distance_m: 5,
+        weapon_id: weaponIdPistol,
+        attack_roll: { first: 10, extra: 4 }, // 10 + 4 = 14
+        damage_dice: [3, 3, 3],
+      }),
+    });
+    const json2 = await resolveRes2.json();
+    expect(json2.result.success).toBe(true);
+    // 14 (base) + 14 (roll) = 28
+    expect(json2.result.formula).toContain('出目 14 = 28');
+  });
+
+  // 11.7: 大型拳銃（ROF 2）で 2 回分の変化がまとめて反映され、弾が 2 減るテスト
+  it('11.7: resolves ROF 2 sequential attacks in one action, applying 2 hits and spending 2 ammo', async () => {
+    const combat = await createTestCombat();
+    const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+    const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+    const applyRes = await app.request(`/api/combats/${combat.id}/apply`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'ranged',
+        actor_id: pViper.id,
+        weapon_id: weaponIdPistol,
+        attacks: [
+          {
+            target_id: pGanger.id,
+            distance_m: 5,
+            attack_roll: { first: 7 }, // hits
+            damage_dice: [3, 4, 4], // 11 damage
+          },
+          {
+            target_id: pGanger.id,
+            distance_m: 5,
+            attack_roll: { first: 8 }, // hits
+            damage_dice: [3, 3, 5], // 11 damage
+          },
+        ],
+      }),
+    });
+
+    expect(applyRes.status).toBe(200);
+    const json = await applyRes.json();
+    expect(json.result.success).toBe(true);
+    // Ammo should decrease by 2 (8 -> 6)
+    const ammoChange = json.result.changes.find((c: any) => c.field === 'ammo');
+    expect(ammoChange.before).toBe(8);
+    expect(ammoChange.after).toBe(6);
+
+    // Ganger should take damage from both shots
+    const gangerAfter = db.select().from(characters).where(eq(characters.id, pGanger.character_id)).get()!;
+    expect(gangerAfter.hp).toBeLessThan(25);
+    const pistolAfter = JSON.parse(
+      db.select().from(characters).where(eq(characters.id, pcId1)).get()!.inventory,
+    ).find((i: any) => i.item_id === weaponIdPistol);
+    expect(pistolAfter.ammo).toBe(6);
+  });
+
+  // 11.8: 致命傷表 2d6 の出目要求と HTML タグ除去のテスト
+  it('11.8: requires 2d6 roll on critical injury and strips HTML tags from description', async () => {
+    const combat = await createTestCombat();
+    const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+    const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+    // Two 6s rolled in damage dice (critical injury) without crit roll
+    const resolveRes1 = await app.request(`/api/combats/${combat.id}/resolve`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'ranged',
+        actor_id: pViper.id,
+        target_id: pGanger.id,
+        distance_m: 5,
+        weapon_id: weaponIdPistol,
+        attack_roll: { first: 7 },
+        damage_dice: [6, 6, 2], // Two 6s -> Critical!
+      }),
+    });
+    const json1 = await resolveRes1.json();
+    expect(json1.result.success).toBe(false);
+    expect(json1.result.missing_inputs).toContain('致命傷表 (2d6) の出目を入力してください');
+
+    // With crit_injury_roll = 7
+    const resolveRes2 = await app.request(`/api/combats/${combat.id}/resolve`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'ranged',
+        actor_id: pViper.id,
+        target_id: pGanger.id,
+        distance_m: 5,
+        weapon_id: weaponIdPistol,
+        attack_roll: { first: 7 },
+        damage_dice: [6, 6, 2],
+        crit_injury_roll: 7,
+      }),
+    });
+    const json2 = await resolveRes2.json();
+    expect(json2.result.success).toBe(true);
+    const critChange = json2.result.changes.find((c: any) => c.field === 'crit_injuries');
+    expect(critChange).toBeDefined();
+    // HTML tags stripped
+    expect(critChange.desc).not.toContain('<p>');
+    expect(critChange.desc).toContain('Foreign Object');
+  });
+
+  // 11.9: プレイヤーに敵の HP/SP 数値を送らないテスト
+  it('11.9: does not leak enemy numeric HP and SP to player in combat:result notification', async () => {
+    let capturedPlayerNotification: any = null;
+    const originalNotify = sessionManager.notifyCombatResult.bind(sessionManager);
+    sessionManager.notifyCombatResult = (params: any) => {
+      if (params.characterId === pcId1 && !params.is_victim) {
+        capturedPlayerNotification = params;
+      }
+      originalNotify(params);
+    };
+
+    const combat = await createTestCombat();
+    const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+    const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+    await app.request(`/api/combats/${combat.id}/apply`, {
+      method: 'POST',
+      headers: { ...authGm, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: 'ranged',
+        actor_id: pViper.id,
+        target_id: pGanger.id,
+        distance_m: 5,
+        weapon_id: weaponIdPistol,
+        attack_roll: { first: 7 },
+        damage_dice: [3, 4, 5], // 12 damage
+      }),
+    });
+
+    expect(capturedPlayerNotification).not.toBeNull();
+    // Verify player notification does not contain raw enemy HP or SP changes
+    const enemySpChange = capturedPlayerNotification.changes.find(
+      (c: any) => c.target_id === pGanger.character_id && (c.field === 'sp_head' || c.field === 'sp_body'),
+    );
+    expect(enemySpChange).toBeUndefined();
+
+    const enemyHpChange = capturedPlayerNotification.changes.find(
+      (c: any) => c.target_id === pGanger.character_id && c.field === 'hp',
+    );
+    expect(enemyHpChange).toBeUndefined();
+
+    // Verify player receives formatted damage summary without leaking exact remaining HP
+    const customSummary = capturedPlayerNotification.changes.find(
+      (c: any) => c.target_id === pGanger.character_id && c.field === 'custom',
+    );
+    expect(customSummary).toBeDefined();
+    expect(customSummary.desc).toMatch(/命中 · ガンガー.* に \d+ ダメージ →/);
+  });
+
+  describe('Phase 4a Review 03: Defaults cleanup, Spare ammo by kind, and Weapon entry alignment (§12)', () => {
+    // 12.1: 作り話の既定値の全廃
+    it('12.1: halts reload when magazine_max is undefined or null', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+
+      // weaponIdMelee has magazine_max: null
+      const res = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'reload',
+          actor_id: pViper.id,
+          weapon_id: weaponIdMelee,
+        }),
+      });
+
+      const json = await res.json();
+      expect(json.result.success).toBe(false);
+      expect(json.result.formula).toBe('装弾数が不明なためリロードできません');
+      expect(json.result.missing_inputs).toContain('装弾数が不明なためリロードできません');
+    });
+
+    it('12.1: halts autofire when autofire cap is missing or unconfigured', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+      // weaponIdPistol has autofire: null
+      const res = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'autofire',
+          actor_id: pViper.id,
+          target_id: pGanger.id,
+          distance_m: 5,
+          weapon_id: weaponIdPistol,
+          ammo_spent: 10,
+          attack_roll: { first: 8 },
+          damage_dice: [2, 2],
+        }),
+      });
+
+      const json = await res.json();
+      expect(json.result.missing_inputs).toContain('倍率の上限が不明です');
+    });
+
+    it('12.1: requires GM input for ignore_armor_percent when weapon value is missing, and resolves once provided', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+      // Insert melee weapon with ignore_armor_percent: null
+      const nullIgnoreWepId = 'item-melee-null-ignore';
+      const now = Date.now();
+      db.insert(items).values({
+        id: nullIgnoreWepId,
+        kind: 'weapon',
+        name_en: 'Improvised Club',
+        name_ja: '角材',
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: now,
+        updated_at: now,
+      }).run();
+
+      db.insert(weapons).values({
+        item_id: nullIgnoreWepId,
+        weapon_type: 'melee',
+        skill: 'Melee Weapon',
+        damage: '2d6',
+        rof: 2,
+        magazine_max: null,
+        autofire: null,
+        suppressive: false,
+        dv_table_key: null,
+        is_ranged: false,
+        ignore_armor_percent: null,
+      }).run();
+
+      // Without GM input -> missing_inputs
+      const res1 = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'melee',
+          actor_id: pViper.id,
+          target_id: pGanger.id,
+          weapon_id: nullIgnoreWepId,
+          attack_roll: { first: 8 },
+          defense_roll: { first: 3 },
+          damage_dice: [4, 5],
+        }),
+      });
+      const json1 = await res1.json();
+      expect(json1.result.missing_inputs).toContain('防具無視率が不明です (GM が入力してください)');
+
+      // With GM input (30%) -> resolves successfully
+      const res2 = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'melee',
+          actor_id: pViper.id,
+          target_id: pGanger.id,
+          weapon_id: nullIgnoreWepId,
+          ignore_armor_percent: 30,
+          attack_roll: { first: 8 },
+          defense_roll: { first: 3 },
+          damage_dice: [4, 5],
+        }),
+      });
+      const json2 = await res2.json();
+      expect(json2.result.success).toBe(true);
+      expect(json2.result.formula).toContain('防具無視 30%');
+    });
+
+    it('12.1: does not check or deduct ammo when weapon magazine_max is null', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+      // weapon with magazine_max: null (e.g. bow or thrown weapon)
+      const thrownWepId = 'item-thrown-1';
+      const now = Date.now();
+      db.insert(items).values({
+        id: thrownWepId,
+        kind: 'weapon',
+        name_en: 'Thrown Knife',
+        name_ja: '投げナイフ',
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: now,
+        updated_at: now,
+      }).run();
+
+      db.insert(weapons).values({
+        item_id: thrownWepId,
+        weapon_type: 'pistol',
+        skill: 'Handgun',
+        damage: '2d6',
+        rof: 1,
+        magazine_max: null,
+        autofire: null,
+        suppressive: false,
+        dv_table_key: 'Pistol',
+        is_ranged: true,
+        ignore_armor_percent: 0,
+      }).run();
+
+      const res = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'ranged',
+          actor_id: pViper.id,
+          target_id: pGanger.id,
+          distance_m: 5,
+          weapon_id: thrownWepId,
+          attack_roll: { first: 7 },
+          damage_dice: [3, 4],
+        }),
+      });
+
+      const json = await res.json();
+      expect(json.result.success).toBe(true);
+      // No ammo change recorded
+      const ammoChange = json.result.changes.find((c: any) => c.field === 'ammo');
+      expect(ammoChange).toBeUndefined();
+    });
+
+    // 12.2: 予備弾薬を kind = 'ammo' で探索 & 予備なしリロード不可
+    it('12.2: prohibits reload when no spare ammo with kind = ammo is present in inventory', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+
+      // Set inventory with no kind = 'ammo' items (even if name has '弾薬')
+      db.update(characters)
+        .set({
+          inventory: JSON.stringify([
+            {
+              entry_id: 'e1',
+              item_id: weaponIdPistol,
+              name: 'ヘビーピストル',
+              kind: 'weapon',
+              qty: 1,
+              equipped: true,
+              ammo: 0,
+            },
+            {
+              entry_id: 'e_misc',
+              name: '弾薬箱 (空)',
+              qty: 1,
+            },
+          ]),
+        })
+        .where(eq(characters.id, pcId1))
+        .run();
+
+      const res = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'reload',
+          actor_id: pViper.id,
+          weapon_id: weaponIdPistol,
+        }),
+      });
+
+      const json = await res.json();
+      expect(json.result.success).toBe(false);
+      expect(json.result.formula).toBe('予備の弾薬がありません');
+      expect(json.result.missing_inputs).toContain('予備の弾薬がありません');
+    });
+
+    it('12.2: consumes spare ammo of qty 1 on reload and removes the entry completely from inventory', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+
+      // Set inventory with spare ammo qty: 1
+      db.update(characters)
+        .set({
+          inventory: JSON.stringify([
+            {
+              entry_id: 'e1',
+              item_id: weaponIdPistol,
+              name: 'ヘビーピストル',
+              kind: 'weapon',
+              qty: 1,
+              equipped: true,
+              ammo: 0,
+            },
+            {
+              entry_id: 'e_spare_single',
+              name: '大型拳銃弾 (予備パック)',
+              kind: 'ammo',
+              qty: 1,
+            },
+          ]),
+        })
+        .where(eq(characters.id, pcId1))
+        .run();
+
+      const applyRes = await app.request(`/api/combats/${combat.id}/apply`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'reload',
+          actor_id: pViper.id,
+          weapon_id: weaponIdPistol,
+        }),
+      });
+
+      expect(applyRes.status).toBe(200);
+      const reloadedChar = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+      const invReloaded = JSON.parse(reloadedChar.inventory);
+      const pistolReloaded = invReloaded.find((i: any) => i.item_id === weaponIdPistol);
+      expect(pistolReloaded.ammo).toBe(8); // restored to magazine_max
+
+      // Verify spare ammo entry was completely removed (not left at qty 0)
+      const spareEntry = invReloaded.find((i: any) => i.entry_id === 'e_spare_single');
+      expect(spareEntry).toBeUndefined();
+    });
+
+    // 12.3: 武器選択欄と計算武器の不一致解消
+    it('12.3: resolves action and deducts ammo by weapon_entry_id from kind = weapon inventory entries', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+      // Character has 2 weapons in inventory
+      const customEntry1 = 'w_entry_primary';
+      const customEntry2 = 'w_entry_secondary';
+      db.update(characters)
+        .set({
+          inventory: JSON.stringify([
+            {
+              entry_id: customEntry1,
+              item_id: weaponIdPistol,
+              name: '大型拳銃 #1',
+              kind: 'weapon',
+              qty: 1,
+              equipped: true,
+              ammo: 8,
+            },
+            {
+              entry_id: customEntry2,
+              item_id: weaponIdPistol,
+              name: '大型拳銃 #2',
+              kind: 'weapon',
+              qty: 1,
+              equipped: true,
+              ammo: 4,
+            },
+          ]),
+        })
+        .where(eq(characters.id, pcId1))
+        .run();
+
+      // Fire weapon #2 using weapon_entry_id
+      const applyRes = await app.request(`/api/combats/${combat.id}/apply`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'ranged',
+          actor_id: pViper.id,
+          target_id: pGanger.id,
+          distance_m: 5,
+          weapon_id: weaponIdPistol,
+          weapon_entry_id: customEntry2,
+          attack_roll: { first: 7 },
+          damage_dice: [3, 3, 3],
+        }),
+      });
+
+      expect(applyRes.status).toBe(200);
+      const updatedChar = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+      const inv = JSON.parse(updatedChar.inventory);
+      const w1 = inv.find((i: any) => i.entry_id === customEntry1);
+      const w2 = inv.find((i: any) => i.entry_id === customEntry2);
+
+      // Weapon #1 was untouched at 8
+      expect(w1.ammo).toBe(8);
+      // Weapon #2 decreased from 4 to 3
+      expect(w2.ammo).toBe(3);
+    });
+  });
+});

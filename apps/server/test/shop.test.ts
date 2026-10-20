@@ -296,10 +296,36 @@ describe('Phase 3a: Shop & Commerce System', () => {
       const parsed = SaveFileSchema.safeParse(fileData);
       expect(parsed.success).toBe(true);
       if (parsed.success) {
-        expect(parsed.data.version).toBe(2);
+        expect(parsed.data.version).toBe(3);
         expect(parsed.data.shops.length).toBeGreaterThanOrEqual(1);
         expect(parsed.data.transactions.length).toBeGreaterThanOrEqual(1);
       }
+    });
+
+    it('safely imports a legacy version 2 save file', async () => {
+      const v2Save = {
+        format: 'cpgm-save',
+        version: 2,
+        savedAt: Date.now(),
+        name: '旧形式v2保存',
+        characters: [],
+        money_log: [],
+        char_log: [],
+        app_settings: {},
+        shops: [],
+        shop_stock: [],
+        transactions: [],
+      };
+
+      const importRes = await app.request('/api/saves/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${gmToken}`,
+        },
+        body: JSON.stringify(v2Save),
+      });
+      expect(importRes.status).toBe(201);
     });
 
     it('safely imports a legacy version 1 save file without shops', async () => {

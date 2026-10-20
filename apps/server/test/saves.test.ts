@@ -93,8 +93,11 @@ describe('Saves & Load operations (phase 2 §6 & §9)', () => {
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.format).toBe('cpgm-save');
-      expect(parsed.data.version).toBe(2);
+      expect(parsed.data.version).toBe(3);
       expect(parsed.data.characters.length).toBeGreaterThanOrEqual(4);
+      expect(Array.isArray(parsed.data.combats)).toBe(true);
+      expect(Array.isArray(parsed.data.combat_participants)).toBe(true);
+      expect(Array.isArray(parsed.data.combat_log)).toBe(true);
     }
   });
 

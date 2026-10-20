@@ -24,8 +24,11 @@ export const InventoryEntrySchema = z.object({
   entry_id: z.string(),
   item_id: z.string().optional(),
   name: z.string(),
+  kind: z.string().optional(),
   qty: z.number().int().positive().default(1),
   equipped: z.boolean().optional(),
+  ammo: z.number().int().nonnegative().optional(),
+  ignore_armor_percent: z.number().nullable().optional(),
   notes: z.string().optional(),
 });
 
@@ -253,10 +256,32 @@ export const SaveFileSchema = z.object({
   transactions: z.array(TransactionSchema).optional().default([]),
   character_submissions: z.array(z.unknown()).optional().default([]),
   skill_notes: z.array(z.unknown()).optional().default([]),
+  combats: z.array(z.unknown()).optional().default([]),
+  combat_participants: z.array(z.unknown()).optional().default([]),
+  combat_log: z.array(z.unknown()).optional().default([]),
 });
 
 export const WsClientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ping') }),
+  z.object({
+    type: z.literal('combat:choose'),
+    payload: z.object({
+      action_key: z.string(),
+      target_id: z.string().optional(),
+      weapon_id: z.string().optional(),
+      aimed_location: z.string().optional(),
+      distance_m: z.number().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal('combat:roll'),
+    payload: z.object({
+      roll_type: z.enum(['initiative', 'attack', 'defense', 'damage', 'crit', 'death_save']),
+      first: z.number().int().optional(),
+      extra: z.number().int().optional(),
+      dice: z.array(z.number().int()).optional(),
+    }),
+  }),
 ]);
 
 export const WsServerMessageSchema = z.discriminatedUnion('type', [
@@ -285,6 +310,30 @@ export const WsServerMessageSchema = z.discriminatedUnion('type', [
       character_id: z.string(),
       character_name: z.string(),
       deviceLabel: z.string().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal('combat:update'),
+    payload: z.unknown(), // Combat
+  }),
+  z.object({
+    type: z.literal('combat:turn'),
+    payload: z.object({
+      combat_id: z.string(),
+      round: z.number().int(),
+      turn_index: z.number().int(),
+      actor_id: z.string(),
+      actor_name: z.string(),
+      is_my_turn: z.boolean(),
+    }),
+  }),
+  z.object({
+    type: z.literal('combat:result'),
+    payload: z.object({
+      title: z.string(),
+      summary: z.string(),
+      changes: z.array(z.unknown()),
+      is_victim: z.boolean().optional(),
     }),
   }),
 ]);

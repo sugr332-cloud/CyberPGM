@@ -218,6 +218,112 @@ export class SessionManager {
   }
 
   /**
+   * Broadcasts combat state update to all GM clients.
+   */
+  public broadcastCombatUpdate(combat: object | null): void {
+    this.sendToGm({
+      type: 'combat:update',
+      payload: combat,
+    });
+  }
+
+  /**
+   * Broadcasts turn change to GM and all players.
+   */
+  public broadcastCombatTurn(info: {
+    combat_id: string;
+    round: number;
+    turn_index: number;
+    actor_id: string;
+    actor_name: string;
+    actor_char_id?: string | null;
+  }): void {
+    for (const client of this.clients) {
+      if (client.role === 'gm') {
+        try {
+          client.ws.send(
+            JSON.stringify({
+              type: 'combat:turn',
+              payload: {
+                combat_id: info.combat_id,
+                round: info.round,
+                turn_index: info.turn_index,
+                actor_id: info.actor_id,
+                actor_name: info.actor_name,
+                is_my_turn: false,
+              },
+            }),
+          );
+        } catch {
+          // ignore
+        }
+      } else if (client.role === 'player') {
+        const isMyTurn = Boolean(info.actor_char_id && client.characterId === info.actor_char_id);
+        try {
+          client.ws.send(
+            JSON.stringify({
+              type: 'combat:turn',
+              payload: {
+                combat_id: info.combat_id,
+                round: info.round,
+                turn_index: info.turn_index,
+                actor_id: info.actor_id,
+                actor_name: info.actor_name,
+                is_my_turn: isMyTurn,
+              },
+            }),
+          );
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  /**
+   * Sends combat result notification to participants.
+   */
+  public notifyCombatResult(params: {
+    characterId?: string | null;
+    title: string;
+    summary: string;
+    changes: unknown[];
+    is_victim?: boolean;
+  }): void {
+    if (params.characterId) {
+      this.sendToCharacter(params.characterId, {
+        type: 'combat:result',
+        payload: {
+          title: params.title,
+          summary: params.summary,
+          changes: params.changes,
+          is_victim: params.is_victim,
+        },
+      });
+    }
+  }
+
+  /**
+   * Forwards player action choice to GMs.
+   */
+  public forwardCombatChooseToGm(data: object): void {
+    this.sendToGm({
+      type: 'combat:choose',
+      payload: data,
+    });
+  }
+
+  /**
+   * Forwards player roll to GMs.
+   */
+  public forwardCombatRollToGm(data: object): void {
+    this.sendToGm({
+      type: 'combat:roll',
+      payload: data,
+    });
+  }
+
+  /**
    * Generates session info with QR SVG.
    */
   public async getSessionInfo(hostUrl: string): Promise<SessionInfo> {
