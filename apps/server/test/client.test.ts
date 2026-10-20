@@ -1,3 +1,5 @@
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { resolveDbPath, getImagesDir } from '../src/db/client.js';
 
@@ -40,5 +42,19 @@ describe('client.ts DB and Images path resolution', () => {
     } finally {
       if (originalImagesDir) process.env.IMAGES_DIR = originalImagesDir;
     }
+  });
+
+  it('playwright config IMAGES_DIR points outside data/ and inside os.tmpdir()', async () => {
+    const configModule = await import('../../../playwright.config.js');
+    const imagesDir = configModule.e2eImagesDir;
+    const command = configModule.default?.webServer?.command || '';
+
+    expect(imagesDir).toBeDefined();
+    expect(path.resolve(imagesDir)).not.toContain(path.resolve('data'));
+    expect(path.resolve(imagesDir).startsWith(path.resolve(os.tmpdir()))).toBe(true);
+
+    const match = command.match(/IMAGES_DIR=([^\s]+)/);
+    expect(match).toBeTruthy();
+    expect(path.resolve(match![1])).not.toContain(path.resolve('data'));
   });
 });
