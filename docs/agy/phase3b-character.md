@@ -93,3 +93,13 @@ Google サイト版（外からの作成とメール送信）は Phase 6。こ�
 ## 9. Phase 3a からの持ち越し（最初に直す。commit は分ける）
 
 - 商店の詳細で、武器種別が内部名のまま（`heavyPistol`）、弾薬の種類が JSON のまま（`(["heavyPistol"])`）出ている。武器種別と弾薬の種類に日本語の表示名を付ける（FVTT の babele か、なければ仮訳の対応表を `packages/shared` に置き、`provisional: true` を付ける。Issue #11）。表示は「大型拳銃」「弾薬: 大型拳銃用」のようにする
+
+## 10. レビュー指摘 02（2026-10-20 Claude。同じブランチで直して報告 02 を出す）
+
+テスト DB の分離（本番 DB が全テスト後も変わらないことを Claude が確認）、作成方法の値を null のままにしたこと、成功率の計算（`packages/rules` と一致）は問題ない。次の 2 点を直す。
+
+1. **技能の「使う場面」の出どころ**: `.gitignore` の `data/` が `docs/data/` まで無視していたため、Claude の初版 `docs/data/skill-notes.ja.json` が commit されておらず、agy がローカルに別の文を書いていた（Claude の誤り。main で `.gitignore` を `/data/` に直し、初版を commit した: 80dbd2c）
+   - agy のローカルの `docs/data/skill-notes.ja.json` を消してから `git fetch origin && git merge origin/main` で取り込む（main のファイルを使う）
+   - main のファイルは `{ "_note": ..., "notes": { key: 文 } }` の形。読み込み処理をこの形に合わせる
+   - 文の内容は Issue #20 でユーザーが確認中なので、ファイルの文を書き換えない
+2. **絵文字**: `CharacterCreatePage.tsx` の「💾 バックアップ保存」「📷 写真を撮る・画像を選択」「💾 ファイルに保存」から絵文字を外す（3 回目の指摘。今後、画面の文字に絵文字を使わない）
