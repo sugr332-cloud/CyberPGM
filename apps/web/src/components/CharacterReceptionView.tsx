@@ -212,7 +212,7 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
                 cursor: 'pointer',
               }}
             >
-              📥 ファイルから取り込む (.cpgm)
+              ファイルから取り込む (.cpgm)
             </button>
           </div>
         </div>
@@ -432,11 +432,11 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: '1.4rem',
+                          fontSize: '0.75rem',
                           color: 'var(--color-text-muted)',
                         }}
                       >
-                        👤
+                        No Image
                       </div>
                     )}
 
@@ -489,7 +489,7 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
                             color: 'var(--color-text-muted)',
                           }}
                         >
-                          {sub.source === 'wifi' ? '📶 Wi-Fi' : '📄 ファイル'}
+                          {sub.source === 'wifi' ? 'Wi-Fi' : 'ファイル'}
                         </span>
 
                         {hasErrors ? (
@@ -658,10 +658,11 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '1.2rem',
+                      fontSize: '0.75rem',
+                      color: 'var(--color-text-muted)',
                     }}
                   >
-                    👤
+                    No Image
                   </div>
                 )}
                 <div>

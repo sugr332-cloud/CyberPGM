@@ -422,7 +422,6 @@ export const CharacterCreatePage: React.FC = () => {
               gap: '16px',
             }}
           >
-            <div style={{ fontSize: '2.5rem' }}>⏳</div>
             <h2 style={{ fontSize: '1.2rem', margin: 0, color: 'var(--color-warning)' }}>
               GMの受付待ちです
             </h2>
@@ -443,7 +442,7 @@ export const CharacterCreatePage: React.FC = () => {
                   cursor: 'pointer',
                 }}
               >
-                💾 バックアップ保存 (.cpgm)
+                バックアップ保存 (.cpgm)
               </button>
             </div>
           </div>
@@ -462,7 +461,6 @@ export const CharacterCreatePage: React.FC = () => {
               gap: '16px',
             }}
           >
-            <div style={{ fontSize: '2.5rem' }}>🎉</div>
             <h2 style={{ fontSize: '1.2rem', margin: 0, color: 'var(--color-ally)' }}>
               GMがキャラクターを取り込みました！
             </h2>
@@ -504,7 +502,6 @@ export const CharacterCreatePage: React.FC = () => {
               gap: '16px',
             }}
           >
-            <div style={{ fontSize: '2.5rem' }}>↩</div>
             <h2 style={{ fontSize: '1.2rem', margin: 0, color: 'var(--color-accent)' }}>
               GMから差し戻されました
             </h2>
@@ -687,11 +684,11 @@ export const CharacterCreatePage: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '2.5rem',
+                  fontSize: '0.85rem',
                   color: 'var(--color-text-muted)',
                 }}
               >
-                👤
+                No Image
               </div>
             )}
 
@@ -708,7 +705,7 @@ export const CharacterCreatePage: React.FC = () => {
                 cursor: 'pointer',
               }}
             >
-              📷 写真を撮る・画像を選択
+              写真を撮る・画像を選択
             </button>
             <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
               ※ 正方形に中央切り抜きされます
@@ -1203,7 +1200,7 @@ export const CharacterCreatePage: React.FC = () => {
 
                     <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                       {s.stat.toUpperCase()} {statVal} + Lv {lvl} = <strong>基本値 {baseVal}</strong>
-                      <span style={{ color: 'var(--color-ally)', marginLeft: '6px' }}>ⓘ 解説</span>
+                      <span style={{ color: 'var(--color-ally)', marginLeft: '6px' }}>解説</span>
                     </div>
                   </div>
 
@@ -1730,10 +1727,11 @@ export const CharacterCreatePage: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '1.6rem',
+                    fontSize: '0.75rem',
+                    color: 'var(--color-text-muted)',
                   }}
                 >
-                  👤
+                  No Image
                 </div>
               )}
 
@@ -1768,7 +1766,7 @@ export const CharacterCreatePage: React.FC = () => {
                 cursor: 'pointer',
               }}
             >
-              {isSubmitting ? '送信中…' : '🚀 GMに送る'}
+              {isSubmitting ? '送信中…' : 'GMに送る'}
             </button>
 
             <button
@@ -1784,7 +1782,7 @@ export const CharacterCreatePage: React.FC = () => {
                 cursor: 'pointer',
               }}
             >
-              💾 ファイルに保存 (.cpgm)
+              ファイルに保存 (.cpgm)
             </button>
           </div>
         </div>

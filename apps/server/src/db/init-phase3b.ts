@@ -13,12 +13,17 @@ export function initPhase3bData(dbInstance: AppDatabase) {
   if (fs.existsSync(notesPath)) {
     try {
       const raw = fs.readFileSync(notesPath, 'utf-8');
-      const notesJson: Record<string, string> = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      const notesJson: Record<string, string> =
+        parsed && typeof parsed.notes === 'object' && parsed.notes !== null
+          ? parsed.notes
+          : parsed;
       const existing = dbInstance.select().from(skill_notes).all();
       const existingKeys = new Set(existing.map((n) => n.key));
 
       const now = Date.now();
       for (const [key, text] of Object.entries(notesJson)) {
+        if (key === '_note' || typeof text !== 'string') continue;
         if (!existingKeys.has(key)) {
           dbInstance
             .insert(skill_notes)

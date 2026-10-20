@@ -103,7 +103,7 @@ test('Character creation flow: Player creates character on mobile, submits to GM
   });
 
   // Click "GMに送る"
-  const submitBtn = playerPage.getByRole('button', { name: '🚀 GMに送る' });
+  const submitBtn = playerPage.getByRole('button', { name: 'GMに送る', exact: true });
   await submitBtn.click();
 
   // Verify status is "GMの受付待ちです"
