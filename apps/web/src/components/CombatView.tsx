@@ -27,6 +27,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   wsMessage,
 }) => {
   const [combat, setCombat] = useState<Combat | null>(null);
+  const activePart = combat?.participants?.[combat.turn_index];
   const [actions, setActions] = useState<CombatActionDef[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -42,6 +43,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [targetParticipantId, setTargetParticipantId] = useState<string | null>(null);
   const [distanceM, setDistanceM] = useState<number>(5);
   const [selectedWeaponId, setSelectedWeaponId] = useState<string | null>(null);
+  const [ammoSpent, setAmmoSpent] = useState<number>(10);
   const [dodgeMode, setDodgeMode] = useState<'dv' | 'dodge'>('dv');
   const [aimedLocation, setAimedLocation] = useState<'head' | 'held_item' | 'leg'>('head');
   const [heldItemId, setHeldItemId] = useState<string>('');
@@ -52,8 +54,14 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [defenseFirst, setDefenseFirst] = useState<number>(5);
   const [defenseExtra, setDefenseExtra] = useState<number | undefined>(undefined);
   const [damageDiceStr, setDamageDiceStr] = useState<string>('6, 6, 2');
-  const [critRoll, setCritRoll] = useState<number>(7);
+  const [critRoll, setCritRoll] = useState<number | undefined>(undefined);
   const [deathSaveRoll, setDeathSaveRoll] = useState<number>(5);
+
+  // Multi-attack for ROF 2
+  const [secondAttackEnabled, setSecondAttackEnabled] = useState<boolean>(false);
+  const [secondAttackFirst, setSecondAttackFirst] = useState<number>(7);
+  const [secondAttackExtra, setSecondAttackExtra] = useState<number | undefined>(undefined);
+  const [secondDamageDiceStr, setSecondDamageDiceStr] = useState<string>('4, 3, 2');
   
   // Unconfirmed / Manual Inputs
   const [manualNotes, setManualNotes] = useState<string>('');
@@ -83,6 +91,21 @@ export const CombatView: React.FC<CombatViewProps> = ({
     refreshCombat();
     api.getCombatActions().then((res) => setActions(res.actions)).catch(() => {});
   }, [refreshCombat]);
+
+  // Auto-select first weapon for active participant if none is selected
+  useEffect(() => {
+    if (selectedActionKey && !selectedWeaponId && activePart?.character) {
+      const weps = (activePart.character.weapons as any[]) || [];
+      const inv = (activePart.character.inventory as any[]) || [];
+      const firstWep =
+        (typeof weps[0] === 'string' ? weps[0] : weps[0]?.item_id || weps[0]?.name) ||
+        inv[0]?.item_id ||
+        inv[0]?.name;
+      if (firstWep) {
+        setSelectedWeaponId(firstWep);
+      }
+    }
+  }, [selectedActionKey, selectedWeaponId, activePart]);
 
   // Handle WebSocket updates
   useEffect(() => {
@@ -251,20 +274,51 @@ export const CombatView: React.FC<CombatViewProps> = ({
         }
       }
 
+      const attacks: any[] = [
+        {
+          target_id: targetParticipantId || undefined,
+          distance_m: distanceM,
+          dodge_mode: dodgeMode,
+          attack_roll: { first: attackFirst, extra: attackExtra },
+          defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
+          damage_dice: damageDice.length > 0 ? damageDice : undefined,
+          crit_injury_roll: critRoll,
+          aimed_location: aimedLocation,
+          held_item_id: heldItemId || undefined,
+        },
+      ];
+
+      if (secondAttackEnabled) {
+        const secondDamageDice = secondDamageDiceStr
+          .split(',')
+          .map((s) => Number(s.trim()))
+          .filter((n) => Number.isInteger(n) && n >= 1 && n <= 6);
+        attacks.push({
+          target_id: targetParticipantId || undefined,
+          distance_m: distanceM,
+          dodge_mode: dodgeMode,
+          attack_roll: { first: secondAttackFirst, extra: secondAttackExtra },
+          defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
+          damage_dice: secondDamageDice.length > 0 ? secondDamageDice : undefined,
+        });
+      }
+
       const res = await api.resolveCombatAction(combat.id, {
         action_key: selectedActionKey,
         actor_id: activePart.id,
         target_id: targetParticipantId || undefined,
-        distance_m: Number(distanceM) || 5,
+        distance_m: distanceM,
         weapon_id: selectedWeaponId || undefined,
+        ammo_spent: selectedActionKey === 'autofire' ? ammoSpent : undefined,
         aimed_location: aimedLocation,
         held_item_id: heldItemId || undefined,
         dodge_mode: dodgeMode,
         attack_roll: { first: attackFirst, extra: attackExtra },
         defense_roll: { first: defenseFirst, extra: defenseExtra },
-        damage_dice: damageDice.length > 0 ? damageDice : [1, 1, 1],
+        damage_dice: damageDice.length > 0 ? damageDice : undefined,
         crit_injury_roll: critRoll,
         death_save_roll: deathSaveRoll,
+        attacks,
         manual_changes: manualChanges,
         manual_notes: manualNotes,
       });
@@ -290,20 +344,51 @@ export const CombatView: React.FC<CombatViewProps> = ({
         .map((s) => Number(s.trim()))
         .filter((n) => Number.isInteger(n) && n >= 1 && n <= 6);
 
+      const attacks: any[] = [
+        {
+          target_id: targetParticipantId || undefined,
+          distance_m: distanceM,
+          dodge_mode: dodgeMode,
+          attack_roll: { first: attackFirst, extra: attackExtra },
+          defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
+          damage_dice: damageDice.length > 0 ? damageDice : undefined,
+          crit_injury_roll: critRoll,
+          aimed_location: aimedLocation,
+          held_item_id: heldItemId || undefined,
+        },
+      ];
+
+      if (secondAttackEnabled) {
+        const secondDamageDice = secondDamageDiceStr
+          .split(',')
+          .map((s) => Number(s.trim()))
+          .filter((n) => Number.isInteger(n) && n >= 1 && n <= 6);
+        attacks.push({
+          target_id: targetParticipantId || undefined,
+          distance_m: distanceM,
+          dodge_mode: dodgeMode,
+          attack_roll: { first: secondAttackFirst, extra: secondAttackExtra },
+          defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
+          damage_dice: secondDamageDice.length > 0 ? secondDamageDice : undefined,
+        });
+      }
+
       const res = await api.applyCombatAction(combat.id, {
         action_key: selectedActionKey,
         actor_id: activePart.id,
         target_id: targetParticipantId || undefined,
-        distance_m: Number(distanceM) || 5,
+        distance_m: distanceM,
         weapon_id: selectedWeaponId || undefined,
+        ammo_spent: selectedActionKey === 'autofire' ? ammoSpent : undefined,
         aimed_location: aimedLocation,
         held_item_id: heldItemId || undefined,
         dodge_mode: dodgeMode,
         attack_roll: { first: attackFirst, extra: attackExtra },
         defense_roll: { first: defenseFirst, extra: defenseExtra },
-        damage_dice: damageDice.length > 0 ? damageDice : [1, 1, 1],
+        damage_dice: damageDice.length > 0 ? damageDice : undefined,
         crit_injury_roll: critRoll,
         death_save_roll: deathSaveRoll,
+        attacks,
         manual_changes: previewResult.changes,
         manual_notes: manualNotes,
       });
@@ -311,6 +396,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       setCombat(res.combat);
       setPreviewResult(null);
       setSelectedActionKey(null);
+      setSecondAttackEnabled(false);
       onRefreshCharacters();
     } catch (err: any) {
       alert(`反映に失敗しました: ${err.message}`);
@@ -713,7 +799,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   }
 
   // --- 2. ACTIVE COMBAT VIEW ---
-  const activePart = combat.participants[combat.turn_index];
+  if (!activePart) return null;
   const allies = combat.participants.filter((p) => p.side === 'ally');
   const enemies = combat.participants.filter((p) => p.side === 'enemy');
 
@@ -1001,6 +1087,81 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     ) : null;
                   })()}
 
+                  {/* Weapon Selection (for ranged / melee / reload) */}
+                  {['ranged', 'aimed', 'autofire', 'melee', 'reload'].includes(selectedActionKey) && (() => {
+                    const weps = (activePart.character?.weapons as any[]) || [];
+                    const inv = (activePart.character?.inventory as any[]) || [];
+                    const weaponOptions: { id: string; name: string; ammo?: number }[] = [];
+
+                    weps.forEach((w: any) => {
+                      const name = typeof w === 'string' ? w : w.name;
+                      const id = typeof w === 'string' ? w : (w.item_id || w.id || w.name);
+                      const matchedInv = inv.find((i: any) => i.item_id === id || i.name === name);
+                      weaponOptions.push({
+                        id,
+                        name,
+                        ammo: matchedInv?.ammo,
+                      });
+                    });
+
+                    inv.forEach((i: any) => {
+                      if (i.equipped && !weaponOptions.some((opt) => opt.name === i.name || opt.id === (i.item_id || i.entry_id))) {
+                        weaponOptions.push({
+                          id: i.item_id || i.entry_id || i.name,
+                          name: i.name,
+                          ammo: i.ammo,
+                        });
+                      }
+                    });
+
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>使用する武器を選択:</span>
+                        <select
+                          value={selectedWeaponId || ''}
+                          onChange={(e) => setSelectedWeaponId(e.target.value || null)}
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: 'var(--color-bg)',
+                            border: '1px solid var(--color-border-light)',
+                            borderRadius: '4px',
+                            color: 'var(--color-text)',
+                            fontSize: '0.85rem',
+                          }}
+                        >
+                          <option value="">-- 武器を選択してください --</option>
+                          {weaponOptions.map((wOpt, idx) => (
+                            <option key={wOpt.id || idx} value={wOpt.id}>
+                              {wOpt.name} (残弾: {wOpt.ammo !== undefined && wOpt.ammo !== null ? wOpt.ammo : '—'})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Autofire Ammo Spent */}
+                  {selectedActionKey === 'autofire' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>消費弾数 (発):</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={ammoSpent}
+                        onChange={(e) => setAmmoSpent(Number(e.target.value) || 0)}
+                        style={{
+                          width: '70px',
+                          padding: '4px 6px',
+                          backgroundColor: 'var(--color-bg)',
+                          border: '1px solid var(--color-border-light)',
+                          borderRadius: '4px',
+                          color: 'var(--color-text)',
+                          fontSize: '0.85rem',
+                        }}
+                      />
+                    </div>
+                  )}
+
                   {/* Target & Distance Selection (for ranged / melee / brawl) */}
                   {['ranged', 'aimed', 'autofire', 'melee', 'brawl'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1089,7 +1250,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             >
                               <option value="head">頭部（ダメージ2倍）</option>
                               <option value="held_item">持っている物（落とさせる）</option>
-                              <option value="leg">脚（移動力半減）</option>
+                              <option value="leg">脚（効果は GM 手入力）</option>
                             </select>
                           </div>
                           {aimedLocation === 'held_item' && (
@@ -1140,15 +1301,18 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         />
                       </div>
 
-                      {dodgeMode === 'dodge' && (
+                      {(attackFirst === 10 || attackFirst === 1) && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>回避 1d10:</span>
+                          <span style={{ fontSize: '0.8rem', color: attackFirst === 10 ? 'var(--color-ally)' : 'var(--color-warning)' }}>
+                            {attackFirst === 10 ? '攻撃クリティカル追加 (1d10):' : '攻撃ファンブル追加 (1d10):'}
+                          </span>
                           <input
                             type="number"
                             min={1}
                             max={10}
-                            value={defenseFirst}
-                            onChange={(e) => setDefenseFirst(Number(e.target.value) || 1)}
+                            value={attackExtra ?? ''}
+                            placeholder="1d10"
+                            onChange={(e) => setAttackExtra(e.target.value ? Number(e.target.value) : undefined)}
                             style={{
                               width: '46px',
                               padding: '4px',
@@ -1162,8 +1326,57 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         </div>
                       )}
 
+                      {dodgeMode === 'dodge' && (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>回避 1d10:</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={10}
+                              value={defenseFirst}
+                              onChange={(e) => setDefenseFirst(Number(e.target.value) || 1)}
+                              style={{
+                                width: '46px',
+                                padding: '4px',
+                                textAlign: 'center',
+                                backgroundColor: 'var(--color-bg)',
+                                border: '1px solid var(--color-border-light)',
+                                borderRadius: '4px',
+                                color: 'var(--color-text)',
+                              }}
+                            />
+                          </div>
+
+                          {(defenseFirst === 10 || defenseFirst === 1) && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '0.8rem', color: defenseFirst === 10 ? 'var(--color-ally)' : 'var(--color-warning)' }}>
+                                {defenseFirst === 10 ? '回避クリティカル追加 (1d10):' : '回避ファンブル追加 (1d10):'}
+                              </span>
+                              <input
+                                type="number"
+                                min={1}
+                                max={10}
+                                value={defenseExtra ?? ''}
+                                placeholder="1d10"
+                                onChange={(e) => setDefenseExtra(e.target.value ? Number(e.target.value) : undefined)}
+                                style={{
+                                  width: '46px',
+                                  padding: '4px',
+                                  textAlign: 'center',
+                                  backgroundColor: 'var(--color-bg)',
+                                  border: '1px solid var(--color-border-light)',
+                                  borderRadius: '4px',
+                                  color: 'var(--color-text)',
+                                }}
+                              />
+                            </div>
+                          )}
+                        </>
+                      )}
+
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>ダメージ出目 (カンマ区切り):</span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>ダメージ出目:</span>
                         <input
                           type="text"
                           value={damageDiceStr}
@@ -1176,10 +1389,125 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             border: '1px solid var(--color-border-light)',
                             borderRadius: '4px',
                             color: 'var(--color-text)',
+                            fontSize: '0.85rem',
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>致命傷 2d6:</span>
+                        <input
+                          type="number"
+                          min={2}
+                          max={12}
+                          value={critRoll ?? ''}
+                          placeholder="2d6"
+                          onChange={(e) => setCritRoll(e.target.value ? Number(e.target.value) : undefined)}
+                          style={{
+                            width: '46px',
+                            padding: '4px',
+                            textAlign: 'center',
+                            backgroundColor: 'var(--color-bg)',
+                            border: '1px solid var(--color-border-light)',
+                            borderRadius: '4px',
+                            color: 'var(--color-text)',
                           }}
                         />
                       </div>
                     </div>
+
+                    {/* ROF 2 multi-attack option */}
+                    {['ranged', 'melee'].includes(selectedActionKey) && (
+                      <div
+                        style={{
+                          marginTop: '6px',
+                          padding: '8px 10px',
+                          backgroundColor: 'var(--color-bg)',
+                          border: '1px solid var(--color-border-light)',
+                          borderRadius: '4px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px',
+                        }}
+                      >
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}>
+                          <input
+                            type="checkbox"
+                            checked={secondAttackEnabled}
+                            onChange={(e) => setSecondAttackEnabled(e.target.checked)}
+                          />
+                          第2攻撃を行う（ROF 2 武器用）
+                        </label>
+
+                        {secondAttackEnabled && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', marginTop: '4px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>第2 攻撃 1d10:</span>
+                              <input
+                                type="number"
+                                min={1}
+                                max={10}
+                                value={secondAttackFirst}
+                                onChange={(e) => setSecondAttackFirst(Number(e.target.value) || 1)}
+                                style={{
+                                  width: '46px',
+                                  padding: '4px',
+                                  textAlign: 'center',
+                                  backgroundColor: 'var(--color-surface)',
+                                  border: '1px solid var(--color-border-light)',
+                                  borderRadius: '4px',
+                                  color: 'var(--color-text)',
+                                }}
+                              />
+                            </div>
+
+                            {(secondAttackFirst === 10 || secondAttackFirst === 1) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '0.8rem', color: secondAttackFirst === 10 ? 'var(--color-ally)' : 'var(--color-warning)' }}>
+                                  追加 (1d10):
+                                </span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={10}
+                                  value={secondAttackExtra ?? ''}
+                                  placeholder="1d10"
+                                  onChange={(e) => setSecondAttackExtra(e.target.value ? Number(e.target.value) : undefined)}
+                                  style={{
+                                    width: '46px',
+                                    padding: '4px',
+                                    textAlign: 'center',
+                                    backgroundColor: 'var(--color-surface)',
+                                    border: '1px solid var(--color-border-light)',
+                                    borderRadius: '4px',
+                                    color: 'var(--color-text)',
+                                  }}
+                                />
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>第2 ダメージ出目:</span>
+                              <input
+                                type="text"
+                                value={secondDamageDiceStr}
+                                onChange={(e) => setSecondDamageDiceStr(e.target.value)}
+                                placeholder="4, 3, 2"
+                                style={{
+                                  width: '90px',
+                                  padding: '4px 6px',
+                                  backgroundColor: 'var(--color-surface)',
+                                  border: '1px solid var(--color-border-light)',
+                                  borderRadius: '4px',
+                                  color: 'var(--color-text)',
+                                  fontSize: '0.85rem',
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Manual Unconfirmed Inputs */}
@@ -1250,6 +1578,27 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         {previewResult.formula}
                       </div>
 
+                      {/* Missing inputs warning */}
+                      {previewResult.missing_inputs && previewResult.missing_inputs.length > 0 && (
+                        <div
+                          style={{
+                            padding: '8px 12px',
+                            backgroundColor: 'rgba(235, 75, 75, 0.15)',
+                            border: '1px solid var(--color-warning)',
+                            borderRadius: '4px',
+                            color: 'var(--color-warning)',
+                            fontSize: '0.85rem',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700 }}>不足している入力があります:</div>
+                          <ul style={{ margin: '4px 0 0', paddingLeft: '20px' }}>
+                            {previewResult.missing_inputs.map((msg: string, idx: number) => (
+                              <li key={idx}>{msg}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
                       {previewResult.changes.length > 0 && (
                         <div>
                           <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
@@ -1265,17 +1614,23 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
                       <button
                         onClick={handleApplyAction}
-                        disabled={isApplying}
+                        disabled={isApplying || (previewResult.missing_inputs && previewResult.missing_inputs.length > 0) || previewResult.changes.length === 0}
                         style={{
                           marginTop: '6px',
-                          backgroundColor: 'var(--color-ally)',
-                          color: '#000',
+                          backgroundColor: (previewResult.missing_inputs && previewResult.missing_inputs.length > 0) || previewResult.changes.length === 0
+                            ? 'var(--color-surface-elevated)'
+                            : 'var(--color-ally)',
+                          color: (previewResult.missing_inputs && previewResult.missing_inputs.length > 0) || previewResult.changes.length === 0
+                            ? 'var(--color-text-muted)'
+                            : '#000',
                           border: 'none',
                           padding: '10px',
                           borderRadius: '4px',
                           fontWeight: 800,
                           fontSize: '0.95rem',
-                          cursor: 'pointer',
+                          cursor: (previewResult.missing_inputs && previewResult.missing_inputs.length > 0) || previewResult.changes.length === 0
+                            ? 'not-allowed'
+                            : 'pointer',
                         }}
                       >
                         {isApplying ? '反映中...' : '確定して反映'}

@@ -29,12 +29,26 @@ function setupTempDb(): TempEnv {
   if (fs.existsSync(templatePath)) {
     try {
       sqlite.exec(`ATTACH DATABASE '${templatePath}' AS template;`);
-      sqlite.exec(`INSERT OR IGNORE INTO items SELECT * FROM template.items;`);
-      sqlite.exec(`INSERT OR IGNORE INTO weapons SELECT * FROM template.weapons;`);
-      sqlite.exec(`INSERT OR IGNORE INTO armors SELECT * FROM template.armors;`);
-      sqlite.exec(`INSERT OR IGNORE INTO cyberwares SELECT * FROM template.cyberwares;`);
-      sqlite.exec(`INSERT OR IGNORE INTO images SELECT * FROM template.images;`);
-      sqlite.exec(`INSERT OR IGNORE INTO rule_constants SELECT * FROM template.rule_constants;`);
+      const copyTable = (tableName: string) => {
+        try {
+          const tempCols = (sqlite.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>).map((c) => c.name);
+          const tplCols = (sqlite.prepare(`PRAGMA template.table_info(${tableName})`).all() as Array<{ name: string }>).map((c) => c.name);
+          const common = tempCols.filter((c) => tplCols.includes(c));
+          if (common.length > 0) {
+            const colList = common.map((c) => `"${c}"`).join(', ');
+            sqlite.exec(`INSERT OR IGNORE INTO ${tableName} (${colList}) SELECT ${colList} FROM template.${tableName};`);
+          }
+        } catch {
+          // ignore table copy failure
+        }
+      };
+
+      copyTable('items');
+      copyTable('weapons');
+      copyTable('armors');
+      copyTable('cyberwares');
+      copyTable('images');
+      copyTable('rule_constants');
       sqlite.exec(`DETACH DATABASE template;`);
     } catch (err) {
       console.warn('Failed to copy template catalog into temp DB:', err);

@@ -1,0 +1,1 @@
+ALTER TABLE `weapons` ADD `ignore_armor_percent` integer;

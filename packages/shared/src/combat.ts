@@ -116,7 +116,7 @@ export const CombatParticipantSchema = z.object({
 export interface CombatChange {
   target_id: string; // character_id or participant_id
   target_name: string;
-  field: 'hp' | 'sp_head' | 'sp_body' | 'ammo' | 'status' | 'crit_injuries' | 'dropped' | 'out' | 'state' | 'custom';
+  field: 'hp' | 'sp_head' | 'sp_body' | 'ammo' | 'inventory' | 'status' | 'crit_injuries' | 'dropped' | 'out' | 'state' | 'custom';
   before?: unknown;
   after?: unknown;
   desc: string;
@@ -125,7 +125,7 @@ export interface CombatChange {
 export const CombatChangeSchema = z.object({
   target_id: z.string(),
   target_name: z.string(),
-  field: z.enum(['hp', 'sp_head', 'sp_body', 'ammo', 'status', 'crit_injuries', 'dropped', 'out', 'state', 'custom']),
+  field: z.enum(['hp', 'sp_head', 'sp_body', 'ammo', 'inventory', 'status', 'crit_injuries', 'dropped', 'out', 'state', 'custom']),
   before: z.unknown().optional(),
   after: z.unknown().optional(),
   desc: z.string(),
@@ -217,12 +217,34 @@ export const SetInitiativeInputSchema = z.object({
   ),
 });
 
+export const SingleAttackInputSchema = z.object({
+  target_id: z.string().optional(),
+  distance_m: z.number().optional(),
+  dodge_mode: z.enum(['dv', 'dodge']).default('dv'),
+  attack_roll: z.object({
+    first: z.number().int().min(1).max(10),
+    extra: z.number().int().optional(),
+  }).optional(),
+  defense_roll: z.object({
+    first: z.number().int().min(1).max(10),
+    extra: z.number().int().optional(),
+  }).optional(),
+  damage_dice: z.array(z.number().int().min(1).max(6)).optional(),
+  crit_injury_roll: z.number().int().min(2).max(12).optional(),
+  aimed_location: z.enum(['head', 'held_item', 'leg']).optional(),
+  held_item_id: z.string().optional(),
+  manual_changes: z.array(CombatChangeSchema).optional(),
+});
+
+export type SingleAttackInput = z.infer<typeof SingleAttackInputSchema>;
+
 export const ResolveActionInputSchema = z.object({
   action_key: z.string(),
   actor_id: z.string(),
   target_id: z.string().optional(),
   distance_m: z.number().optional(),
   weapon_id: z.string().optional(),
+  ammo_spent: z.number().int().nonnegative().optional(),
   aimed_location: z.enum(['head', 'held_item', 'leg']).optional(),
   held_item_id: z.string().optional(),
   dodge_mode: z.enum(['dv', 'dodge']).default('dv'),
@@ -238,6 +260,8 @@ export const ResolveActionInputSchema = z.object({
   damage_dice: z.array(z.number().int().min(1).max(6)).optional(),
   crit_injury_roll: z.number().int().min(2).max(12).optional(),
   death_save_roll: z.number().int().min(1).max(10).optional(),
+  // Multi-attack for ROF > 1
+  attacks: z.array(SingleAttackInputSchema).optional(),
   // Manual / unconfirmed adjustments
   manual_changes: z.array(CombatChangeSchema).optional(),
   manual_notes: z.string().optional(),

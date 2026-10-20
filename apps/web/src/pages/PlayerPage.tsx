@@ -825,7 +825,25 @@ export const PlayerPage: React.FC = () => {
                       fontSize: '0.85rem',
                     }}
                   >
-                    <span style={{ fontWeight: 500 }}>{item.name}</span>
+                    <span style={{ fontWeight: 500 }}>
+                      {item.name}
+                      {item.ammo !== undefined && item.ammo !== null && (
+                        <span
+                          data-testid="player-inventory-ammo"
+                          style={{
+                            marginLeft: '8px',
+                            fontSize: '0.75rem',
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            backgroundColor: 'rgba(79, 182, 227, 0.2)',
+                            color: 'var(--color-ally)',
+                            fontFamily: 'var(--font-mono)',
+                          }}
+                        >
+                          弾数: {item.ammo}
+                        </span>
+                      )}
+                    </span>
                     <span
                       style={{
                         fontFamily: 'var(--font-mono)',

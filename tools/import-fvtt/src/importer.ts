@@ -761,6 +761,7 @@ function insertOrUpdateSubtables(
     const dvTableKey = sys.dvTable || null;
     const ammoTypes = Array.isArray(sys.ammoVariety) ? JSON.stringify(sys.ammoVariety) : null;
     const isRanged = sys.isRanged ? 1 : 0;
+    const ignoreArmorPercent = typeof sys.ignoreArmorPercent === 'number' ? sys.ignoreArmorPercent : (isRanged ? 0 : 50);
 
     const existing = sqlite.prepare('SELECT item_id FROM weapons WHERE item_id = ?').get(itemId);
     if (!existing) {
@@ -768,8 +769,8 @@ function insertOrUpdateSubtables(
         .prepare(
           `INSERT INTO weapons (
             item_id, weapon_type, skill, damage, rof, magazine_max, hands,
-            concealable, quality, autofire, crit_fail_effect, dv_table_key, ammo_types, is_ranged
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            concealable, quality, autofire, crit_fail_effect, dv_table_key, ammo_types, is_ranged, ignore_armor_percent
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           itemId,
@@ -786,13 +787,14 @@ function insertOrUpdateSubtables(
           dvTableKey,
           ammoTypes,
           isRanged,
+          ignoreArmorPercent,
         );
     } else {
       sqlite
         .prepare(
           `UPDATE weapons SET
             weapon_type = ?, skill = ?, damage = ?, rof = ?, magazine_max = ?, hands = ?,
-            concealable = ?, quality = ?, autofire = ?, crit_fail_effect = ?, dv_table_key = ?, ammo_types = ?, is_ranged = ?
+            concealable = ?, quality = ?, autofire = ?, crit_fail_effect = ?, dv_table_key = ?, ammo_types = ?, is_ranged = ?, ignore_armor_percent = ?
           WHERE item_id = ?`,
         )
         .run(
@@ -809,6 +811,7 @@ function insertOrUpdateSubtables(
           dvTableKey,
           ammoTypes,
           isRanged,
+          ignoreArmorPercent,
           itemId,
         );
     }

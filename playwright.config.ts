@@ -4,6 +4,7 @@ const port = process.env.PORT || '8788';
 const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
 
 export default defineConfig({
+  globalSetup: './e2e/global-setup.ts',
   testDir: './e2e',
   timeout: 30000,
   expect: {

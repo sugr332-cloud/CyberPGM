@@ -43,6 +43,7 @@ export const weapons = sqliteTable('weapons', {
   ammo_types: text('ammo_types'),
   is_ranged: integer('is_ranged', { mode: 'boolean' }),
   suppressive: integer('suppressive', { mode: 'boolean' }),
+  ignore_armor_percent: integer('ignore_armor_percent'),
 });
 
 export const armors = sqliteTable('armors', {

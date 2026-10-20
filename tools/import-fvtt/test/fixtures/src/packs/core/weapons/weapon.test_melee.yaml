@@ -1,0 +1,30 @@
+_id: testWeapon000002
+name: Test Melee Weapon
+type: weapon
+img: systems/cyberpunk-red-core/icons/compendium/weapons/test_pistol.svg
+system:
+  weaponType: melee
+  weaponSkill: Melee Weapon
+  damage: 2d6
+  rof: 2
+  magazine:
+    max: 0
+    value: 0
+  handsReq: 1
+  concealable:
+    concealable: true
+  quality: standard
+  fireModes:
+    autoFire: 0
+  critFailEffect: jammed
+  dvTable: null
+  ammoVariety: []
+  isRanged: false
+  ignoreArmorPercent: 50
+  price:
+    market: 50
+  sources:
+    - book: Test Book
+      page: 43
+  description:
+    value: <p>A test melee weapon description.</p>

@@ -14,8 +14,11 @@ import {
 import {
   CombatChange,
   ResolveActionInputSchema,
+  SingleAttackInput,
   CombatParticipant,
   DvTable,
+  InventoryEntry,
+  skillNameToKey,
 } from '@cyberpgm/shared';
 import { z } from 'zod';
 import type { AppDatabase } from '../db/client.js';
@@ -34,6 +37,12 @@ export interface ResolveResult {
   formula: string;
   breakdown: Record<string, unknown>;
   changes: CombatChange[];
+  missing_inputs?: string[];
+}
+
+function stripHtml(text?: string | null): string {
+  if (!text) return '';
+  return text.replace(/<[^>]*>/g, '').trim();
 }
 
 export function resolveCombatAction(
@@ -41,7 +50,14 @@ export function resolveCombatAction(
   input: ResolveInput,
   actorPart: CombatParticipant,
   targetPart?: CombatParticipant,
+  allParticipants?: CombatParticipant[],
 ): ResolveResult {
+  if (!targetPart && input.target_id && allParticipants) {
+    targetPart = allParticipants.find((p) => p.id === input.target_id);
+  }
+  if (!targetPart && input.attacks?.[0]?.target_id && allParticipants) {
+    targetPart = allParticipants.find((p) => p.id === input.attacks?.[0]?.target_id);
+  }
   const actorChar = actorPart.character;
   const targetChar = targetPart?.character;
 
@@ -63,12 +79,40 @@ export function resolveCombatAction(
     }
   };
 
+  const WEAPON_NAME_ALIASES: Record<string, string> = {
+    'ヘビー・ピストル': '大型拳銃',
+    '大型拳銃': 'ヘビー・ピストル',
+    'ミディアム・ピストル': '中型拳銃',
+    '中型拳銃': 'ミディアム・ピストル',
+    'ライト・ピストル': '小型拳銃',
+    '小型拳銃': 'ライト・ピストル',
+    'ベリー・ヘビー・ピストル': '超大型拳銃',
+    '超大型拳銃': 'ベリー・ヘビー・ピストル',
+  };
+
   // Helper to load weapon data
   const getWeaponData = (itemId?: string) => {
     if (!itemId) return null;
-    const w = db.select().from(weapons).where(eq(weapons.item_id, itemId)).get();
-    const it = db.select().from(items).where(eq(items.id, itemId)).get();
-    return w ? { ...w, name_ja: it?.name_ja || it?.name_ja_override || it?.name_en || '武器' } : null;
+    let w = db.select().from(weapons).where(eq(weapons.item_id, itemId)).get();
+    let it = db.select().from(items).where(eq(items.id, itemId)).get();
+    if (!w) {
+      const alias = WEAPON_NAME_ALIASES[itemId];
+      it =
+        db.select().from(items).where(eq(items.name_ja, itemId)).get() ||
+        db.select().from(items).where(eq(items.name_ja_override, itemId)).get() ||
+        db.select().from(items).where(eq(items.name_en, itemId)).get() ||
+        (alias ? db.select().from(items).where(eq(items.name_ja, alias)).get() : undefined) ||
+        (alias ? db.select().from(items).where(eq(items.name_en, alias)).get() : undefined);
+      if (it) {
+        w = db.select().from(weapons).where(eq(weapons.item_id, it.id)).get();
+      }
+    }
+    return w
+      ? {
+          ...w,
+          name_ja: it?.name_ja || it?.name_ja_override || it?.name_en || '武器',
+        }
+      : null;
   };
 
   // 1. Move action
@@ -117,7 +161,19 @@ export function resolveCombatAction(
 
   // 3. Death save
   if (input.action_key === 'death_save') {
-    const roll = input.death_save_roll ?? 1;
+    if (input.death_save_roll === undefined || input.death_save_roll === null) {
+      return {
+        action_key: 'death_save',
+        actor_id: actorPart.id,
+        actor_name: actorPart.name,
+        success: false,
+        formula: '死亡セーブの出目 (1d10) を入力してください',
+        breakdown: {},
+        changes: [],
+        missing_inputs: ['死亡セーブの出目を入力してください'],
+      };
+    }
+    const roll = input.death_save_roll;
     const penalty = (actorPart.state?.deathSavePenalty as number) ?? 0;
     const body = actorChar.stats.body;
     const res = deathSave({ roll, penalty, body });
@@ -169,15 +225,69 @@ export function resolveCombatAction(
   // 4. Reload
   if (input.action_key === 'reload') {
     const wData = getWeaponData(input.weapon_id);
-    const weaponName = wData?.name_ja || '武器';
-    const maxAmmo = wData?.magazine_max ?? 8;
+    if (!wData) {
+      return {
+        action_key: 'reload',
+        actor_id: actorPart.id,
+        actor_name: actorPart.name,
+        success: false,
+        formula: '武器を選択してください',
+        breakdown: {},
+        changes: [],
+        missing_inputs: ['武器を選択してください'],
+      };
+    }
+
+    const maxAmmo = wData.magazine_max ?? 8;
+    const actorInventory: InventoryEntry[] = (actorChar.inventory as InventoryEntry[]) || [];
+    const newInventory = [...actorInventory];
+
+    // Consume 1 unit of spare ammo from inventory if present
+    const ammoItemIdx = newInventory.findIndex(
+      (i) =>
+        i.name.includes('弾') ||
+        i.name.toLowerCase().includes('ammo') ||
+        i.name.toLowerCase().includes('bullet'),
+    );
+    if (ammoItemIdx >= 0) {
+      if (newInventory[ammoItemIdx].qty > 1) {
+        newInventory[ammoItemIdx] = {
+          ...newInventory[ammoItemIdx],
+          qty: newInventory[ammoItemIdx].qty - 1,
+        };
+      } else {
+        newInventory.splice(ammoItemIdx, 1);
+      }
+    }
+
+    const weaponIdx = newInventory.findIndex(
+      (i) => i.item_id === wData.item_id || i.name === wData.name_ja,
+    );
+    const beforeAmmo =
+      weaponIdx >= 0 && typeof newInventory[weaponIdx].ammo === 'number'
+        ? newInventory[weaponIdx].ammo
+        : (wData.magazine_max ?? 0);
+
+    if (weaponIdx >= 0) {
+      newInventory[weaponIdx] = { ...newInventory[weaponIdx], ammo: maxAmmo };
+    } else {
+      newInventory.push({
+        entry_id: 'w-' + Math.random().toString(36).slice(2),
+        item_id: wData.item_id,
+        name: wData.name_ja,
+        qty: 1,
+        equipped: true,
+        ammo: maxAmmo,
+      });
+    }
+
     return {
       action_key: 'reload',
       actor_id: actorPart.id,
       actor_name: actorPart.name,
       success: true,
-      formula: `${weaponName} をリロード (弾数 ${maxAmmo}/${maxAmmo})`,
-      breakdown: { maxAmmo },
+      formula: `${wData.name_ja} をリロード (弾数 ${maxAmmo}/${maxAmmo})`,
+      breakdown: { maxAmmo, beforeAmmo },
       changes: [
         {
           target_id: actorPart.id,
@@ -191,9 +301,17 @@ export function resolveCombatAction(
           target_id: actorChar.id,
           target_name: actorChar.name,
           field: 'ammo',
-          before: `${weaponName} 残弾`,
-          after: `${weaponName} 弾 ${maxAmmo}/${maxAmmo}`,
-          desc: `${actorChar.name} ${weaponName} 弾 ${maxAmmo}/${maxAmmo}`,
+          before: beforeAmmo,
+          after: maxAmmo,
+          desc: `${actorChar.name} ${wData.name_ja} 弾数 ${beforeAmmo} → ${maxAmmo}/${maxAmmo}`,
+        },
+        {
+          target_id: actorChar.id,
+          target_name: actorChar.name,
+          field: 'inventory',
+          before: actorInventory,
+          after: newInventory,
+          desc: `${actorChar.name} ${wData.name_ja} をリロード (残弾 ${maxAmmo})`,
         },
       ],
     };
@@ -214,7 +332,6 @@ export function resolveCombatAction(
   ];
   if (unconfirmedKeys.includes(input.action_key)) {
     const manualChanges = input.manual_changes ?? [];
-    // Mark action or move used
     const isMove = input.action_key === 'take_cover';
     const baseChanges: CombatChange[] = [
       {
@@ -243,35 +360,107 @@ export function resolveCombatAction(
 
   // 6. Ranged / Aimed / Autofire
   if (['ranged', 'aimed', 'autofire'].includes(input.action_key)) {
+    const missing_inputs: string[] = [];
     const wData = getWeaponData(input.weapon_id);
-    const weaponName = wData?.name_ja || '射撃武器';
+    if (!wData) {
+      missing_inputs.push('武器を選択してください');
+    }
+
     const isAimed = input.action_key === 'aimed';
     const isAutofire = input.action_key === 'autofire';
-    const distanceM = input.distance_m ?? 5;
 
     // DV lookup
-    const dvTableKey = isAutofire
-      ? 'dv_table.Autofire'
-      : (wData?.dv_table_key ? `dv_table.${wData.dv_table_key}` : 'dv_table.Pistol');
-    
-    let dvTable = getRuleConstant<DvTable>(dvTableKey);
-    // fallback if prefix key without dv_table. was stored
-    if (!dvTable && wData?.dv_table_key) {
-      dvTable = getRuleConstant<DvTable>(wData.dv_table_key);
-    }
-    // standard RED fallback dv table if missing
-    if (!dvTable) {
-      dvTable = [
-        { range: [0, 6], dv: 13 },
-        { range: [7, 12], dv: 15 },
-        { range: [13, 25], dv: 20 },
-        { range: [26, 50], dv: 25 },
-        { range: [51, 100], dv: 30 },
-      ];
+    let dvTable: DvTable | null = null;
+    if (wData) {
+      if (isAutofire) {
+        if (!wData.dv_table_key) {
+          missing_inputs.push('オートファイアの DV 表がありません');
+        } else {
+          const autofireKey = `${wData.dv_table_key} (Autofire)`;
+          dvTable =
+            getRuleConstant<DvTable>(`dv_table.${autofireKey}`) ||
+            getRuleConstant<DvTable>(autofireKey);
+          if (!dvTable) {
+            missing_inputs.push('オートファイアの DV 表がありません');
+          }
+        }
+        if (!wData.autofire) {
+          missing_inputs.push('この武器はオートファイアに対応していません');
+        }
+        if (input.ammo_spent === undefined || input.ammo_spent === null || input.ammo_spent <= 0) {
+          missing_inputs.push('オートファイアの消費弾数を入力してください');
+        }
+      } else {
+        if (!wData.dv_table_key) {
+          missing_inputs.push('武器の DV 表がありません');
+        } else {
+          dvTable =
+            getRuleConstant<DvTable>(`dv_table.${wData.dv_table_key}`) ||
+            getRuleConstant<DvTable>(wData.dv_table_key);
+          if (!dvTable) {
+            missing_inputs.push('武器の DV 表がありません');
+          }
+        }
+      }
     }
 
-    const dv = rangedDv(dvTable, distanceM);
-    if (dv === null) {
+    // Attacks list to resolve (supports ROF 2)
+    const rawAttacks: SingleAttackInput[] =
+      input.attacks && input.attacks.length > 0
+        ? input.attacks
+        : [
+            {
+              target_id: input.target_id,
+              distance_m: input.distance_m,
+              dodge_mode: input.dodge_mode,
+              attack_roll: input.attack_roll,
+              defense_roll: input.defense_roll,
+              damage_dice: input.damage_dice,
+              crit_injury_roll: input.crit_injury_roll,
+              aimed_location: input.aimed_location,
+              held_item_id: input.held_item_id,
+              manual_changes: input.manual_changes,
+            },
+          ];
+
+    // Ammo inventory verification
+    const actorInventory: InventoryEntry[] = (actorChar.inventory as InventoryEntry[]) || [];
+    const invWeapon = wData
+      ? actorInventory.find((i) => i.item_id === wData.item_id || i.name === wData.name_ja)
+      : undefined;
+    const currentAmmo: number | null =
+      wData && wData.magazine_max !== null && wData.magazine_max !== undefined
+        ? invWeapon && typeof invWeapon.ammo === 'number'
+          ? invWeapon.ammo
+          : wData.magazine_max
+        : null;
+
+    const totalAmmoNeeded = isAutofire ? (input.ammo_spent ?? 1) : rawAttacks.length;
+    if (currentAmmo !== null && currentAmmo < totalAmmoNeeded) {
+      missing_inputs.push(`残弾が不足しています (残弾 ${currentAmmo} / 必要 ${totalAmmoNeeded})`);
+    }
+
+    // Validate each attack
+    rawAttacks.forEach((att, idx) => {
+      const prefix = rawAttacks.length > 1 ? `第${idx + 1}攻撃: ` : '';
+      if (att.distance_m === undefined || att.distance_m === null) {
+        missing_inputs.push(`${prefix}距離を入力してください`);
+      }
+      if (!att.attack_roll) {
+        missing_inputs.push(`${prefix}出目を入力してください`);
+      } else if (
+        (att.attack_roll.first === 10 || att.attack_roll.first === 1) &&
+        att.attack_roll.extra === undefined
+      ) {
+        missing_inputs.push(
+          att.attack_roll.first === 10
+            ? `${prefix}攻撃クリティカル: 追加出目 (1d10) を入力してください`
+            : `${prefix}攻撃ファンブル: 追加出目 (1d10) を入力してください`,
+        );
+      }
+    });
+
+    if (missing_inputs.length > 0 || !wData || !dvTable) {
       return {
         action_key: input.action_key,
         actor_id: actorPart.id,
@@ -279,57 +468,14 @@ export function resolveCombatAction(
         target_id: targetPart?.id,
         target_name: targetPart?.name,
         success: false,
-        formula: `距離 ${distanceM}m: 射程外 (DV なし)`,
-        breakdown: { distanceM, inRange: false },
+        formula: missing_inputs.join(' / '),
+        breakdown: { missing_inputs },
         changes: [],
+        missing_inputs,
       };
     }
 
-    // Attack calculation
-    const stat = actorChar.stats.ref;
-    const skillName = wData?.skill || 'Handgun';
-    const skillLevel = actorChar.skills[skillName] ?? actorChar.skills['ハンドガン'] ?? 0;
-    const base = attackBase({
-      stat,
-      skillLevel,
-      woundPenalty: actorWoundPen,
-      aimed: isAimed,
-    });
-
-    const attD10 = input.attack_roll
-      ? resolveD10(input.attack_roll.first, input.attack_roll.extra).value
-      : 1;
-    const attackTotal = base + attD10;
-
-    // Defense calculation
-    let isHit = false;
-    let defFormula = '';
-    const defBreakdown: Record<string, unknown> = {};
-
-    const canDodge = targetChar ? canDodgeRanged(targetChar.stats.ref) : false;
-    const isDodging = canDodge && input.dodge_mode === 'dodge';
-
-    if (isDodging && targetChar) {
-      const defStat = targetChar.stats.dex;
-      const defSkill = targetChar.skills['Evasion'] ?? targetChar.skills['回避'] ?? 0;
-      const defWound = woundState(targetChar.hp, targetChar.hp_max);
-      const defWoundPen = woundPenalty(defWound);
-      const defD10 = input.defense_roll
-        ? resolveD10(input.defense_roll.first, input.defense_roll.extra).value
-        : 1;
-      const defTotal = defStat + defSkill + defWoundPen + defD10;
-      // Attacker must exceed defender's total (tie goes to defender)
-      isHit = attackTotal > defTotal;
-      defFormula = `DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal}`;
-      defBreakdown.dodge = { defStat, defSkill, defD10, defTotal };
-    } else {
-      isHit = attackTotal > dv;
-      defFormula = `難易度 ${dv}`;
-      defBreakdown.dv = dv;
-    }
-
-    let formula = `攻撃: REF ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${isAimed ? ' −8 (照準)' : ''} = ${attackTotal} vs ${defFormula} -> ${isHit ? '命中' : '外れ'}`;
-
+    // Resolve attacks sequentially tracking defender HP/SP
     const changes: CombatChange[] = [
       {
         target_id: actorPart.id,
@@ -341,107 +487,286 @@ export function resolveCombatAction(
       },
     ];
 
-    // Ammo consumption
-    const ammoSpent = isAutofire ? 10 : 1;
-    changes.push({
-      target_id: actorChar.id,
-      target_name: actorChar.name,
-      field: 'ammo',
-      before: `${weaponName} 残弾`,
-      after: `${weaponName} -${ammoSpent}発`,
-      desc: `${actorChar.name} ${weaponName} 弾 -${ammoSpent}発`,
-    });
-
-    if (isHit && targetChar && targetPart) {
-      // Aimed item drop
-      if (isAimed && input.aimed_location === 'held_item' && input.held_item_id) {
-        changes.push({
-          target_id: targetPart.id,
-          target_name: targetPart.name,
-          field: 'dropped',
-          before: null,
-          after: input.held_item_id,
-          desc: `${targetPart.name} の持っている物を落とさせた`,
-        });
-        formula += ` (持っている物を落とした)`;
+    // Deduct ammo from weapon inventory
+    if (currentAmmo !== null) {
+      const newAmmo = Math.max(0, currentAmmo - totalAmmoNeeded);
+      const newInventory = [...actorInventory];
+      const wIdx = newInventory.findIndex(
+        (i) => i.item_id === wData.item_id || i.name === wData.name_ja,
+      );
+      if (wIdx >= 0) {
+        newInventory[wIdx] = { ...newInventory[wIdx], ammo: newAmmo };
       } else {
-        // Damage resolution
-        const location = isAimed && input.aimed_location === 'head' ? 'head' : 'body';
-        const targetSp = location === 'head' ? targetChar.sp_head : targetChar.sp_body;
-        const damageDice = input.damage_dice ?? (isAutofire ? [1, 1] : [1, 1, 1]);
-
-        let multiplier = 1;
-        if (isAutofire) {
-          const cap = wData?.autofire ?? 3;
-          multiplier = autofireMultiplier({ attackTotal, dv, weaponCap: cap });
-        }
-
-        const dmgRes = resolveDamage({
-          dice: damageDice,
-          multiplier,
-          location,
-          sp: targetSp,
-          currentHp: targetChar.hp,
+        newInventory.push({
+          entry_id: 'w-' + Math.random().toString(36).slice(2),
+          item_id: wData.item_id,
+          name: wData.name_ja,
+          qty: 1,
+          equipped: true,
+          ammo: newAmmo,
         });
+      }
+      changes.push({
+        target_id: actorChar.id,
+        target_name: actorChar.name,
+        field: 'ammo',
+        before: currentAmmo,
+        after: newAmmo,
+        desc: `${actorChar.name} ${wData.name_ja} 弾数 ${currentAmmo}/${wData.magazine_max} → ${newAmmo}/${wData.magazine_max} (-${totalAmmoNeeded}発)`,
+      });
+      changes.push({
+        target_id: actorChar.id,
+        target_name: actorChar.name,
+        field: 'inventory',
+        before: actorInventory,
+        after: newInventory,
+        desc: `${actorChar.name} 所持品更新 (${wData.name_ja} 弾数 ${newAmmo})`,
+      });
+    }
 
-        // Target HP update
-        const newHp = Math.max(0, targetChar.hp - dmgRes.hpLoss);
-        changes.push({
-          target_id: targetChar.id,
-          target_name: targetChar.name,
-          field: 'hp',
-          before: targetChar.hp,
-          after: newHp,
-          desc: `${targetChar.name} HP ${targetChar.hp} → ${newHp} (${dmgRes.hpLoss} ダメージ)`,
-        });
+    const runningHpMap = new Map<string, number>();
+    const runningSpHeadMap = new Map<string, number>();
+    const runningSpBodyMap = new Map<string, number>();
+    let allHit = true;
+    const formulaParts: string[] = [];
 
-        // Target SP update
-        if (dmgRes.spAfter !== targetSp) {
-          const spField = location === 'head' ? 'sp_head' : 'sp_body';
-          changes.push({
-            target_id: targetChar.id,
-            target_name: targetChar.name,
-            field: spField,
-            before: targetSp,
-            after: dmgRes.spAfter,
-            desc: `${targetChar.name} SP ${location === 'head' ? '頭' : '胴'} ${targetSp} → ${dmgRes.spAfter}`,
-          });
+    for (let i = 0; i < rawAttacks.length; i++) {
+      const att = rawAttacks[i];
+      const prefix = rawAttacks.length > 1 ? `[#${i + 1}] ` : '';
+      const distanceM = att.distance_m!;
+      const dv = rangedDv(dvTable, distanceM);
+
+      const curTargetPart =
+        (att.target_id && allParticipants
+          ? allParticipants.find((p) => p.id === att.target_id)
+          : undefined) || targetPart;
+      const curTargetChar = curTargetPart?.character;
+
+      const curTargetId = curTargetChar?.id || 'default';
+      if (curTargetChar && !runningHpMap.has(curTargetId)) {
+        runningHpMap.set(curTargetId, curTargetChar.hp);
+        runningSpHeadMap.set(curTargetId, curTargetChar.sp_head);
+        runningSpBodyMap.set(curTargetId, curTargetChar.sp_body);
+      }
+      let runningHp = runningHpMap.get(curTargetId) ?? 0;
+      let runningSpHead = runningSpHeadMap.get(curTargetId) ?? 0;
+      let runningSpBody = runningSpBodyMap.get(curTargetId) ?? 0;
+
+      if (dv === null) {
+        formulaParts.push(`${prefix}距離 ${distanceM}m: 射程外 (DV なし)`);
+        allHit = false;
+        continue;
+      }
+
+      // Attack roll calculation
+      const stat = actorChar.stats.ref;
+      const skillKey = skillNameToKey(wData.skill);
+      const skillLevel = actorChar.skills[skillKey] ?? 0;
+      const base = attackBase({
+        stat,
+        skillLevel,
+        woundPenalty: actorWoundPen,
+        aimed: isAimed,
+      });
+
+      const attD10 = resolveD10(att.attack_roll!.first, att.attack_roll!.extra).value;
+      const attackTotal = base + attD10;
+
+      // Defense calculation
+      let isHit = false;
+      let defFormula = '';
+      const canDodge = curTargetChar ? canDodgeRanged(curTargetChar.stats.ref) : false;
+      const isDodging = canDodge && att.dodge_mode === 'dodge';
+
+      if (isDodging && curTargetChar) {
+        if (!att.defense_roll) {
+          missing_inputs.push(`${prefix}回避の出目を入力してください`);
+          continue;
+        }
+        if (
+          (att.defense_roll.first === 10 || att.defense_roll.first === 1) &&
+          att.defense_roll.extra === undefined
+        ) {
+          missing_inputs.push(
+            att.defense_roll.first === 10
+              ? `${prefix}回避クリティカル: 追加出目 (1d10) を入力してください`
+              : `${prefix}回避ファンブル: 追加出目 (1d10) を入力してください`,
+          );
+          continue;
         }
 
-        // Wound state check
-        const oldWound = woundState(targetChar.hp, targetChar.hp_max);
-        const newWound = woundState(newHp, targetChar.hp_max);
-        if (oldWound !== newWound) {
-          const filteredStatus = (targetChar.status || []).filter((s) => s !== 'seriously' && s !== 'mortally');
-          const addedStatus = newWound === 'seriously' ? [...filteredStatus, 'seriously'] : (newWound === 'mortally' ? [...filteredStatus, 'mortally'] : filteredStatus);
-          changes.push({
-            target_id: targetChar.id,
-            target_name: targetChar.name,
-            field: 'status',
-            before: targetChar.status,
-            after: addedStatus,
-            desc: `${targetChar.name} 状態: ${newWound === 'seriously' ? '重傷 (−2)' : (newWound === 'mortally' ? '瀕死 (−4)' : '通常')}`,
-          });
-        }
+        const defStat = curTargetChar.stats.dex;
+        const defSkillKey = skillNameToKey('evasion');
+        const defSkill = curTargetChar.skills[defSkillKey] ?? 0;
+        const defWound = woundState(runningHp, curTargetChar.hp_max);
+        const defWoundPen = woundPenalty(defWound);
+        const defD10 = resolveD10(att.defense_roll.first, att.defense_roll.extra).value;
+        const defTotal = defStat + defSkill + defWoundPen + defD10;
+        isHit = attackTotal > defTotal;
+        defFormula = `DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal}`;
+      } else {
+        isHit = attackTotal > dv;
+        defFormula = `難易度 ${dv}`;
+      }
 
-        // Critical injury check
-        if (dmgRes.criticalInjuryTable && input.crit_injury_roll) {
-          const critTable = getRuleConstant<CriticalInjuryEntry[]>(`critical_injury.${dmgRes.criticalInjuryTable}`) || [];
-          const critEntry = lookupCriticalInjury(critTable, input.crit_injury_roll);
-          if (critEntry) {
-            const injuryName = critEntry.name || '致命傷';
+      let subFormula = `${prefix}REF ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${isAimed ? ' −8' : ''} = ${attackTotal} vs ${defFormula} -> ${isHit ? '命中' : '外れ'}`;
+
+      if (!isHit) {
+        allHit = false;
+        formulaParts.push(subFormula);
+        continue;
+      }
+
+      // Hit branch
+      if (curTargetChar && curTargetPart) {
+        if (isAimed && att.aimed_location === 'held_item' && att.held_item_id) {
+          changes.push({
+            target_id: curTargetPart.id,
+            target_name: curTargetPart.name,
+            field: 'dropped',
+            before: null,
+            after: att.held_item_id,
+            desc: `${curTargetPart.name} の持っている物を落とさせた`,
+          });
+          subFormula += ` (持っている物を落とした)`;
+        } else {
+          // Requires damage dice
+          if (!att.damage_dice || att.damage_dice.length === 0) {
+            missing_inputs.push(`${prefix}ダメージダイスの出目を入力してください`);
+            continue;
+          }
+
+          const location = isAimed && att.aimed_location === 'head' ? 'head' : 'body';
+          const targetSp = location === 'head' ? runningSpHead : runningSpBody;
+
+          let multiplier = 1;
+          if (isAutofire) {
+            const cap = wData.autofire ?? 3;
+            multiplier = autofireMultiplier({ attackTotal, dv, weaponCap: cap });
+          }
+
+          const dmgRes = resolveDamage({
+            dice: att.damage_dice,
+            multiplier,
+            location,
+            sp: targetSp,
+            ignoreArmorPercent: wData.ignore_armor_percent ?? 0,
+            currentHp: runningHp,
+          });
+
+          // Check for critical injury roll requirement
+          if (dmgRes.criticalInjuryTable) {
+            if (att.crit_injury_roll === undefined || att.crit_injury_roll === null) {
+              missing_inputs.push(`${prefix}致命傷表 (2d6) の出目を入力してください`);
+              continue;
+            }
+          }
+
+          // Apply damage
+          const newHp = Math.max(0, runningHp - dmgRes.hpLoss);
+          changes.push({
+            target_id: curTargetChar.id,
+            target_name: curTargetChar.name,
+            field: 'hp',
+            before: runningHp,
+            after: newHp,
+            desc: `${curTargetChar.name} HP ${runningHp} → ${newHp} (${dmgRes.hpLoss} ダメージ)`,
+          });
+          runningHp = newHp;
+          runningHpMap.set(curTargetId, newHp);
+
+          // Apply SP ablation
+          if (dmgRes.spAfter !== targetSp) {
+            const spField = location === 'head' ? 'sp_head' : 'sp_body';
             changes.push({
-              target_id: targetChar.id,
-              target_name: targetChar.name,
-              field: 'crit_injuries',
-              before: targetChar.crit_injuries,
-              after: [...(targetChar.crit_injuries || []), critEntry],
-              desc: `${targetChar.name} 致命傷: ${injuryName} (${critEntry.summary || ''})`,
+              target_id: curTargetChar.id,
+              target_name: curTargetChar.name,
+              field: spField,
+              before: targetSp,
+              after: dmgRes.spAfter,
+              desc: `${curTargetChar.name} SP ${location === 'head' ? '頭' : '胴'} ${targetSp} → ${dmgRes.spAfter}`,
             });
-            formula += ` [致命傷: ${injuryName}]`;
+            if (location === 'head') {
+              runningSpHead = dmgRes.spAfter;
+              runningSpHeadMap.set(curTargetId, dmgRes.spAfter);
+            } else {
+              runningSpBody = dmgRes.spAfter;
+              runningSpBodyMap.set(curTargetId, dmgRes.spAfter);
+            }
+          }
+
+          // Wound state check
+          const oldWound = woundState(curTargetChar.hp, curTargetChar.hp_max);
+          const newWound = woundState(runningHp, curTargetChar.hp_max);
+          if (oldWound !== newWound) {
+            const filtered = (curTargetChar.status || []).filter(
+              (s) => s !== 'seriously' && s !== 'mortally',
+            );
+            const added =
+              newWound === 'seriously'
+                ? [...filtered, 'seriously']
+                : newWound === 'mortally'
+                  ? [...filtered, 'mortally']
+                  : filtered;
+            changes.push({
+              target_id: curTargetChar.id,
+              target_name: curTargetChar.name,
+              field: 'status',
+              before: curTargetChar.status,
+              after: added,
+              desc: `${curTargetChar.name} 状態: ${newWound === 'seriously' ? '重傷 (−2)' : newWound === 'mortally' ? '瀕死 (−4)' : '通常'}`,
+            });
+          }
+
+          // Critical injury application
+          if (dmgRes.criticalInjuryTable && att.crit_injury_roll) {
+            const critTable =
+              getRuleConstant<CriticalInjuryEntry[]>(
+                `critical_injury.${dmgRes.criticalInjuryTable}`,
+              ) || [];
+            const critEntry = lookupCriticalInjury(critTable, att.crit_injury_roll);
+            if (critEntry) {
+              const injuryName = stripHtml(critEntry.name);
+              const summary = stripHtml(critEntry.summary || '');
+              const cleanEntry: CriticalInjuryEntry = { ...critEntry, name: injuryName, summary };
+              changes.push({
+                target_id: curTargetChar.id,
+                target_name: curTargetChar.name,
+                field: 'crit_injuries',
+                before: curTargetChar.crit_injuries,
+                after: [...(curTargetChar.crit_injuries || []), cleanEntry],
+                desc: `${curTargetChar.name} 致命傷: ${injuryName}${summary ? ` (${summary})` : ''}`,
+              });
+              subFormula += ` [致命傷: ${injuryName}]`;
+            }
+          }
+
+          // Aimed leg: GM manual effect (Issue #4, do not auto-apply)
+          if (isAimed && att.aimed_location === 'leg') {
+            subFormula += ` (脚に命中: 追加効果は GM 手入力)`;
+            if (att.manual_changes && att.manual_changes.length > 0) {
+              changes.push(...att.manual_changes);
+            }
           }
         }
       }
+
+      formulaParts.push(subFormula);
+    }
+
+    if (missing_inputs.length > 0) {
+      return {
+        action_key: input.action_key,
+        actor_id: actorPart.id,
+        actor_name: actorPart.name,
+        target_id: targetPart?.id,
+        target_name: targetPart?.name,
+        success: false,
+        formula: missing_inputs.join(' / '),
+        breakdown: { missing_inputs },
+        changes: [],
+        missing_inputs,
+      };
     }
 
     return {
@@ -450,13 +775,11 @@ export function resolveCombatAction(
       actor_name: actorPart.name,
       target_id: targetPart?.id,
       target_name: targetPart?.name,
-      success: isHit,
-      formula,
+      success: allHit,
+      formula: formulaParts.join(' ｜ '),
       breakdown: {
-        attackTotal,
-        dv,
-        isHit,
-        ...defBreakdown,
+        allHit,
+        attacksResolved: rawAttacks.length,
       },
       changes,
     };
@@ -464,29 +787,74 @@ export function resolveCombatAction(
 
   // 7. Melee attack
   if (input.action_key === 'melee') {
-    const stat = actorChar.stats.dex;
-    const skillLevel = actorChar.skills['Melee Weapon'] ?? actorChar.skills['近接武器'] ?? 0;
-    const base = attackBase({ stat, skillLevel, woundPenalty: actorWoundPen });
-    const attD10 = input.attack_roll
-      ? resolveD10(input.attack_roll.first, input.attack_roll.extra).value
-      : 1;
-    const attackTotal = base + attD10;
-
-    let isHit = false;
-    let defTotal = 0;
-    if (targetChar) {
-      const defStat = targetChar.stats.dex;
-      const defSkill = targetChar.skills['Evasion'] ?? targetChar.skills['回避'] ?? 0;
-      const defWound = woundState(targetChar.hp, targetChar.hp_max);
-      const defWoundPen = woundPenalty(defWound);
-      const defD10 = input.defense_roll
-        ? resolveD10(input.defense_roll.first, input.defense_roll.extra).value
-        : 1;
-      defTotal = defStat + defSkill + defWoundPen + defD10;
-      isHit = attackTotal > defTotal;
+    const missing_inputs: string[] = [];
+    const wData = getWeaponData(input.weapon_id);
+    if (!wData) {
+      missing_inputs.push('武器を選択してください');
     }
 
-    const formula = `近接攻撃: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''} = ${attackTotal} vs 回避 ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
+    if (!input.attack_roll) {
+      missing_inputs.push('出目を入力してください');
+    } else if (
+      (input.attack_roll.first === 10 || input.attack_roll.first === 1) &&
+      input.attack_roll.extra === undefined
+    ) {
+      missing_inputs.push(
+        input.attack_roll.first === 10
+          ? '攻撃クリティカル: 追加出目 (1d10) を入力してください'
+          : '攻撃ファンブル: 追加出目 (1d10) を入力してください',
+      );
+    }
+
+    if (!targetChar || !targetPart) {
+      missing_inputs.push('対象を選択してください');
+    } else {
+      if (!input.defense_roll) {
+        missing_inputs.push('回避の出目を入力してください');
+      } else if (
+        (input.defense_roll.first === 10 || input.defense_roll.first === 1) &&
+        input.defense_roll.extra === undefined
+      ) {
+        missing_inputs.push(
+          input.defense_roll.first === 10
+            ? '回避クリティカル: 追加出目 (1d10) を入力してください'
+            : '回避ファンブル: 追加出目 (1d10) を入力してください',
+        );
+      }
+    }
+
+    if (missing_inputs.length > 0 || !wData || !targetChar || !targetPart) {
+      return {
+        action_key: 'melee',
+        actor_id: actorPart.id,
+        actor_name: actorPart.name,
+        target_id: targetPart?.id,
+        target_name: targetPart?.name,
+        success: false,
+        formula: missing_inputs.join(' / '),
+        breakdown: { missing_inputs },
+        changes: [],
+        missing_inputs,
+      };
+    }
+
+    const stat = actorChar.stats.dex;
+    const skillKey = skillNameToKey(wData.skill);
+    const skillLevel = actorChar.skills[skillKey] ?? 0;
+    const base = attackBase({ stat, skillLevel, woundPenalty: actorWoundPen });
+    const attD10 = resolveD10(input.attack_roll!.first, input.attack_roll!.extra).value;
+    const attackTotal = base + attD10;
+
+    const defStat = targetChar.stats.dex;
+    const defSkillKey = skillNameToKey('evasion');
+    const defSkill = targetChar.skills[defSkillKey] ?? 0;
+    const defWound = woundState(targetChar.hp, targetChar.hp_max);
+    const defWoundPen = woundPenalty(defWound);
+    const defD10 = resolveD10(input.defense_roll!.first, input.defense_roll!.extra).value;
+    const defTotal = defStat + defSkill + defWoundPen + defD10;
+    const isHit = attackTotal > defTotal;
+
+    let formula = `近接攻撃: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''} = ${attackTotal} vs 回避 DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
 
     const changes: CombatChange[] = [
       {
@@ -499,16 +867,53 @@ export function resolveCombatAction(
       },
     ];
 
-    if (isHit && targetChar && targetPart) {
+    if (isHit) {
+      if (!input.damage_dice || input.damage_dice.length === 0) {
+        missing_inputs.push('ダメージダイスの出目を入力してください');
+        return {
+          action_key: 'melee',
+          actor_id: actorPart.id,
+          actor_name: actorPart.name,
+          target_id: targetPart.id,
+          target_name: targetPart.name,
+          success: false,
+          formula: missing_inputs.join(' / '),
+          breakdown: { missing_inputs },
+          changes: [],
+          missing_inputs,
+        };
+      }
+
       const targetSp = targetChar.sp_body;
-      const damageDice = input.damage_dice ?? [1, 1, 1];
+      const ignoreArmorPercent = wData.ignore_armor_percent ?? 50;
+      if (ignoreArmorPercent > 0) {
+        formula += ` (防具無視 ${ignoreArmorPercent}%)`;
+      }
       const dmgRes = resolveDamage({
-        dice: damageDice,
+        dice: input.damage_dice,
         location: 'body',
         sp: targetSp,
-        ignoreArmorPercent: 50,
+        ignoreArmorPercent,
         currentHp: targetChar.hp,
       });
+
+      if (dmgRes.criticalInjuryTable) {
+        if (input.crit_injury_roll === undefined || input.crit_injury_roll === null) {
+          missing_inputs.push('致命傷表 (2d6) の出目を入力してください');
+          return {
+            action_key: 'melee',
+            actor_id: actorPart.id,
+            actor_name: actorPart.name,
+            target_id: targetPart.id,
+            target_name: targetPart.name,
+            success: false,
+            formula: missing_inputs.join(' / '),
+            breakdown: { missing_inputs },
+            changes: [],
+            missing_inputs,
+          };
+        }
+      }
 
       const newHp = Math.max(0, targetChar.hp - dmgRes.hpLoss);
       changes.push({
@@ -517,7 +922,7 @@ export function resolveCombatAction(
         field: 'hp',
         before: targetChar.hp,
         after: newHp,
-        desc: `${targetChar.name} HP ${targetChar.hp} → ${newHp} (${dmgRes.hpLoss} ダメージ, SP半減)`,
+        desc: `${targetChar.name} HP ${targetChar.hp} → ${newHp} (${dmgRes.hpLoss} ダメージ, 防具無視 ${ignoreArmorPercent}%)`,
       });
 
       if (dmgRes.spAfter !== targetSp) {
@@ -534,16 +939,45 @@ export function resolveCombatAction(
       const oldWound = woundState(targetChar.hp, targetChar.hp_max);
       const newWound = woundState(newHp, targetChar.hp_max);
       if (oldWound !== newWound) {
-        const filteredStatus = (targetChar.status || []).filter((s) => s !== 'seriously' && s !== 'mortally');
-        const addedStatus = newWound === 'seriously' ? [...filteredStatus, 'seriously'] : (newWound === 'mortally' ? [...filteredStatus, 'mortally'] : filteredStatus);
+        const filtered = (targetChar.status || []).filter(
+          (s) => s !== 'seriously' && s !== 'mortally',
+        );
+        const added =
+          newWound === 'seriously'
+            ? [...filtered, 'seriously']
+            : newWound === 'mortally'
+              ? [...filtered, 'mortally']
+              : filtered;
         changes.push({
           target_id: targetChar.id,
           target_name: targetChar.name,
           field: 'status',
           before: targetChar.status,
-          after: addedStatus,
-          desc: `${targetChar.name} 状態: ${newWound === 'seriously' ? '重傷 (−2)' : (newWound === 'mortally' ? '瀕死 (−4)' : '通常')}`,
+          after: added,
+          desc: `${targetChar.name} 状態: ${newWound === 'seriously' ? '重傷 (−2)' : newWound === 'mortally' ? '瀕死 (−4)' : '通常'}`,
         });
+      }
+
+      if (dmgRes.criticalInjuryTable && input.crit_injury_roll) {
+        const critTable =
+          getRuleConstant<CriticalInjuryEntry[]>(
+            `critical_injury.${dmgRes.criticalInjuryTable}`,
+          ) || [];
+        const critEntry = lookupCriticalInjury(critTable, input.crit_injury_roll);
+        if (critEntry) {
+          const injuryName = stripHtml(critEntry.name);
+          const summary = stripHtml(critEntry.summary || '');
+          const cleanEntry: CriticalInjuryEntry = { ...critEntry, name: injuryName, summary };
+          changes.push({
+            target_id: targetChar.id,
+            target_name: targetChar.name,
+            field: 'crit_injuries',
+            before: targetChar.crit_injuries,
+            after: [...(targetChar.crit_injuries || []), cleanEntry],
+            desc: `${targetChar.name} 致命傷: ${injuryName}${summary ? ` (${summary})` : ''}`,
+          });
+          formula += ` [致命傷: ${injuryName}]`;
+        }
       }
     }
 
@@ -551,8 +985,8 @@ export function resolveCombatAction(
       action_key: 'melee',
       actor_id: actorPart.id,
       actor_name: actorPart.name,
-      target_id: targetPart?.id,
-      target_name: targetPart?.name,
+      target_id: targetPart.id,
+      target_name: targetPart.name,
       success: isHit,
       formula,
       breakdown: { attackTotal, defTotal, isHit },

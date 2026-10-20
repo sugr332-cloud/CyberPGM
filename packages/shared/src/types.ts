@@ -102,6 +102,7 @@ export interface Weapon {
   ammo_types: string | null; // JSON array string
   is_ranged: boolean | null;
   suppressive?: boolean | null;
+  ignore_armor_percent?: number | null;
 }
 
 export interface Armor {
@@ -228,6 +229,7 @@ export interface InventoryEntry {
   name: string;
   qty: number;
   equipped?: boolean;
+  ammo?: number;
   notes?: string;
 }
 

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { createDb } from '../apps/server/src/db/client.js';
-import { characters, combats, combat_participants, combat_log, devices } from '../apps/server/src/db/schema.js';
+import { characters } from '../apps/server/src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { generateUlid } from '@cyberpgm/shared';
 
@@ -84,6 +84,12 @@ test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM A
   const healthData = await healthRes.json();
   const sessionCode = healthData.session;
 
+  // Set Viper initiative roll to 10 so Viper acts first
+  const viperInput = gmPage.locator('div').filter({ has: gmPage.getByText('ヴァイパー', { exact: true }) }).locator('input[type="number"]').last();
+  if (await viperInput.isVisible()) {
+    await viperInput.fill('10');
+  }
+
   // Confirm Initiative and Start Combat
   await gmPage.getByRole('button', { name: '行動順を確定して戦闘開始' }).first().click();
 
@@ -129,15 +135,28 @@ test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM A
   const targetGangerBtn = gmPage.locator('button', { hasText: 'ガンガー #1' }).last();
   await targetGangerBtn.click();
 
-  // Set distance 5m and attack roll 10 to guarantee hit (18 > DV 13)
+  // Select valid weapon if dropdown exists
+  const weaponSelect = gmPage.locator('select').filter({ hasText: /武器を選択/ });
+  if (await weaponSelect.isVisible()) {
+    const options = await weaponSelect.locator('option').all();
+    for (const opt of options) {
+      const val = await opt.getAttribute('value');
+      if (val && val !== '') {
+        await weaponSelect.selectOption(val);
+        break;
+      }
+    }
+  }
+
+  // Set distance 5m and attack roll 8 to guarantee hit (14 + 8 = 22 > DV 13)
   const distanceInput = gmPage.getByRole('spinbutton').nth(0);
   await distanceInput.fill('5');
   const attackInput = gmPage.getByRole('spinbutton').nth(1);
-  await attackInput.fill('10');
+  await attackInput.fill('8');
 
   const damageInput = gmPage.getByPlaceholder('6, 6, 2');
   if (await damageInput.isVisible()) {
-    await damageInput.fill('6, 6, 2');
+    await damageInput.fill('6, 5, 2');
   }
 
   // Calculate resolution

@@ -26,6 +26,7 @@ export const InventoryEntrySchema = z.object({
   name: z.string(),
   qty: z.number().int().positive().default(1),
   equipped: z.boolean().optional(),
+  ammo: z.number().int().nonnegative().optional(),
   notes: z.string().optional(),
 });
 

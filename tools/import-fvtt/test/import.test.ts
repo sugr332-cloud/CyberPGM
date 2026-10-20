@@ -56,7 +56,7 @@ describe('FVTT Importer', () => {
       dbPath: testDbPath,
     });
 
-    expect(report.total.added).toBe(3);
+    expect(report.total.added).toBe(4);
     expect(report.total.updated).toBe(0);
     expect(report.total.unchanged).toBe(0);
 
@@ -86,6 +86,18 @@ describe('FVTT Importer', () => {
     expect(weaponSub.rof).toBe(2);
     expect(weaponSub.magazine_max).toBe(12);
     expect(weaponSub.is_ranged).toBe(1);
+    expect(weaponSub.ignore_armor_percent).toBe(0);
+
+    // Verify melee weapon ignore_armor_percent
+    const meleeItem = sqlite
+      .prepare('SELECT * FROM items WHERE fvtt_id = ?')
+      .get('testWeapon000002') as Record<string, unknown>;
+    expect(meleeItem).toBeDefined();
+    const meleeSub = sqlite
+      .prepare('SELECT * FROM weapons WHERE item_id = ?')
+      .get(meleeItem.id as string) as Record<string, unknown>;
+    expect(meleeSub).toBeDefined();
+    expect(meleeSub.ignore_armor_percent).toBe(50);
 
     // Verify armor
     const armorItem = sqlite
@@ -130,7 +142,7 @@ describe('FVTT Importer', () => {
       srcDir: fixtureSrcDir,
       dbPath: testDbPath,
     });
-    expect(report1.total.added).toBe(3);
+    expect(report1.total.added).toBe(4);
 
     // Run 2
     const report2 = runImport({
@@ -139,11 +151,11 @@ describe('FVTT Importer', () => {
     });
     expect(report2.total.added).toBe(0);
     expect(report2.total.updated).toBe(0);
-    expect(report2.total.unchanged).toBe(3);
+    expect(report2.total.unchanged).toBe(4);
 
     const sqlite = new Database(testDbPath);
     const count = sqlite.prepare('SELECT count(*) as c FROM items').get() as { c: number };
-    expect(count.c).toBe(3);
+    expect(count.c).toBe(4);
     sqlite.close();
   });
 

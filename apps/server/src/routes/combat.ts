@@ -26,6 +26,7 @@ import {
   CombatChange,
 } from '@cyberpgm/shared';
 import { resolveCombatAction } from '../services/combat-resolver.js';
+import { woundState } from '@cyberpgm/rules';
 
 export const combatRoutes = new Hono();
 
@@ -650,11 +651,12 @@ combatRoutes.post('/combats/:id/resolve', requireGm, async (c) => {
   const actor = combat.participants.find((p) => p.id === parsed.data.actor_id);
   if (!actor) return c.json({ error: 'Actor not found in combat' }, 404);
 
-  const target = parsed.data.target_id
-    ? combat.participants.find((p) => p.id === parsed.data.target_id)
+  const targetId = parsed.data.target_id || parsed.data.attacks?.[0]?.target_id;
+  const target = targetId
+    ? combat.participants.find((p) => p.id === targetId)
     : undefined;
 
-  const result = resolveCombatAction(db, parsed.data, actor, target);
+  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants);
   return c.json({ result });
 });
 
@@ -676,12 +678,13 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
   const actor = combat.participants.find((p) => p.id === parsed.data.actor_id);
   if (!actor) return c.json({ error: 'Actor not found in combat' }, 404);
 
-  const target = parsed.data.target_id
-    ? combat.participants.find((p) => p.id === parsed.data.target_id)
+  const targetId = parsed.data.target_id || parsed.data.attacks?.[0]?.target_id;
+  const target = targetId
+    ? combat.participants.find((p) => p.id === targetId)
     : undefined;
 
   // Re-resolve calculation on server
-  const result = resolveCombatAction(db, parsed.data, actor, target);
+  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants);
   const now = Date.now();
   const logId = generateUlid();
 
@@ -762,6 +765,10 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
           ch.after ? 1 : 0,
           ch.target_id,
         );
+      } else if (ch.field === 'inventory') {
+        sqlite
+          .prepare('UPDATE characters SET inventory = ?, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify(ch.after), now, ch.target_id);
       } else if (ch.field === 'dropped' && target) {
         // Drop held item
         if (target.character_id && typeof ch.after === 'string') {
@@ -788,7 +795,7 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
 
   applyTx();
 
-  // Notify players and GMs
+  // 11.9: Notify players and GMs (filter enemy numeric hp/sp from player notification)
   if (target?.character_id) {
     sessionManager.updateCharacterSheet(target.character_id);
     sessionManager.notifyCombatResult({
@@ -801,11 +808,50 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
   }
   if (actor.character_id && actor.character_id !== target?.character_id) {
     sessionManager.updateCharacterSheet(actor.character_id);
+
+    // Filter enemy HP/SP for attacker player
+    const isEnemyTarget = target && target.side === 'enemy';
+    const playerChanges = result.changes
+      .filter((ch) => {
+        // Do not leak enemy SP
+        if (isEnemyTarget && ch.target_id === target.character_id) {
+          if (ch.field === 'sp_head' || ch.field === 'sp_body') return false;
+        }
+        return true;
+      })
+      .map((ch) => {
+        // Do not leak enemy numeric HP
+        if (isEnemyTarget && ch.target_id === target.character_id && ch.field === 'hp') {
+          const dmg =
+            typeof ch.before === 'number' && typeof ch.after === 'number'
+              ? ch.before - ch.after
+              : 0;
+          const maxHp = target.character?.hp_max ?? 1;
+          const afterHp = typeof ch.after === 'number' ? ch.after : 0;
+          const wound = woundState(afterHp, maxHp);
+          const woundDesc =
+            wound === 'seriously'
+              ? '重傷'
+              : wound === 'mortally'
+                ? '瀕死'
+                : wound === 'dead'
+                  ? '死亡'
+                  : '通常';
+          return {
+            target_id: ch.target_id,
+            target_name: ch.target_name,
+            field: 'custom' as const,
+            desc: `命中 · ${ch.target_name} に ${dmg} ダメージ → ${woundDesc}`,
+          };
+        }
+        return ch;
+      });
+
     sessionManager.notifyCombatResult({
       characterId: actor.character_id,
       title: '行動結果',
       summary: result.formula,
-      changes: result.changes,
+      changes: playerChanges,
       is_victim: false,
     });
   }
@@ -894,6 +940,10 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
           ch.before ? 1 : 0,
           ch.target_id,
         );
+      } else if (ch.field === 'inventory') {
+        sqlite
+          .prepare('UPDATE characters SET inventory = ?, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify(ch.before), now, ch.target_id);
       }
     }
 
