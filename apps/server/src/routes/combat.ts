@@ -868,7 +868,7 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
   applyTx();
 
   if (combat.board_id) {
-    sessionManager.broadcastBoardUpdate(combat.board_id);
+    sessionManager.broadcastBoardUpdate({ id: combat.board_id });
     sessionManager.broadcastScreenUpdate();
   }
 
@@ -1053,7 +1053,7 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
   const updatedCombat = getHydratedCombat(combatId);
   sessionManager.broadcastCombatUpdate(updatedCombat);
   if (updatedCombat?.board_id) {
-    sessionManager.broadcastBoardUpdate(updatedCombat.board_id);
+    sessionManager.broadcastBoardUpdate({ id: updatedCombat.board_id });
     sessionManager.broadcastScreenUpdate();
   }
 

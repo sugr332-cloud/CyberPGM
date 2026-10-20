@@ -13,6 +13,7 @@ import {
   findReachableSquares,
   checkLineOfSight,
   gridDistance,
+  BoardObstacle,
 } from '@cyberpgm/rules';
 import {
   CombatChange,
@@ -740,7 +741,7 @@ export function resolveCombatAction(
         const losRes = checkLineOfSight(
           { x: actorToken.x, y: actorToken.y },
           { x: targetToken.x, y: targetToken.y },
-          boardObs,
+          boardObs as unknown as BoardObstacle[],
         );
 
         if (input.distance_m === undefined || input.distance_m === null) {
@@ -1017,14 +1018,15 @@ export function resolveCombatAction(
                 ),
               )
               .get();
-            const droppedItem = curTargetChar.inventory.find(
-              (i) => i.entry_id === att.held_item_id || i.item_id === att.held_item_id,
+            const droppedItem = (curTargetChar.inventory as any[]).find(
+              (i: any) => i.entry_id === att.held_item_id || i.item_id === att.held_item_id,
             );
             if (targetToken && droppedItem) {
               const dropId = generateUlid();
+              const itemName = (droppedItem as any).name || 'アイテム';
               changes.push({
                 target_id: dropId,
-                target_name: droppedItem.name,
+                target_name: itemName,
                 field: 'board_drop',
                 before: null,
                 after: {
@@ -1035,7 +1037,7 @@ export function resolveCombatAction(
                   inventory_entry: droppedItem,
                   from_character_id: curTargetChar.id,
                 },
-                desc: `${curTargetPart.name} が ${droppedItem.name} を足元 (${targetToken.x}, ${targetToken.y}) に落とした`,
+                desc: `${curTargetPart.name} が ${itemName} を足元 (${targetToken.x}, ${targetToken.y}) に落とした`,
               });
             }
           }

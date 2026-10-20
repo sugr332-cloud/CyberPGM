@@ -7,7 +7,7 @@ import {
   Combat,
   CombatParticipant,
 } from '@cyberpgm/shared';
-import { calculateWoundState } from '@cyberpgm/rules';
+import { woundState, LosStatus } from '@cyberpgm/rules';
 
 export interface BoardViewProps {
   board: Board;
@@ -26,7 +26,7 @@ export interface BoardViewProps {
     y1: number;
     x2: number;
     y2: number;
-    status: 'clear' | 'partial' | 'blocked';
+    status: LosStatus | 'partial';
   } | null;
   isGm?: boolean;
   isScreen?: boolean;
@@ -98,7 +98,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
       if (isScreen && t.gm_only) return false;
       if (isScreen && combat) {
         const p = combat.participants.find(
-          (part) => part.id === t.participant_id || part.character_id === t.character_id
+          (part) => part.character_id === t.character_id || part.id === t.character_id
         );
         if (p && p.side === 'enemy') {
           const status = (p.character?.status as string[]) || (p as any).status || [];
@@ -116,7 +116,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
     (token: BoardToken): CombatParticipant | undefined => {
       if (!combat) return undefined;
       return combat.participants.find(
-        (p) => p.id === token.participant_id || (token.character_id && p.character_id === token.character_id)
+        (p) => p.character_id === token.character_id || p.id === token.character_id
       );
     },
     [combat]
@@ -427,6 +427,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                 return (
                   <rect
                     key={coord}
+                    data-cell={coord}
                     x={cx * cellPx}
                     y={cy * cellPx}
                     width={cellPx}
@@ -632,12 +633,12 @@ export const BoardView: React.FC<BoardViewProps> = ({
               const isTarget = part && part.id === targetParticipantId;
 
               const char = part?.character;
-              const currentHp = char?.hp_current ?? part?.hp_current ?? 0;
-              const maxHp = char?.hp_max ?? part?.hp_max ?? 1;
+              const currentHp = char?.hp ?? 0;
+              const maxHp = char?.hp_max ?? 1;
               const isDead = currentHp <= 0;
 
               // Wound state for screen or badges
-              const wound = calculateWoundState(currentHp, maxHp);
+              const wound = woundState(currentHp, maxHp);
 
               const name = part?.name || char?.name || (isAlly ? '味方' : '敵');
               const initial = name.slice(0, 1);
@@ -697,13 +698,13 @@ export const BoardView: React.FC<BoardViewProps> = ({
                   />
 
                   {/* Character Avatar or Initial */}
-                  {char?.image_id ? (
+                  {char?.image_path ? (
                     <>
                       <clipPath id={`clip-${tok.id}`}>
                         <circle cx={tx} cy={ty} r={r - 1} />
                       </clipPath>
                       <image
-                        href={`/api/images/${char.image_id}`}
+                        href={char.image_path.startsWith('/') ? char.image_path : `/api/images/${char.image_path}`}
                         x={tx - r}
                         y={ty - r}
                         width={r * 2}
@@ -740,6 +741,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                   )}
                   {tok.gm_only && !isScreen && (
                     <text
+                      className="gm-token-badge"
                       x={tx}
                       y={ty - r - 2}
                       fill="#FFFFFF"
@@ -775,11 +777,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
                         height={10}
                         rx={2}
                         fill={
-                          wound === 'healthy'
+                          wound === 'ok'
                             ? '#15803D'
-                            : wound === 'seriously_wounded'
+                            : wound === 'seriously'
                             ? '#B45309'
-                            : wound === 'mortally_wounded'
+                            : wound === 'mortally'
                             ? '#B91C1C'
                             : '#475569'
                         }
@@ -792,11 +794,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
                         fontWeight="bold"
                         textAnchor="middle"
                       >
-                        {wound === 'healthy'
+                        {wound === 'ok'
                           ? '健康'
-                          : wound === 'seriously_wounded'
+                          : wound === 'seriously'
                           ? '重傷'
-                          : wound === 'mortally_wounded'
+                          : wound === 'mortally'
                           ? '瀕死'
                           : '死亡'}
                       </text>

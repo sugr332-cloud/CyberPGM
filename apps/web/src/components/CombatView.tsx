@@ -124,7 +124,14 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const refreshBoard = useCallback(async (boardId: string) => {
     try {
       const data = await api.getBoard(boardId);
-      setBoardData(data);
+      if (data && data.board) {
+        setBoardData({
+          board: data.board,
+          objects: data.board.objects || [],
+          tokens: data.board.tokens || [],
+          drops: data.board.drops || [],
+        });
+      }
     } catch (err) {
       console.warn('Failed to fetch board details:', err);
     }
@@ -158,17 +165,17 @@ export const CombatView: React.FC<CombatViewProps> = ({
   // Board Object & Token Handlers
   const handleAutoPlaceTokens = async () => {
     if (!combat || !boardData) return;
-    const existingParticipantIds = new Set(boardData.tokens.map((t) => t.participant_id));
+    const existingIds = new Set(boardData.tokens.map((t) => t.character_id));
     let allyCount = 0;
     let enemyCount = 0;
     for (const p of combat.participants) {
-      if (!existingParticipantIds.has(p.id)) {
+      const matchId = p.character_id || p.id;
+      if (!existingIds.has(matchId)) {
         const isAlly = p.side === 'ally';
         const x = isAlly ? 2 : 12;
         const y = isAlly ? 2 + allyCount++ : 2 + enemyCount++;
         await api.createBoardToken(boardData.board.id, {
-          participant_id: p.id,
-          character_id: p.character_id,
+          character_id: matchId,
           x,
           y,
           gm_only: false,
@@ -247,12 +254,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
     if (selectedActionKey !== 'move' && selectedActionKey !== 'run') return undefined;
 
     const token = boardData.tokens.find(
-      (t) => t.participant_id === activePart.id || (t.character_id && t.character_id === activePart.character_id)
+      (t) => (activePart.character_id && t.character_id === activePart.character_id) || t.character_id === activePart.id
     );
     if (!token) return undefined;
 
     const start = { x: token.x, y: token.y };
-    const charMove = activePart.character?.move ?? 6;
+    const charMove = activePart.character?.stats?.move ?? 6;
     const maxMoves = selectedActionKey === 'run' ? charMove * 2 : charMove;
 
     const blockedCells = new Set<string>();
@@ -280,42 +287,36 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
     const reachable = findReachableSquares({
       start,
-      maxMoves,
-      blockedCells,
-      stoppingBlockedCells,
+      maxSquares: maxMoves,
+      isPassable: (pt) => !blockedCells.has(`${pt.x},${pt.y}`),
+      canStop: (pt) => !stoppingBlockedCells.has(`${pt.x},${pt.y}`),
       bounds,
     });
 
-    return new Set(reachable.keys());
+    return new Set(reachable.map((pt) => `${pt.x},${pt.y}`));
   }, [boardData, activePart, selectedActionKey]);
 
   // LoS and Distance calculation
   const losInfo = useMemo(() => {
     if (!boardData || !activePart || !targetParticipantId) return null;
     const shooterToken = boardData.tokens.find(
-      (t) => t.participant_id === activePart.id || (t.character_id && t.character_id === activePart.character_id)
+      (t) => (activePart.character_id && t.character_id === activePart.character_id) || t.character_id === activePart.id
     );
+    const targetPart = combat?.participants.find((p) => p.id === targetParticipantId);
     const targetToken = boardData.tokens.find(
-      (t) => t.participant_id === targetParticipantId || (t.character_id && t.character_id === combat?.participants.find((p) => p.id === targetParticipantId)?.character_id)
+      (t) => (targetPart?.character_id && t.character_id === targetPart.character_id) || t.character_id === targetParticipantId
     );
     if (!shooterToken || !targetToken) return null;
 
-    const bounds = {
-      cols: boardData.board.grid?.cols || 20,
-      rows: boardData.board.grid?.rows || 15,
-    };
-
-    const losResult = checkLineOfSight({
-      start: { x: shooterToken.x, y: shooterToken.y },
-      target: { x: targetToken.x, y: targetToken.y },
-      objects: boardData.objects,
-      bounds,
-    });
+    const losResult = checkLineOfSight(
+      { x: shooterToken.x, y: shooterToken.y },
+      { x: targetToken.x, y: targetToken.y },
+      boardData.objects,
+    );
 
     const distChebyshev = gridDistance(
       { x: shooterToken.x, y: shooterToken.y },
       { x: targetToken.x, y: targetToken.y },
-      'chebyshev'
     );
     const autoDistanceM = distChebyshev * (boardData.board.grid?.cell_m || 2);
 
@@ -330,7 +331,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       autoDistanceM,
       status: effectiveStatus,
       rawStatus: losResult.status,
-      hitCoverObject: losResult.hitCoverObject,
+      hitCoverObject: losResult.coverObjects?.[0],
     };
   }, [boardData, activePart, targetParticipantId, combat, losOverride]);
 
@@ -349,7 +350,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const nearbyDrops = useMemo(() => {
     if (!boardData || !activePart) return [];
     const activeToken = boardData.tokens.find(
-      (t) => t.participant_id === activePart.id || (t.character_id && t.character_id === activePart.character_id)
+      (t) => (activePart.character_id && t.character_id === activePart.character_id) || t.character_id === activePart.id
     );
     if (!activeToken) return [];
 
@@ -357,7 +358,6 @@ export const CombatView: React.FC<CombatViewProps> = ({
       const dist = gridDistance(
         { x: activeToken.x, y: activeToken.y },
         { x: d.x, y: d.y },
-        'chebyshev'
       );
       return dist <= 1;
     });
@@ -1229,7 +1229,19 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
             <button
               type="button"
-              onClick={() => setIsTvBroadcasting(!isTvBroadcasting)}
+              onClick={async () => {
+                const nextVal = !isTvBroadcasting;
+                setIsTvBroadcasting(nextVal);
+                if (combat) {
+                  try {
+                    await api.updateCombat(combat.id, {
+                      settings: { broadcastToTv: nextVal },
+                    });
+                  } catch (err) {
+                    console.warn('Failed to update TV broadcast setting:', err);
+                  }
+                }
+              }}
               style={{
                 backgroundColor: isTvBroadcasting ? 'rgba(79, 182, 227, 0.2)' : 'var(--color-surface-elevated)',
                 border: `1px solid ${isTvBroadcasting ? 'var(--color-ally)' : 'var(--color-border-light)'}`,
@@ -1674,6 +1686,99 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     ) : null;
                   })()}
 
+                  {/* Movement Action Guide */}
+                  {['move', 'run'].includes(selectedActionKey) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                        盤面の青いマスをクリックして移動先を選択してください。
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.9rem' }}>
+                        <span>
+                          移動先: <strong>{destination ? `(${destination.x}, ${destination.y})` : '未選択'}</strong>
+                        </span>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                          <input
+                            type="checkbox"
+                            checked={forceMove}
+                            onChange={(e) => setForceMove(e.target.checked)}
+                          />
+                          強制移動 (GM: 障害物・移動範囲を無視)
+                        </label>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleConfirmMove}
+                        disabled={!destination || isApplying}
+                        style={{
+                          backgroundColor: destination ? 'var(--color-ally)' : 'var(--color-surface)',
+                          color: destination ? '#000' : 'var(--color-text-muted)',
+                          border: 'none',
+                          padding: '10px',
+                          borderRadius: '4px',
+                          fontWeight: 700,
+                          cursor: destination ? 'pointer' : 'not-allowed',
+                        }}
+                      >
+                        {isApplying ? '移動反映中...' : '移動を確定して反映'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Pickup Action Guide */}
+                  {selectedActionKey === 'pickup' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                        足元または隣接マスにある落とし物を所持品に戻します。
+                      </div>
+                      {nearbyDrops.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>拾うアイテムを選択:</span>
+                          <select
+                            value={pickupDropId || ''}
+                            onChange={(e) => setPickupDropId(e.target.value)}
+                            style={{
+                              padding: '6px 10px',
+                              backgroundColor: 'var(--color-bg)',
+                              border: '1px solid var(--color-border-light)',
+                              borderRadius: '4px',
+                              color: 'var(--color-text)',
+                            }}
+                          >
+                            <option value="">落とし物を選択...</option>
+                            {nearbyDrops.map((d) => {
+                              const name = (d.inventory_entry as any)?.name || 'アイテム';
+                              return (
+                                <option key={d.id} value={d.id}>
+                                  {name} ({d.x}, {d.y})
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={handleConfirmPickup}
+                            disabled={!pickupDropId || isApplying}
+                            style={{
+                              backgroundColor: pickupDropId ? 'var(--color-ally)' : 'var(--color-surface)',
+                              color: pickupDropId ? '#000' : 'var(--color-text-muted)',
+                              border: 'none',
+                              padding: '10px',
+                              borderRadius: '4px',
+                              fontWeight: 700,
+                              cursor: pickupDropId ? 'pointer' : 'not-allowed',
+                            }}
+                          >
+                            {isApplying ? '反映中...' : '拾って所持品に戻す'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.85rem', color: 'var(--color-warning)' }}>
+                          足元・隣接マスに拾える落とし物はありません。
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Weapon Selection (for ranged / melee / reload) */}
                   {['ranged', 'aimed', 'autofire', 'melee', 'reload'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1799,22 +1904,158 @@ export const CombatView: React.FC<CombatViewProps> = ({
                       </div>
 
                       {['ranged', 'aimed', 'autofire'].includes(selectedActionKey) && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                          <span style={{ fontSize: '0.85rem' }}>距離 (m):</span>
-                          <input
-                            type="number"
-                            min={0}
-                            value={distanceM}
-                            onChange={(e) => setDistanceM(Number(e.target.value) || 0)}
-                            style={{
-                              width: '60px',
-                              padding: '4px 6px',
-                              backgroundColor: 'var(--color-bg)',
-                              border: '1px solid var(--color-border-light)',
-                              borderRadius: '4px',
-                              color: 'var(--color-text)',
-                            }}
-                          />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.85rem' }}>距離 (m):</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={distanceM}
+                              onChange={(e) => setDistanceM(Number(e.target.value) || 0)}
+                              style={{
+                                width: '60px',
+                                padding: '4px 6px',
+                                backgroundColor: 'var(--color-bg)',
+                                border: '1px solid var(--color-border-light)',
+                                borderRadius: '4px',
+                                color: 'var(--color-text)',
+                              }}
+                            />
+                            {losInfo && (
+                              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                                (盤面自動: {losInfo.autoDistanceM}m)
+                              </span>
+                            )}
+                          </div>
+
+                          {/* LoS Status Badge & Override */}
+                          {losInfo && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.85rem',
+                                  fontWeight: 700,
+                                  color:
+                                    losInfo.status === 'clear'
+                                      ? 'var(--color-ally)'
+                                      : losInfo.status === 'cover' || losInfo.status === 'partial'
+                                      ? 'var(--color-warning)'
+                                      : 'var(--color-danger)',
+                                }}
+                              >
+                                {losInfo.status === 'clear'
+                                  ? '射線: ○ クリア'
+                                  : losInfo.status === 'cover' || losInfo.status === 'partial'
+                                  ? `射線: △ 遮蔽越し (${losInfo.hitCoverObject?.label || '遮蔽物'} HP:${losInfo.hitCoverObject?.cover_hp ?? '未設定'})`
+                                  : '射線: × 射撃不可'}
+                              </span>
+
+                              <select
+                                value={losOverride}
+                                onChange={(e) => setLosOverride(e.target.value as any)}
+                                style={{
+                                  padding: '2px 6px',
+                                  backgroundColor: 'var(--color-bg)',
+                                  border: '1px solid var(--color-border-light)',
+                                  borderRadius: '4px',
+                                  color: 'var(--color-text)',
+                                  fontSize: '0.75rem',
+                                }}
+                              >
+                                <option value="auto">射線: 自動判定</option>
+                                <option value="clear">強制: 通る (クリア)</option>
+                                <option value="partial">強制: 遮蔽越し</option>
+                                <option value="blocked">強制: 撃てない</option>
+                              </select>
+                            </div>
+                          )}
+
+                          {/* Cover Rule Warning & Damage input */}
+                          {(losInfo?.status === 'cover' || losInfo?.status === 'partial' || losOverride === 'partial') && (
+                            <div
+                              style={{
+                                padding: '8px 10px',
+                                backgroundColor: 'rgba(235, 179, 58, 0.15)',
+                                borderLeft: '3px solid var(--color-warning)',
+                                fontSize: '0.8rem',
+                                color: 'var(--color-warning)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '6px',
+                              }}
+                            >
+                              <span>
+                                遮蔽物越し（ルール確認中 Issue #5）。遮蔽物に当てるかは GM が決める
+                              </span>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 600 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={hitCover}
+                                  onChange={(e) => setHitCover(e.target.checked)}
+                                />
+                                遮蔽物に当てる
+                              </label>
+                              {hitCover && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                  {boardData && boardData.objects.some((o) => o.cover_hp !== null) && (
+                                    <select
+                                      value={coverObjectId || losInfo?.hitCoverObject?.id || ''}
+                                      onChange={(e) => setCoverObjectId(e.target.value || null)}
+                                      style={{
+                                        padding: '3px 6px',
+                                        backgroundColor: 'var(--color-bg)',
+                                        border: '1px solid var(--color-border-light)',
+                                        borderRadius: '4px',
+                                        color: 'var(--color-text)',
+                                        fontSize: '0.85rem',
+                                      }}
+                                    >
+                                      <option value="">(対象遮蔽物)</option>
+                                      {boardData.objects
+                                        .filter((o) => o.cover_hp !== null)
+                                        .map((o) => (
+                                          <option key={o.id} value={o.id}>
+                                            {o.label || '遮蔽物'} (HP: {o.cover_hp})
+                                          </option>
+                                        ))}
+                                    </select>
+                                  )}
+                                  <span>遮蔽物へのダメージ:</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    placeholder="ダメージ値"
+                                    value={coverDamageInput}
+                                    onChange={(e) => setCoverDamageInput(e.target.value)}
+                                    style={{
+                                      width: '70px',
+                                      padding: '3px 6px',
+                                      backgroundColor: 'var(--color-bg)',
+                                      border: '1px solid var(--color-border-light)',
+                                      borderRadius: '4px',
+                                      color: 'var(--color-text)',
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Melee adjacency notice */}
+                      {['melee', 'brawl'].includes(selectedActionKey) && meleeBlocked && (
+                        <div
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: 'rgba(235, 75, 75, 0.15)',
+                            borderLeft: '3px solid var(--color-danger)',
+                            color: 'var(--color-danger)',
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                          }}
+                        >
+                          ⚠ 近接攻撃・格闘は隣接（1マス）の対象のみ可能です（現在 {losInfo?.distSquares} マス離れています）
                         </div>
                       )}
 
@@ -2261,164 +2502,6 @@ export const CombatView: React.FC<CombatViewProps> = ({
         </div>
       </div>
 
-      {/* Board View Section */}
-      {boardData ? (
-        <div
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '8px',
-            padding: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                盤面: {boardData.board.name}
-              </span>
-              {boardData.board.background_image_visibility === 'gm' && (
-                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', backgroundColor: 'rgba(235, 179, 58, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--color-warning)' }}>
-                  ⚠ この背景は GM のみの画像です。TV に出すには公開設定を変えてください
-                </span>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button
-                type="button"
-                onClick={handleAutoPlaceTokens}
-                style={{
-                  backgroundColor: 'var(--color-surface-elevated)',
-                  border: '1px solid var(--color-border-light)',
-                  color: 'var(--color-text)',
-                  padding: '4px 10px',
-                  borderRadius: '4px',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                }}
-              >
-                未配置の参加者コマを配置
-              </button>
-              {boards.length > 1 && (
-                <select
-                  value={boardData.board.id}
-                  onChange={(e) => handleSelectBoard(e.target.value)}
-                  style={{
-                    padding: '4px 8px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                    fontSize: '0.8rem',
-                  }}
-                >
-                  {boards.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          </div>
-
-          <BoardView
-            board={boardData.board}
-            objects={boardData.objects}
-            tokens={boardData.tokens}
-            drops={boardData.drops}
-            combat={combat}
-            activeParticipantId={activePart?.id}
-            targetParticipantId={targetParticipantId}
-            mode={selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}
-            reachableCells={reachableCells}
-            destination={destination}
-            onSelectDestination={(dest) => setDestination(dest)}
-            losLine={
-              losInfo
-                ? {
-                    x1: losInfo.x1,
-                    y1: losInfo.y1,
-                    x2: losInfo.x2,
-                    y2: losInfo.y2,
-                    status: losInfo.status,
-                  }
-                : null
-            }
-            isGm={true}
-            onUpdateObject={handleUpdateObject}
-            onDeleteObject={handleDeleteObject}
-            onCreateObject={handleCreateObject}
-            onMoveToken={handleMoveToken}
-            onSelectDrop={(drop) => {
-              setSelectedActionKey('pickup');
-              setPickupDropId(drop.id);
-            }}
-            onSelectParticipant={(pid) => setTargetParticipantId(pid)}
-          />
-        </div>
-      ) : (
-        <div
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px dashed var(--color-border)',
-            borderRadius: '8px',
-            padding: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-          }}
-        >
-          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
-            盤面が設定されていません。既存の盤面を選択するか、新規作成してください。
-          </span>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {boards.length > 0 && (
-              <select
-                onChange={(e) => {
-                  if (e.target.value) handleSelectBoard(e.target.value);
-                }}
-                defaultValue=""
-                style={{
-                  padding: '6px 10px',
-                  backgroundColor: 'var(--color-bg)',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: '4px',
-                  color: 'var(--color-text)',
-                  fontSize: '0.85rem',
-                }}
-              >
-                <option value="" disabled>盤面を選択...</option>
-                {boards.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button
-              type="button"
-              onClick={handleCreateBoard}
-              style={{
-                backgroundColor: 'var(--color-ally)',
-                color: '#000',
-                border: 'none',
-                padding: '6px 14px',
-                borderRadius: '4px',
-                fontWeight: 700,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-              }}
-            >
-              + 盤面を作成
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Combat Log Bottom Section */}
       <div
         style={{
@@ -2458,164 +2541,6 @@ export const CombatView: React.FC<CombatViewProps> = ({
           )}
         </div>
       </div>
-
-      {/* Board View Section */}
-      {boardData ? (
-        <div
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '8px',
-            padding: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                盤面: {boardData.board.name}
-              </span>
-              {boardData.board.background_image_visibility === 'gm' && (
-                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', backgroundColor: 'rgba(235, 179, 58, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--color-warning)' }}>
-                  ⚠ この背景は GM のみの画像です。TV に出すには公開設定を変えてください
-                </span>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button
-                type="button"
-                onClick={handleAutoPlaceTokens}
-                style={{
-                  backgroundColor: 'var(--color-surface-elevated)',
-                  border: '1px solid var(--color-border-light)',
-                  color: 'var(--color-text)',
-                  padding: '4px 10px',
-                  borderRadius: '4px',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                }}
-              >
-                未配置の参加者コマを配置
-              </button>
-              {boards.length > 1 && (
-                <select
-                  value={boardData.board.id}
-                  onChange={(e) => handleSelectBoard(e.target.value)}
-                  style={{
-                    padding: '4px 8px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                    fontSize: '0.8rem',
-                  }}
-                >
-                  {boards.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          </div>
-
-          <BoardView
-            board={boardData.board}
-            objects={boardData.objects}
-            tokens={boardData.tokens}
-            drops={boardData.drops}
-            combat={combat}
-            activeParticipantId={activePart?.id}
-            targetParticipantId={targetParticipantId}
-            mode={selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}
-            reachableCells={reachableCells}
-            destination={destination}
-            onSelectDestination={(dest) => setDestination(dest)}
-            losLine={
-              losInfo
-                ? {
-                    x1: losInfo.x1,
-                    y1: losInfo.y1,
-                    x2: losInfo.x2,
-                    y2: losInfo.y2,
-                    status: losInfo.status,
-                  }
-                : null
-            }
-            isGm={true}
-            onUpdateObject={handleUpdateObject}
-            onDeleteObject={handleDeleteObject}
-            onCreateObject={handleCreateObject}
-            onMoveToken={handleMoveToken}
-            onSelectDrop={(drop) => {
-              setSelectedActionKey('pickup');
-              setPickupDropId(drop.id);
-            }}
-            onSelectParticipant={(pid) => setTargetParticipantId(pid)}
-          />
-        </div>
-      ) : (
-        <div
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px dashed var(--color-border)',
-            borderRadius: '8px',
-            padding: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-          }}
-        >
-          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
-            盤面が設定されていません。既存の盤面を選択するか、新規作成してください。
-          </span>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {boards.length > 0 && (
-              <select
-                onChange={(e) => {
-                  if (e.target.value) handleSelectBoard(e.target.value);
-                }}
-                defaultValue=""
-                style={{
-                  padding: '6px 10px',
-                  backgroundColor: 'var(--color-bg)',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: '4px',
-                  color: 'var(--color-text)',
-                  fontSize: '0.85rem',
-                }}
-              >
-                <option value="" disabled>盤面を選択...</option>
-                {boards.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button
-              type="button"
-              onClick={handleCreateBoard}
-              style={{
-                backgroundColor: 'var(--color-ally)',
-                color: '#000',
-                border: 'none',
-                padding: '6px 14px',
-                borderRadius: '4px',
-                fontWeight: 700,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-              }}
-            >
-              + 盤面を作成
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 
@@ -2708,164 +2633,6 @@ export const CombatView: React.FC<CombatViewProps> = ({
           <span>{char?.status && char.status.length > 0 ? char.status.join(', ') : '通常'}</span>
         </div>
       </div>
-
-      {/* Board View Section */}
-      {boardData ? (
-        <div
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '8px',
-            padding: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                盤面: {boardData.board.name}
-              </span>
-              {boardData.board.background_image_visibility === 'gm' && (
-                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', backgroundColor: 'rgba(235, 179, 58, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--color-warning)' }}>
-                  ⚠ この背景は GM のみの画像です。TV に出すには公開設定を変えてください
-                </span>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button
-                type="button"
-                onClick={handleAutoPlaceTokens}
-                style={{
-                  backgroundColor: 'var(--color-surface-elevated)',
-                  border: '1px solid var(--color-border-light)',
-                  color: 'var(--color-text)',
-                  padding: '4px 10px',
-                  borderRadius: '4px',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                }}
-              >
-                未配置の参加者コマを配置
-              </button>
-              {boards.length > 1 && (
-                <select
-                  value={boardData.board.id}
-                  onChange={(e) => handleSelectBoard(e.target.value)}
-                  style={{
-                    padding: '4px 8px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                    fontSize: '0.8rem',
-                  }}
-                >
-                  {boards.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          </div>
-
-          <BoardView
-            board={boardData.board}
-            objects={boardData.objects}
-            tokens={boardData.tokens}
-            drops={boardData.drops}
-            combat={combat}
-            activeParticipantId={activePart?.id}
-            targetParticipantId={targetParticipantId}
-            mode={selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}
-            reachableCells={reachableCells}
-            destination={destination}
-            onSelectDestination={(dest) => setDestination(dest)}
-            losLine={
-              losInfo
-                ? {
-                    x1: losInfo.x1,
-                    y1: losInfo.y1,
-                    x2: losInfo.x2,
-                    y2: losInfo.y2,
-                    status: losInfo.status,
-                  }
-                : null
-            }
-            isGm={true}
-            onUpdateObject={handleUpdateObject}
-            onDeleteObject={handleDeleteObject}
-            onCreateObject={handleCreateObject}
-            onMoveToken={handleMoveToken}
-            onSelectDrop={(drop) => {
-              setSelectedActionKey('pickup');
-              setPickupDropId(drop.id);
-            }}
-            onSelectParticipant={(pid) => setTargetParticipantId(pid)}
-          />
-        </div>
-      ) : (
-        <div
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px dashed var(--color-border)',
-            borderRadius: '8px',
-            padding: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-          }}
-        >
-          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
-            盤面が設定されていません。既存の盤面を選択するか、新規作成してください。
-          </span>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {boards.length > 0 && (
-              <select
-                onChange={(e) => {
-                  if (e.target.value) handleSelectBoard(e.target.value);
-                }}
-                defaultValue=""
-                style={{
-                  padding: '6px 10px',
-                  backgroundColor: 'var(--color-bg)',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: '4px',
-                  color: 'var(--color-text)',
-                  fontSize: '0.85rem',
-                }}
-              >
-                <option value="" disabled>盤面を選択...</option>
-                {boards.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button
-              type="button"
-              onClick={handleCreateBoard}
-              style={{
-                backgroundColor: 'var(--color-ally)',
-                color: '#000',
-                border: 'none',
-                padding: '6px 14px',
-                borderRadius: '4px',
-                fontWeight: 700,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-              }}
-            >
-              + 盤面を作成
-            </button>
-          </div>
-        </div>
-      )}
     );
   }
 };

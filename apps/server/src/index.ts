@@ -69,14 +69,17 @@ app.get(
   '/ws',
   upgradeWebSocket((c) => {
     const token = c.req.query('token');
-    const sessionCode = c.req.query('session');
+    const sessionCode = c.req.query('session') || c.req.query('code') || c.req.query('session_code');
     const roleQuery = c.req.query('role');
 
     let role: 'gm' | 'player' | 'screen' = 'player';
     let deviceId = '';
     let characterId: string | null | undefined = null;
 
-    if (roleQuery === 'screen' && sessionCode === sessionManager.getSessionCode()) {
+    if (
+      (roleQuery === 'screen' || (!token && sessionCode)) &&
+      sessionCode?.toUpperCase() === sessionManager.getSessionCode().toUpperCase()
+    ) {
       role = 'screen';
       deviceId = `screen-${Date.now()}`;
     } else {
@@ -118,24 +121,24 @@ app.get(
           if (data && data.type === 'ping') {
             ws.send(JSON.stringify({ type: 'pong' }));
           } else if (data && data.type === 'combat:choose') {
-            if (device.role === 'player' && device.characterId) {
+            if (role === 'player' && characterId) {
               const current = getCurrentCombat();
               if (current && current.status === 'active') {
                 const activePart = current.participants[current.turn_index];
                 const isDodge = data.payload?.action_key === 'dodge';
-                if (isDodge || (activePart && activePart.character_id === device.characterId)) {
+                if (isDodge || (activePart && activePart.character_id === characterId)) {
                   sessionManager.forwardCombatChooseToGm({
                     ...data.payload,
-                    character_id: device.characterId,
+                    character_id: characterId,
                   });
                 }
               }
             }
           } else if (data && data.type === 'combat:roll') {
-            if (device.role === 'player' && device.characterId) {
+            if (role === 'player' && characterId) {
               sessionManager.forwardCombatRollToGm({
                 ...data.payload,
-                character_id: device.characterId,
+                character_id: characterId,
               });
             }
           }

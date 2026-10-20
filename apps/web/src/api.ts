@@ -463,7 +463,7 @@ export const api = {
     request<{ boards: Board[] }>('/api/boards', {}, getGmToken()),
 
   getBoard: (boardId: string) =>
-    request<{ board: Board; objects: BoardObject[]; tokens: BoardToken[]; drops: BoardDrop[] }>(
+    request<{ board: Board }>(
       `/api/boards/${boardId}`,
       {},
       getGmToken(),

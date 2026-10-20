@@ -116,7 +116,22 @@ export const CombatParticipantSchema = z.object({
 export interface CombatChange {
   target_id: string; // character_id or participant_id
   target_name: string;
-  field: 'hp' | 'sp_head' | 'sp_body' | 'ammo' | 'inventory' | 'status' | 'crit_injuries' | 'dropped' | 'out' | 'state' | 'custom';
+  field:
+    | 'hp'
+    | 'sp_head'
+    | 'sp_body'
+    | 'ammo'
+    | 'inventory'
+    | 'status'
+    | 'crit_injuries'
+    | 'dropped'
+    | 'out'
+    | 'state'
+    | 'token_position'
+    | 'cover_hp'
+    | 'board_drop'
+    | 'board_drop_remove'
+    | 'custom';
   before?: unknown;
   after?: unknown;
   desc: string;
@@ -125,7 +140,23 @@ export interface CombatChange {
 export const CombatChangeSchema = z.object({
   target_id: z.string(),
   target_name: z.string(),
-  field: z.enum(['hp', 'sp_head', 'sp_body', 'ammo', 'inventory', 'status', 'crit_injuries', 'dropped', 'out', 'state', 'custom']),
+  field: z.enum([
+    'hp',
+    'sp_head',
+    'sp_body',
+    'ammo',
+    'inventory',
+    'status',
+    'crit_injuries',
+    'dropped',
+    'out',
+    'state',
+    'token_position',
+    'cover_hp',
+    'board_drop',
+    'board_drop_remove',
+    'custom',
+  ]),
   before: z.unknown().optional(),
   after: z.unknown().optional(),
   desc: z.string(),

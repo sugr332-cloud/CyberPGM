@@ -70,9 +70,9 @@ export const ScreenPage: React.FC = () => {
 
   const combat = screenData?.combat;
   const board = screenData?.board;
-  const objects = screenData?.objects || [];
-  const tokens = screenData?.tokens || [];
-  const drops = screenData?.drops || [];
+  const objects = screenData?.objects || board?.objects || [];
+  const tokens = screenData?.tokens || board?.tokens || [];
+  const drops = screenData?.drops || board?.drops || [];
 
   const activePart = combat?.participants?.[combat.turn_index];
   const allies = combat?.participants?.filter((p) => p.side === 'ally') || [];
@@ -168,8 +168,8 @@ export const ScreenPage: React.FC = () => {
               <div className="flex flex-col gap-2">
                 {allies.map((p) => {
                   const char = p.character;
-                  const hp = char?.hp_current ?? p.hp_current ?? 0;
-                  const maxHp = char?.hp_max ?? p.hp_max ?? 1;
+                  const hp = char?.hp ?? 0;
+                  const maxHp = char?.hp_max ?? 1;
                   const percent = Math.max(0, Math.min(100, (hp / maxHp) * 100));
                   return (
                     <div

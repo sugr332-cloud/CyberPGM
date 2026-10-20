@@ -265,7 +265,7 @@ export class SessionManager {
       return { active: false };
     }
 
-    const broadcastToTv = Boolean(combat.settings?.broadcastToTv);
+    const broadcastToTv = combat.settings?.broadcastToTv !== false;
     if (!broadcastToTv) {
       return { active: false };
     }
@@ -304,8 +304,8 @@ export class SessionManager {
       if (p.character) {
         const state = woundState(p.character.hp, p.character.hp_max);
         if (state === 'dead' || p.character.hp <= 0) woundLabel = '死亡';
-        else if (state === 'mortal') woundLabel = '瀕死';
-        else if (state === 'serious') woundLabel = '重傷';
+        else if (state === 'mortally') woundLabel = '瀕死';
+        else if (state === 'seriously') woundLabel = '重傷';
       }
 
       return {
@@ -370,6 +370,9 @@ export class SessionManager {
         participants: sanitizedParticipants,
       },
       board: sanitizedBoard,
+      objects: sanitizedBoard?.objects || [],
+      tokens: sanitizedBoard?.tokens || [],
+      drops: sanitizedBoard?.drops || [],
     };
   }
 

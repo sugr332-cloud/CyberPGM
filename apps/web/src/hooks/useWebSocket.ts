@@ -30,7 +30,7 @@ export function useWebSocket({ token, sessionCode, onMessage }: UseWebSocketOpti
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const query = token
       ? `token=${encodeURIComponent(token)}`
-      : `code=${encodeURIComponent(sessionCode || '')}`;
+      : `session=${encodeURIComponent(sessionCode || '')}&role=screen`;
     const wsUrl = `${proto}//${window.location.host}/ws?${query}`;
 
     try {
@@ -76,7 +76,7 @@ export function useWebSocket({ token, sessionCode, onMessage }: UseWebSocketOpti
       reconnectAttempts.current += 1;
       reconnectTimeout.current = setTimeout(connect, delay);
     }
-  }, [token]);
+  }, [token, sessionCode]);
 
   useEffect(() => {
     connect();

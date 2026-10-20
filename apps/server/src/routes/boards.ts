@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { eq, desc } from 'drizzle-orm';
-import { db, sqlite } from '../db/client.js';
+import { db } from '../db/client.js';
 import {
   boards,
   board_objects,
@@ -126,7 +126,7 @@ boardsRoutes.post('/boards', requireGm, async (c) => {
 
 // GET /api/boards/:id: Get board details
 boardsRoutes.get('/boards/:id', async (c) => {
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const board = getHydratedBoard(id);
   if (!board) {
     return c.json({ error: 'Board not found' }, 404);
@@ -136,7 +136,7 @@ boardsRoutes.get('/boards/:id', async (c) => {
 
 // PATCH /api/boards/:id: Update board metadata or grid
 boardsRoutes.patch('/boards/:id', requireGm, async (c) => {
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json();
   const parsed = BoardUpdateInputSchema.safeParse(body);
   if (!parsed.success) {
@@ -167,7 +167,7 @@ boardsRoutes.patch('/boards/:id', requireGm, async (c) => {
 
 // DELETE /api/boards/:id: Delete a board
 boardsRoutes.delete('/boards/:id', requireGm, async (c) => {
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   db.delete(boards).where(eq(boards.id, id)).run();
   sessionManager.broadcastBoardUpdate(null);
   sessionManager.broadcastScreenUpdate();
@@ -178,7 +178,7 @@ boardsRoutes.delete('/boards/:id', requireGm, async (c) => {
 
 // POST /api/boards/:id/objects: Add an object
 boardsRoutes.post('/boards/:id/objects', requireGm, async (c) => {
-  const boardId = c.req.param('id');
+  const boardId = c.req.param('id')!;
   const body = await c.req.json();
   const parsed = BoardObjectCreateInputSchema.safeParse(body);
   if (!parsed.success) {
@@ -215,8 +215,8 @@ boardsRoutes.post('/boards/:id/objects', requireGm, async (c) => {
 
 // PATCH /api/boards/:id/objects/:objId: Update an object
 boardsRoutes.patch('/boards/:id/objects/:objId', requireGm, async (c) => {
-  const boardId = c.req.param('id');
-  const objId = c.req.param('objId');
+  const boardId = c.req.param('id')!;
+  const objId = c.req.param('objId')!;
   const body = await c.req.json();
   const parsed = BoardObjectUpdateInputSchema.safeParse(body);
   if (!parsed.success) {
@@ -248,8 +248,8 @@ boardsRoutes.patch('/boards/:id/objects/:objId', requireGm, async (c) => {
 
 // DELETE /api/boards/:id/objects/:objId: Delete an object
 boardsRoutes.delete('/boards/:id/objects/:objId', requireGm, async (c) => {
-  const boardId = c.req.param('id');
-  const objId = c.req.param('objId');
+  const boardId = c.req.param('id')!;
+  const objId = c.req.param('objId')!;
   db.delete(board_objects).where(eq(board_objects.id, objId)).run();
   db.update(boards).set({ updated_at: Date.now() }).where(eq(boards.id, boardId)).run();
 
@@ -264,7 +264,7 @@ boardsRoutes.delete('/boards/:id/objects/:objId', requireGm, async (c) => {
 
 // POST /api/boards/:id/tokens: Place a token
 boardsRoutes.post('/boards/:id/tokens', requireGm, async (c) => {
-  const boardId = c.req.param('id');
+  const boardId = c.req.param('id')!;
   const body = await c.req.json();
   const parsed = BoardTokenCreateInputSchema.safeParse(body);
   if (!parsed.success) {
@@ -294,8 +294,8 @@ boardsRoutes.post('/boards/:id/tokens', requireGm, async (c) => {
 
 // PATCH /api/boards/:id/tokens/:tokenId: Update a token
 boardsRoutes.patch('/boards/:id/tokens/:tokenId', requireGm, async (c) => {
-  const boardId = c.req.param('id');
-  const tokenId = c.req.param('tokenId');
+  const boardId = c.req.param('id')!;
+  const tokenId = c.req.param('tokenId')!;
   const body = await c.req.json();
   const parsed = BoardTokenUpdateInputSchema.safeParse(body);
   if (!parsed.success) {
@@ -320,8 +320,8 @@ boardsRoutes.patch('/boards/:id/tokens/:tokenId', requireGm, async (c) => {
 
 // DELETE /api/boards/:id/tokens/:tokenId: Delete a token
 boardsRoutes.delete('/boards/:id/tokens/:tokenId', requireGm, async (c) => {
-  const boardId = c.req.param('id');
-  const tokenId = c.req.param('tokenId');
+  const boardId = c.req.param('id')!;
+  const tokenId = c.req.param('tokenId')!;
   db.delete(board_tokens).where(eq(board_tokens.id, tokenId)).run();
   db.update(boards).set({ updated_at: Date.now() }).where(eq(boards.id, boardId)).run();
 
@@ -336,7 +336,7 @@ boardsRoutes.delete('/boards/:id/tokens/:tokenId', requireGm, async (c) => {
 
 // POST /api/boards/:id/drops: Add a drop
 boardsRoutes.post('/boards/:id/drops', requireGm, async (c) => {
-  const boardId = c.req.param('id');
+  const boardId = c.req.param('id')!;
   const body = await c.req.json();
   const parsed = BoardDropCreateInputSchema.safeParse(body);
   if (!parsed.success) {
@@ -366,8 +366,8 @@ boardsRoutes.post('/boards/:id/drops', requireGm, async (c) => {
 
 // DELETE /api/boards/:id/drops/:dropId: Delete a drop
 boardsRoutes.delete('/boards/:id/drops/:dropId', requireGm, async (c) => {
-  const boardId = c.req.param('id');
-  const dropId = c.req.param('dropId');
+  const boardId = c.req.param('id')!;
+  const dropId = c.req.param('dropId')!;
   db.delete(board_drops).where(eq(board_drops.id, dropId)).run();
   db.update(boards).set({ updated_at: Date.now() }).where(eq(boards.id, boardId)).run();
 
