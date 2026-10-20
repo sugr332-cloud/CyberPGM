@@ -259,6 +259,10 @@ export const SaveFileSchema = z.object({
   combats: z.array(z.unknown()).optional().default([]),
   combat_participants: z.array(z.unknown()).optional().default([]),
   combat_log: z.array(z.unknown()).optional().default([]),
+  boards: z.array(z.unknown()).optional().default([]),
+  board_objects: z.array(z.unknown()).optional().default([]),
+  board_tokens: z.array(z.unknown()).optional().default([]),
+  board_drops: z.array(z.unknown()).optional().default([]),
 });
 
 export const WsClientMessageSchema = z.discriminatedUnion('type', [

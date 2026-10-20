@@ -333,6 +333,10 @@ export interface SaveFile {
   combats?: unknown[];
   combat_participants?: unknown[];
   combat_log?: unknown[];
+  boards?: unknown[];
+  board_objects?: unknown[];
+  board_tokens?: unknown[];
+  board_drops?: unknown[];
 }
 
 export interface Shop {

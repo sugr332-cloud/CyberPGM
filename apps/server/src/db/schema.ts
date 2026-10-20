@@ -226,8 +226,58 @@ export const skill_notes = sqliteTable('skill_notes', {
   updated_at: integer('updated_at').notNull(),
 });
 
+export const boards = sqliteTable('boards', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  background_image_id: text('background_image_id').references(() => images.id, { onDelete: 'set null' }),
+  grid: text('grid').notNull().default('{}'), // JSON: { show, cell_m, origin_x, origin_y, cell_px, cols, rows }
+  created_at: integer('created_at').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
+export const board_objects = sqliteTable('board_objects', {
+  id: text('id').primaryKey(),
+  board_id: text('board_id')
+    .notNull()
+    .references(() => boards.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(), // 'wall' | 'crate' | 'container' | 'vehicle' | 'other'
+  label: text('label').notNull(),
+  x: integer('x').notNull(),
+  y: integer('y').notNull(),
+  w: integer('w').notNull(),
+  h: integer('h').notNull(),
+  rotation: integer('rotation').notNull().default(0), // 0 | 90 | 180 | 270
+  passable: integer('passable', { mode: 'boolean' }).notNull().default(true),
+  blocks_los: text('blocks_los').notNull().default('none'), // 'none' | 'partial' | 'full'
+  cover_hp: integer('cover_hp'),
+  cover_hp_max: integer('cover_hp_max'),
+});
+
+export const board_tokens = sqliteTable('board_tokens', {
+  id: text('id').primaryKey(),
+  board_id: text('board_id')
+    .notNull()
+    .references(() => boards.id, { onDelete: 'cascade' }),
+  character_id: text('character_id').references(() => characters.id, { onDelete: 'set null' }),
+  x: integer('x').notNull(),
+  y: integer('y').notNull(),
+  gm_only: integer('gm_only', { mode: 'boolean' }).notNull().default(false),
+});
+
+export const board_drops = sqliteTable('board_drops', {
+  id: text('id').primaryKey(),
+  board_id: text('board_id')
+    .notNull()
+    .references(() => boards.id, { onDelete: 'cascade' }),
+  x: integer('x').notNull(),
+  y: integer('y').notNull(),
+  inventory_entry: text('inventory_entry').notNull(), // JSON
+  from_character_id: text('from_character_id').references(() => characters.id, { onDelete: 'set null' }),
+});
+
 export const combats = sqliteTable('combats', {
   id: text('id').primaryKey(),
+  board_id: text('board_id').references(() => boards.id, { onDelete: 'set null' }),
   status: text('status').notNull().default('setup'), // 'setup' | 'active' | 'ended'
   round: integer('round').notNull().default(1),
   turn_index: integer('turn_index').notNull().default(0),
@@ -373,7 +423,51 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   }),
 }));
 
-export const combatsRelations = relations(combats, ({ many }) => ({
+export const boardsRelations = relations(boards, ({ one, many }) => ({
+  backgroundImage: one(images, {
+    fields: [boards.background_image_id],
+    references: [images.id],
+  }),
+  objects: many(board_objects),
+  tokens: many(board_tokens),
+  drops: many(board_drops),
+  combats: many(combats),
+}));
+
+export const boardObjectsRelations = relations(board_objects, ({ one }) => ({
+  board: one(boards, {
+    fields: [board_objects.board_id],
+    references: [boards.id],
+  }),
+}));
+
+export const boardTokensRelations = relations(board_tokens, ({ one }) => ({
+  board: one(boards, {
+    fields: [board_tokens.board_id],
+    references: [boards.id],
+  }),
+  character: one(characters, {
+    fields: [board_tokens.character_id],
+    references: [characters.id],
+  }),
+}));
+
+export const boardDropsRelations = relations(board_drops, ({ one }) => ({
+  board: one(boards, {
+    fields: [board_drops.board_id],
+    references: [boards.id],
+  }),
+  fromCharacter: one(characters, {
+    fields: [board_drops.from_character_id],
+    references: [characters.id],
+  }),
+}));
+
+export const combatsRelations = relations(combats, ({ one, many }) => ({
+  board: one(boards, {
+    fields: [combats.board_id],
+    references: [boards.id],
+  }),
   participants: many(combat_participants),
   logs: many(combat_log),
 }));

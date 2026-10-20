@@ -6,18 +6,27 @@ import {
   CombatActionDef,
   CombatChange,
   CharacterSheet,
+  Board,
+  BoardObject,
+  BoardToken,
+  BoardDrop,
 } from '@cyberpgm/shared';
 import {
   initiativeTotal,
   sortInitiative,
   InitiativeEntry,
+  findReachableSquares,
+  checkLineOfSight,
+  gridDistance,
 } from '@cyberpgm/rules';
+import { BoardView } from './BoardView.js';
 
 interface CombatViewProps {
   characters: CharacterSheet[];
   onRefreshCharacters: () => void;
   token?: string | null;
   wsMessage?: { type: string; payload: any } | null;
+  isStandaloneWindow?: boolean;
 }
 
 export const CombatView: React.FC<CombatViewProps> = ({
@@ -25,11 +34,34 @@ export const CombatView: React.FC<CombatViewProps> = ({
   onRefreshCharacters,
   token,
   wsMessage,
+  isStandaloneWindow = false,
 }) => {
   const [combat, setCombat] = useState<Combat | null>(null);
   const activePart = combat?.participants?.[combat.turn_index];
   const [actions, setActions] = useState<CombatActionDef[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Board state (Phase 4b)
+  const [boards, setBoards] = useState<Board[]>([]);
+  const [boardData, setBoardData] = useState<{
+    board: Board;
+    objects: BoardObject[];
+    tokens: BoardToken[];
+    drops: BoardDrop[];
+  } | null>(null);
+  const [sessionCode, setSessionCode] = useState<string>('');
+  const [isTvBroadcasting, setIsTvBroadcasting] = useState<boolean>(true);
+
+  // Board Interaction & Movements
+  const [destination, setDestination] = useState<{ x: number; y: number } | null>(null);
+  const [forceMove, setForceMove] = useState<boolean>(false);
+
+  // Line of Sight & Cover State
+  const [losOverride, setLosOverride] = useState<'auto' | 'clear' | 'partial' | 'blocked'>('auto');
+  const [hitCover, setHitCover] = useState<boolean>(false);
+  const [coverDamageInput, setCoverDamageInput] = useState<string>('');
+  const [coverObjectId, setCoverObjectId] = useState<string | null>(null);
+  const [pickupDropId, setPickupDropId] = useState<string | null>(null);
 
   // Setup state
   const [mookCount, setMookCount] = useState<number>(2);
@@ -88,10 +120,248 @@ export const CombatView: React.FC<CombatViewProps> = ({
     }
   }, [token]);
 
+  // Load current board & boards list
+  const refreshBoard = useCallback(async (boardId: string) => {
+    try {
+      const data = await api.getBoard(boardId);
+      setBoardData(data);
+    } catch (err) {
+      console.warn('Failed to fetch board details:', err);
+    }
+  }, []);
+
+  const refreshBoardsList = useCallback(async () => {
+    try {
+      const res = await api.getBoards();
+      setBoards(res.boards);
+      const session = await api.getSessionInfo().catch(() => null);
+      if (session) setSessionCode(session.code);
+    } catch (err) {
+      console.warn('Failed to fetch boards list:', err);
+    }
+  }, []);
+
   useEffect(() => {
     refreshCombat();
+    refreshBoardsList();
     api.getCombatActions().then((res) => setActions(res.actions)).catch(() => {});
-  }, [refreshCombat]);
+  }, [refreshCombat, refreshBoardsList]);
+
+  useEffect(() => {
+    if (combat?.board_id) {
+      refreshBoard(combat.board_id);
+    } else {
+      setBoardData(null);
+    }
+  }, [combat?.board_id, refreshBoard]);
+
+  // Board Object & Token Handlers
+  const handleAutoPlaceTokens = async () => {
+    if (!combat || !boardData) return;
+    const existingParticipantIds = new Set(boardData.tokens.map((t) => t.participant_id));
+    let allyCount = 0;
+    let enemyCount = 0;
+    for (const p of combat.participants) {
+      if (!existingParticipantIds.has(p.id)) {
+        const isAlly = p.side === 'ally';
+        const x = isAlly ? 2 : 12;
+        const y = isAlly ? 2 + allyCount++ : 2 + enemyCount++;
+        await api.createBoardToken(boardData.board.id, {
+          participant_id: p.id,
+          character_id: p.character_id,
+          x,
+          y,
+          gm_only: false,
+        });
+      }
+    }
+    refreshBoard(boardData.board.id);
+  };
+
+  const handleCreateBoard = async () => {
+    if (!combat) return;
+    try {
+      const res = await api.createBoard({ name: '戦闘盤面' });
+      await api.updateCombat(combat.id, { board_id: res.board.id });
+      refreshCombat();
+      refreshBoard(res.board.id);
+    } catch (err: any) {
+      alert(`盤面の作成に失敗しました: ${err.message}`);
+    }
+  };
+
+  const handleSelectBoard = async (boardId: string) => {
+    if (!combat) return;
+    try {
+      await api.updateCombat(combat.id, { board_id: boardId });
+      refreshCombat();
+      refreshBoard(boardId);
+    } catch (err: any) {
+      alert(`盤面の変更に失敗しました: ${err.message}`);
+    }
+  };
+
+  const handleCreateObject = async (obj: Omit<BoardObject, 'id' | 'board_id'>) => {
+    if (!boardData) return;
+    try {
+      await api.createBoardObject(boardData.board.id, obj);
+      refreshBoard(boardData.board.id);
+    } catch (err: any) {
+      alert(`オブジェクトの追加に失敗しました: ${err.message}`);
+    }
+  };
+
+  const handleUpdateObject = async (objId: string, patch: Partial<BoardObject>) => {
+    if (!boardData) return;
+    try {
+      await api.updateBoardObject(boardData.board.id, objId, patch);
+      refreshBoard(boardData.board.id);
+    } catch (err: any) {
+      console.warn('Failed to update object:', err);
+    }
+  };
+
+  const handleDeleteObject = async (objId: string) => {
+    if (!boardData) return;
+    try {
+      await api.deleteBoardObject(boardData.board.id, objId);
+      refreshBoard(boardData.board.id);
+    } catch (err: any) {
+      alert(`オブジェクトの削除に失敗しました: ${err.message}`);
+    }
+  };
+
+  const handleMoveToken = async (tokenId: string, x: number, y: number) => {
+    if (!boardData) return;
+    try {
+      await api.updateBoardToken(boardData.board.id, tokenId, { x, y });
+      refreshBoard(boardData.board.id);
+    } catch (err: any) {
+      console.warn('Failed to update token position:', err);
+    }
+  };
+
+  // Movement reachable squares
+  const reachableCells = useMemo(() => {
+    if (!boardData || !activePart) return undefined;
+    if (selectedActionKey !== 'move' && selectedActionKey !== 'run') return undefined;
+
+    const token = boardData.tokens.find(
+      (t) => t.participant_id === activePart.id || (t.character_id && t.character_id === activePart.character_id)
+    );
+    if (!token) return undefined;
+
+    const start = { x: token.x, y: token.y };
+    const charMove = activePart.character?.move ?? 6;
+    const maxMoves = selectedActionKey === 'run' ? charMove * 2 : charMove;
+
+    const blockedCells = new Set<string>();
+    boardData.objects.forEach((obj) => {
+      if (!obj.passable) {
+        for (let dx = 0; dx < obj.w; dx++) {
+          for (let dy = 0; dy < obj.h; dy++) {
+            blockedCells.add(`${obj.x + dx},${obj.y + dy}`);
+          }
+        }
+      }
+    });
+
+    const stoppingBlockedCells = new Set<string>();
+    boardData.tokens.forEach((t) => {
+      if (t.id !== token.id) {
+        stoppingBlockedCells.add(`${t.x},${t.y}`);
+      }
+    });
+
+    const bounds = {
+      cols: boardData.board.grid?.cols || 20,
+      rows: boardData.board.grid?.rows || 15,
+    };
+
+    const reachable = findReachableSquares({
+      start,
+      maxMoves,
+      blockedCells,
+      stoppingBlockedCells,
+      bounds,
+    });
+
+    return new Set(reachable.keys());
+  }, [boardData, activePart, selectedActionKey]);
+
+  // LoS and Distance calculation
+  const losInfo = useMemo(() => {
+    if (!boardData || !activePart || !targetParticipantId) return null;
+    const shooterToken = boardData.tokens.find(
+      (t) => t.participant_id === activePart.id || (t.character_id && t.character_id === activePart.character_id)
+    );
+    const targetToken = boardData.tokens.find(
+      (t) => t.participant_id === targetParticipantId || (t.character_id && t.character_id === combat?.participants.find((p) => p.id === targetParticipantId)?.character_id)
+    );
+    if (!shooterToken || !targetToken) return null;
+
+    const bounds = {
+      cols: boardData.board.grid?.cols || 20,
+      rows: boardData.board.grid?.rows || 15,
+    };
+
+    const losResult = checkLineOfSight({
+      start: { x: shooterToken.x, y: shooterToken.y },
+      target: { x: targetToken.x, y: targetToken.y },
+      objects: boardData.objects,
+      bounds,
+    });
+
+    const distChebyshev = gridDistance(
+      { x: shooterToken.x, y: shooterToken.y },
+      { x: targetToken.x, y: targetToken.y },
+      'chebyshev'
+    );
+    const autoDistanceM = distChebyshev * (boardData.board.grid?.cell_m || 2);
+
+    const effectiveStatus = losOverride !== 'auto' ? losOverride : losResult.status;
+
+    return {
+      x1: shooterToken.x,
+      y1: shooterToken.y,
+      x2: targetToken.x,
+      y2: targetToken.y,
+      distSquares: distChebyshev,
+      autoDistanceM,
+      status: effectiveStatus,
+      rawStatus: losResult.status,
+      hitCoverObject: losResult.hitCoverObject,
+    };
+  }, [boardData, activePart, targetParticipantId, combat, losOverride]);
+
+  useEffect(() => {
+    if (losInfo && ['ranged', 'aimed', 'autofire'].includes(selectedActionKey || '')) {
+      setDistanceM(losInfo.autoDistanceM);
+    }
+  }, [losInfo, selectedActionKey]);
+
+  const meleeBlocked = useMemo(() => {
+    if (!['melee', 'brawl'].includes(selectedActionKey || '')) return false;
+    if (losInfo && losInfo.distSquares > 1) return true;
+    return false;
+  }, [selectedActionKey, losInfo]);
+
+  const nearbyDrops = useMemo(() => {
+    if (!boardData || !activePart) return [];
+    const activeToken = boardData.tokens.find(
+      (t) => t.participant_id === activePart.id || (t.character_id && t.character_id === activePart.character_id)
+    );
+    if (!activeToken) return [];
+
+    return boardData.drops.filter((d) => {
+      const dist = gridDistance(
+        { x: activeToken.x, y: activeToken.y },
+        { x: d.x, y: d.y },
+        'chebyshev'
+      );
+      return dist <= 1;
+    });
+  }, [boardData, activePart]);
 
   // Weapon entries in inventory for active participant (kind === 'weapon')
   const weaponEntries = useMemo(() => {
@@ -150,8 +420,14 @@ export const CombatView: React.FC<CombatViewProps> = ({
           setInitInputs((prev) => ({ ...prev, [cid]: { first, extra } }));
         }
       }
+    } else if (wsMessage.type === 'board:update') {
+      if (combat?.board_id) {
+        refreshBoard(combat.board_id);
+      } else {
+        refreshBoardsList();
+      }
     }
-  }, [wsMessage, refreshCombat, onRefreshCharacters]);
+  }, [wsMessage, refreshCombat, onRefreshCharacters, refreshBoard, refreshBoardsList, combat?.board_id]);
 
   // Start new combat (setup)
   const handleStartNewCombat = async () => {
@@ -337,6 +613,13 @@ export const CombatView: React.FC<CombatViewProps> = ({
         attacks,
         manual_changes: manualChanges,
         manual_notes: manualNotes,
+        destination: (selectedActionKey === 'move' || selectedActionKey === 'run') ? destination || undefined : undefined,
+        force_move: forceMove,
+        los_override: losOverride !== 'auto' ? losOverride : undefined,
+        hit_cover: hitCover,
+        cover_object_id: hitCover && (losInfo?.hitCoverObject?.id || coverObjectId) ? (losInfo?.hitCoverObject?.id || coverObjectId) : undefined,
+        cover_damage: hitCover && coverDamageInput !== '' ? Number(coverDamageInput) : undefined,
+        pickup_drop_id: selectedActionKey === 'pickup' ? pickupDropId || undefined : undefined,
       });
 
       setPreviewResult(res.result);
@@ -417,15 +700,76 @@ export const CombatView: React.FC<CombatViewProps> = ({
         attacks,
         manual_changes: previewResult.changes,
         manual_notes: manualNotes,
+        destination: (selectedActionKey === 'move' || selectedActionKey === 'run') ? destination || undefined : undefined,
+        force_move: forceMove,
+        los_override: losOverride !== 'auto' ? losOverride : undefined,
+        hit_cover: hitCover,
+        cover_object_id: hitCover && (losInfo?.hitCoverObject?.id || coverObjectId) ? (losInfo?.hitCoverObject?.id || coverObjectId) : undefined,
+        cover_damage: hitCover && coverDamageInput !== '' ? Number(coverDamageInput) : undefined,
+        pickup_drop_id: selectedActionKey === 'pickup' ? pickupDropId || undefined : undefined,
       });
 
       setCombat(res.combat);
+      if (combat.board_id) {
+        refreshBoard(combat.board_id);
+      }
+      setDestination(null);
+      setHitCover(false);
+      setCoverDamageInput('');
+      setPickupDropId(null);
       setPreviewResult(null);
       setSelectedActionKey(null);
       setSecondAttackEnabled(false);
       onRefreshCharacters();
     } catch (err: any) {
       alert(`反映に失敗しました: ${err.message}`);
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  // Direct move confirm
+  const handleConfirmMove = async () => {
+    if (!combat || !activePart || !destination) return;
+    setIsApplying(true);
+    try {
+      const res = await api.applyCombatAction(combat.id, {
+        action_key: selectedActionKey || 'move',
+        actor_id: activePart.id,
+        participant_id: activePart.id,
+        destination,
+        force_move: forceMove,
+      });
+      setCombat(res.combat);
+      if (combat.board_id) refreshBoard(combat.board_id);
+      setDestination(null);
+      setSelectedActionKey(null);
+      onRefreshCharacters();
+    } catch (err: any) {
+      alert(`移動の反映に失敗しました: ${err.message}`);
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  // Direct pickup confirm
+  const handleConfirmPickup = async () => {
+    if (!combat || !activePart || !pickupDropId) return;
+    setIsApplying(true);
+    try {
+      const res = await api.applyCombatAction(combat.id, {
+        action_key: 'pickup',
+        actor_id: activePart.id,
+        participant_id: activePart.id,
+        pickup_drop_id: pickupDropId,
+      });
+      setCombat(res.combat);
+      if (combat.board_id) refreshBoard(combat.board_id);
+      setPickupDropId(null);
+      setSelectedActionKey(null);
+      onRefreshCharacters();
+    } catch (err: any) {
+      alert(`拾うアクションの反映に失敗しました: ${err.message}`);
     } finally {
       setIsApplying(false);
     }
@@ -439,6 +783,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
     try {
       const res = await api.undoCombatAction(combat.id);
       setCombat(res.combat);
+      if (combat.board_id) {
+        refreshBoard(combat.board_id);
+      }
       setPreviewResult(null);
       onRefreshCharacters();
     } catch (err: any) {
@@ -860,7 +1207,62 @@ export const CombatView: React.FC<CombatViewProps> = ({
             </span>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {!isStandaloneWindow && (
+              <button
+                type="button"
+                onClick={() => window.open('/gm/combat', 'cpgm_combat', 'width=1280,height=900')}
+                style={{
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-border-light)',
+                  color: 'var(--color-text)',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                別ウィンドウで開く
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsTvBroadcasting(!isTvBroadcasting)}
+              style={{
+                backgroundColor: isTvBroadcasting ? 'rgba(79, 182, 227, 0.2)' : 'var(--color-surface-elevated)',
+                border: `1px solid ${isTvBroadcasting ? 'var(--color-ally)' : 'var(--color-border-light)'}`,
+                color: isTvBroadcasting ? 'var(--color-ally)' : 'var(--color-text-muted)',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              TVに出す: {isTvBroadcasting ? 'ON' : 'OFF'}
+            </button>
+
+            {sessionCode && (
+              <a
+                href={`/screen?code=${sessionCode}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  color: 'var(--color-ally)',
+                  fontSize: '0.85rem',
+                  textDecoration: 'none',
+                  padding: '6px 10px',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  backgroundColor: 'var(--color-surface-elevated)',
+                }}
+              >
+                TV共有URL ↗
+              </a>
+            )}
+
             <button
               onClick={handleUndo}
               style={{
@@ -966,6 +1368,164 @@ export const CombatView: React.FC<CombatViewProps> = ({
           })}
         </div>
       </div>
+
+      {/* Board View Section */}
+      {boardData ? (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: '8px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                盤面: {boardData.board.name}
+              </span>
+              {boardData.board.background_image_visibility === 'gm' && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', backgroundColor: 'rgba(235, 179, 58, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--color-warning)' }}>
+                  ⚠ この背景は GM のみの画像です。TV に出すには公開設定を変えてください
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={handleAutoPlaceTokens}
+                style={{
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-border-light)',
+                  color: 'var(--color-text)',
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                未配置の参加者コマを配置
+              </button>
+              {boards.length > 1 && (
+                <select
+                  value={boardData.board.id}
+                  onChange={(e) => handleSelectBoard(e.target.value)}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                    fontSize: '0.8rem',
+                  }}
+                >
+                  {boards.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <BoardView
+            board={boardData.board}
+            objects={boardData.objects}
+            tokens={boardData.tokens}
+            drops={boardData.drops}
+            combat={combat}
+            activeParticipantId={activePart?.id}
+            targetParticipantId={targetParticipantId}
+            mode={selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}
+            reachableCells={reachableCells}
+            destination={destination}
+            onSelectDestination={(dest) => setDestination(dest)}
+            losLine={
+              losInfo
+                ? {
+                    x1: losInfo.x1,
+                    y1: losInfo.y1,
+                    x2: losInfo.x2,
+                    y2: losInfo.y2,
+                    status: losInfo.status,
+                  }
+                : null
+            }
+            isGm={true}
+            onUpdateObject={handleUpdateObject}
+            onDeleteObject={handleDeleteObject}
+            onCreateObject={handleCreateObject}
+            onMoveToken={handleMoveToken}
+            onSelectDrop={(drop) => {
+              setSelectedActionKey('pickup');
+              setPickupDropId(drop.id);
+            }}
+            onSelectParticipant={(pid) => setTargetParticipantId(pid)}
+          />
+        </div>
+      ) : (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px dashed var(--color-border)',
+            borderRadius: '8px',
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+            盤面が設定されていません。既存の盤面を選択するか、新規作成してください。
+          </span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {boards.length > 0 && (
+              <select
+                onChange={(e) => {
+                  if (e.target.value) handleSelectBoard(e.target.value);
+                }}
+                defaultValue=""
+                style={{
+                  padding: '6px 10px',
+                  backgroundColor: 'var(--color-bg)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  color: 'var(--color-text)',
+                  fontSize: '0.85rem',
+                }}
+              >
+                <option value="" disabled>盤面を選択...</option>
+                {boards.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={handleCreateBoard}
+              style={{
+                backgroundColor: 'var(--color-ally)',
+                color: '#000',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '4px',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+              }}
+            >
+              + 盤面を作成
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Tab Switcher */}
       <div
@@ -1701,6 +2261,164 @@ export const CombatView: React.FC<CombatViewProps> = ({
         </div>
       </div>
 
+      {/* Board View Section */}
+      {boardData ? (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: '8px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                盤面: {boardData.board.name}
+              </span>
+              {boardData.board.background_image_visibility === 'gm' && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', backgroundColor: 'rgba(235, 179, 58, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--color-warning)' }}>
+                  ⚠ この背景は GM のみの画像です。TV に出すには公開設定を変えてください
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={handleAutoPlaceTokens}
+                style={{
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-border-light)',
+                  color: 'var(--color-text)',
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                未配置の参加者コマを配置
+              </button>
+              {boards.length > 1 && (
+                <select
+                  value={boardData.board.id}
+                  onChange={(e) => handleSelectBoard(e.target.value)}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                    fontSize: '0.8rem',
+                  }}
+                >
+                  {boards.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <BoardView
+            board={boardData.board}
+            objects={boardData.objects}
+            tokens={boardData.tokens}
+            drops={boardData.drops}
+            combat={combat}
+            activeParticipantId={activePart?.id}
+            targetParticipantId={targetParticipantId}
+            mode={selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}
+            reachableCells={reachableCells}
+            destination={destination}
+            onSelectDestination={(dest) => setDestination(dest)}
+            losLine={
+              losInfo
+                ? {
+                    x1: losInfo.x1,
+                    y1: losInfo.y1,
+                    x2: losInfo.x2,
+                    y2: losInfo.y2,
+                    status: losInfo.status,
+                  }
+                : null
+            }
+            isGm={true}
+            onUpdateObject={handleUpdateObject}
+            onDeleteObject={handleDeleteObject}
+            onCreateObject={handleCreateObject}
+            onMoveToken={handleMoveToken}
+            onSelectDrop={(drop) => {
+              setSelectedActionKey('pickup');
+              setPickupDropId(drop.id);
+            }}
+            onSelectParticipant={(pid) => setTargetParticipantId(pid)}
+          />
+        </div>
+      ) : (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px dashed var(--color-border)',
+            borderRadius: '8px',
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+            盤面が設定されていません。既存の盤面を選択するか、新規作成してください。
+          </span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {boards.length > 0 && (
+              <select
+                onChange={(e) => {
+                  if (e.target.value) handleSelectBoard(e.target.value);
+                }}
+                defaultValue=""
+                style={{
+                  padding: '6px 10px',
+                  backgroundColor: 'var(--color-bg)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  color: 'var(--color-text)',
+                  fontSize: '0.85rem',
+                }}
+              >
+                <option value="" disabled>盤面を選択...</option>
+                {boards.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={handleCreateBoard}
+              style={{
+                backgroundColor: 'var(--color-ally)',
+                color: '#000',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '4px',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+              }}
+            >
+              + 盤面を作成
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Combat Log Bottom Section */}
       <div
         style={{
@@ -1740,6 +2458,164 @@ export const CombatView: React.FC<CombatViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Board View Section */}
+      {boardData ? (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: '8px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                盤面: {boardData.board.name}
+              </span>
+              {boardData.board.background_image_visibility === 'gm' && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', backgroundColor: 'rgba(235, 179, 58, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--color-warning)' }}>
+                  ⚠ この背景は GM のみの画像です。TV に出すには公開設定を変えてください
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={handleAutoPlaceTokens}
+                style={{
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-border-light)',
+                  color: 'var(--color-text)',
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                未配置の参加者コマを配置
+              </button>
+              {boards.length > 1 && (
+                <select
+                  value={boardData.board.id}
+                  onChange={(e) => handleSelectBoard(e.target.value)}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                    fontSize: '0.8rem',
+                  }}
+                >
+                  {boards.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <BoardView
+            board={boardData.board}
+            objects={boardData.objects}
+            tokens={boardData.tokens}
+            drops={boardData.drops}
+            combat={combat}
+            activeParticipantId={activePart?.id}
+            targetParticipantId={targetParticipantId}
+            mode={selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}
+            reachableCells={reachableCells}
+            destination={destination}
+            onSelectDestination={(dest) => setDestination(dest)}
+            losLine={
+              losInfo
+                ? {
+                    x1: losInfo.x1,
+                    y1: losInfo.y1,
+                    x2: losInfo.x2,
+                    y2: losInfo.y2,
+                    status: losInfo.status,
+                  }
+                : null
+            }
+            isGm={true}
+            onUpdateObject={handleUpdateObject}
+            onDeleteObject={handleDeleteObject}
+            onCreateObject={handleCreateObject}
+            onMoveToken={handleMoveToken}
+            onSelectDrop={(drop) => {
+              setSelectedActionKey('pickup');
+              setPickupDropId(drop.id);
+            }}
+            onSelectParticipant={(pid) => setTargetParticipantId(pid)}
+          />
+        </div>
+      ) : (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px dashed var(--color-border)',
+            borderRadius: '8px',
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+            盤面が設定されていません。既存の盤面を選択するか、新規作成してください。
+          </span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {boards.length > 0 && (
+              <select
+                onChange={(e) => {
+                  if (e.target.value) handleSelectBoard(e.target.value);
+                }}
+                defaultValue=""
+                style={{
+                  padding: '6px 10px',
+                  backgroundColor: 'var(--color-bg)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  color: 'var(--color-text)',
+                  fontSize: '0.85rem',
+                }}
+              >
+                <option value="" disabled>盤面を選択...</option>
+                {boards.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={handleCreateBoard}
+              style={{
+                backgroundColor: 'var(--color-ally)',
+                color: '#000',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '4px',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+              }}
+            >
+              + 盤面を作成
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -1832,6 +2708,164 @@ export const CombatView: React.FC<CombatViewProps> = ({
           <span>{char?.status && char.status.length > 0 ? char.status.join(', ') : '通常'}</span>
         </div>
       </div>
+
+      {/* Board View Section */}
+      {boardData ? (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: '8px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                盤面: {boardData.board.name}
+              </span>
+              {boardData.board.background_image_visibility === 'gm' && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', backgroundColor: 'rgba(235, 179, 58, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--color-warning)' }}>
+                  ⚠ この背景は GM のみの画像です。TV に出すには公開設定を変えてください
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={handleAutoPlaceTokens}
+                style={{
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-border-light)',
+                  color: 'var(--color-text)',
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                未配置の参加者コマを配置
+              </button>
+              {boards.length > 1 && (
+                <select
+                  value={boardData.board.id}
+                  onChange={(e) => handleSelectBoard(e.target.value)}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                    fontSize: '0.8rem',
+                  }}
+                >
+                  {boards.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <BoardView
+            board={boardData.board}
+            objects={boardData.objects}
+            tokens={boardData.tokens}
+            drops={boardData.drops}
+            combat={combat}
+            activeParticipantId={activePart?.id}
+            targetParticipantId={targetParticipantId}
+            mode={selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}
+            reachableCells={reachableCells}
+            destination={destination}
+            onSelectDestination={(dest) => setDestination(dest)}
+            losLine={
+              losInfo
+                ? {
+                    x1: losInfo.x1,
+                    y1: losInfo.y1,
+                    x2: losInfo.x2,
+                    y2: losInfo.y2,
+                    status: losInfo.status,
+                  }
+                : null
+            }
+            isGm={true}
+            onUpdateObject={handleUpdateObject}
+            onDeleteObject={handleDeleteObject}
+            onCreateObject={handleCreateObject}
+            onMoveToken={handleMoveToken}
+            onSelectDrop={(drop) => {
+              setSelectedActionKey('pickup');
+              setPickupDropId(drop.id);
+            }}
+            onSelectParticipant={(pid) => setTargetParticipantId(pid)}
+          />
+        </div>
+      ) : (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px dashed var(--color-border)',
+            borderRadius: '8px',
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+            盤面が設定されていません。既存の盤面を選択するか、新規作成してください。
+          </span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {boards.length > 0 && (
+              <select
+                onChange={(e) => {
+                  if (e.target.value) handleSelectBoard(e.target.value);
+                }}
+                defaultValue=""
+                style={{
+                  padding: '6px 10px',
+                  backgroundColor: 'var(--color-bg)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  color: 'var(--color-text)',
+                  fontSize: '0.85rem',
+                }}
+              >
+                <option value="" disabled>盤面を選択...</option>
+                {boards.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={handleCreateBoard}
+              style={{
+                backgroundColor: 'var(--color-ally)',
+                color: '#000',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '4px',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+              }}
+            >
+              + 盤面を作成
+            </button>
+          </div>
+        </div>
+      )}
     );
   }
 };

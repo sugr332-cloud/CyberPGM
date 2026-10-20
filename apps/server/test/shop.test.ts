@@ -296,7 +296,7 @@ describe('Phase 3a: Shop & Commerce System', () => {
       const parsed = SaveFileSchema.safeParse(fileData);
       expect(parsed.success).toBe(true);
       if (parsed.success) {
-        expect(parsed.data.version).toBe(3);
+        expect(parsed.data.version).toBe(4);
         expect(parsed.data.shops.length).toBeGreaterThanOrEqual(1);
         expect(parsed.data.transactions.length).toBeGreaterThanOrEqual(1);
       }

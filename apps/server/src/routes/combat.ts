@@ -165,6 +165,7 @@ export function getHydratedCombat(combatId: string): Combat | null {
 
   return {
     id: cb.id,
+    board_id: cb.board_id ?? null,
     status: cb.status as 'setup' | 'active' | 'ended',
     round: cb.round,
     turn_index: cb.turn_index,
@@ -307,6 +308,7 @@ combatRoutes.post('/combats', requireGm, async (c) => {
   db.insert(combats)
     .values({
       id,
+      board_id: parsed.data.board_id ?? null,
       status: 'setup',
       round: 1,
       turn_index: 0,
@@ -571,6 +573,10 @@ combatRoutes.patch('/combats/:id', requireGm, async (c) => {
 
   const updates: Record<string, unknown> = {};
 
+  if (body.board_id !== undefined) {
+    updates.board_id = body.board_id;
+  }
+
   if (body.settings) {
     const curSettings = JSON.parse(cb.settings || '{}');
     updates.settings = JSON.stringify({ ...curSettings, ...body.settings });
@@ -703,7 +709,7 @@ combatRoutes.post('/combats/:id/resolve', requireGm, async (c) => {
     ? combat.participants.find((p) => p.id === targetId)
     : undefined;
 
-  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants);
+  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants, combat.board_id);
   return c.json({ result });
 });
 
@@ -731,7 +737,7 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
     : undefined;
 
   // Re-resolve calculation on server
-  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants);
+  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants, combat.board_id);
   const now = Date.now();
   const logId = generateUlid();
 
@@ -836,11 +842,35 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
             }
           }
         }
+      } else if (ch.field === 'token_position') {
+        const pos = ch.after as { x: number; y: number };
+        sqlite
+          .prepare('UPDATE board_tokens SET x = ?, y = ? WHERE id = ?')
+          .run(pos.x, pos.y, ch.target_id);
+      } else if (ch.field === 'cover_hp') {
+        const cov = ch.after as { cover_hp: number | null; blocks_los: string };
+        sqlite
+          .prepare('UPDATE board_objects SET cover_hp = ?, blocks_los = ? WHERE id = ?')
+          .run(cov.cover_hp, cov.blocks_los, ch.target_id);
+      } else if (ch.field === 'board_drop') {
+        const d = ch.after as any;
+        sqlite
+          .prepare(
+            'INSERT INTO board_drops (id, board_id, x, y, inventory_entry, from_character_id) VALUES (?, ?, ?, ?, ?, ?)',
+          )
+          .run(d.id, d.board_id, d.x, d.y, JSON.stringify(d.inventory_entry), d.from_character_id ?? null);
+      } else if (ch.field === 'board_drop_remove') {
+        sqlite.prepare('DELETE FROM board_drops WHERE id = ?').run(ch.target_id);
       }
     }
   });
 
   applyTx();
+
+  if (combat.board_id) {
+    sessionManager.broadcastBoardUpdate(combat.board_id);
+    sessionManager.broadcastScreenUpdate();
+  }
 
   // 11.9: Notify players and GMs (filter enemy numeric hp/sp from player notification)
   if (target?.character_id) {
@@ -991,6 +1021,25 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
         sqlite
           .prepare('UPDATE characters SET inventory = ?, updated_at = ? WHERE id = ?')
           .run(JSON.stringify(ch.before), now, ch.target_id);
+      } else if (ch.field === 'token_position') {
+        const pos = ch.before as { x: number; y: number };
+        sqlite
+          .prepare('UPDATE board_tokens SET x = ?, y = ? WHERE id = ?')
+          .run(pos.x, pos.y, ch.target_id);
+      } else if (ch.field === 'cover_hp') {
+        const cov = ch.before as { cover_hp: number | null; blocks_los: string };
+        sqlite
+          .prepare('UPDATE board_objects SET cover_hp = ?, blocks_los = ? WHERE id = ?')
+          .run(cov.cover_hp, cov.blocks_los, ch.target_id);
+      } else if (ch.field === 'board_drop') {
+        sqlite.prepare('DELETE FROM board_drops WHERE id = ?').run(ch.target_id);
+      } else if (ch.field === 'board_drop_remove') {
+        const d = ch.before as any;
+        sqlite
+          .prepare(
+            'INSERT INTO board_drops (id, board_id, x, y, inventory_entry, from_character_id) VALUES (?, ?, ?, ?, ?, ?)',
+          )
+          .run(d.id, d.board_id, d.x, d.y, JSON.stringify(d.inventory_entry), d.from_character_id ?? null);
       }
     }
 
@@ -1003,6 +1052,10 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
   sessionManager.updateAllCharacterSheets();
   const updatedCombat = getHydratedCombat(combatId);
   sessionManager.broadcastCombatUpdate(updatedCombat);
+  if (updatedCombat?.board_id) {
+    sessionManager.broadcastBoardUpdate(updatedCombat.board_id);
+    sessionManager.broadcastScreenUpdate();
+  }
 
   return c.json({ success: true, undoneLogId: latestLog.id, combat: updatedCombat });
 });

@@ -4,12 +4,16 @@ import { GmPage } from './pages/GmPage.js';
 import { PlayerPage } from './pages/PlayerPage.js';
 import { CharacterCreatePage } from './pages/CharacterCreatePage.js';
 import { ItemsDebug } from './pages/ItemsDebug.js';
+import { GmCombatWindowPage } from './pages/GmCombatWindowPage.js';
+import { ScreenPage } from './pages/ScreenPage.js';
 
 export const App: React.FC = () => {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/gm" element={<GmPage />} />
+        <Route path="/gm/combat" element={<GmCombatWindowPage />} />
+        <Route path="/screen" element={<ScreenPage />} />
         <Route path="/player" element={<PlayerPage />} />
         <Route path="/player/create" element={<CharacterCreatePage />} />
         <Route path="/debug/items" element={<ItemsDebug />} />

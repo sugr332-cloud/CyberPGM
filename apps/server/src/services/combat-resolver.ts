@@ -10,6 +10,9 @@ import {
   woundPenalty,
   resolveD10,
   CriticalInjuryEntry,
+  findReachableSquares,
+  checkLineOfSight,
+  gridDistance,
 } from '@cyberpgm/rules';
 import {
   CombatChange,
@@ -19,11 +22,12 @@ import {
   DvTable,
   InventoryEntry,
   skillNameToKey,
+  generateUlid,
 } from '@cyberpgm/shared';
 import { z } from 'zod';
 import type { AppDatabase } from '../db/client.js';
-import { rule_constants, weapons, items } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { rule_constants, weapons, items, boards, board_tokens, board_objects, board_drops } from '../db/schema.js';
+import { eq, and, ne } from 'drizzle-orm';
 
 type ResolveInput = z.infer<typeof ResolveActionInputSchema>;
 
@@ -62,6 +66,7 @@ export function resolveCombatAction(
   actorPart: CombatParticipant,
   targetPart?: CombatParticipant,
   allParticipants?: CombatParticipant[],
+  boardId?: string | null,
 ): ResolveResult {
   if (!targetPart && input.target_id && allParticipants) {
     targetPart = allParticipants.find((p) => p.id === input.target_id);
@@ -115,47 +120,179 @@ export function resolveCombatAction(
       : null;
   };
 
+  // Helper for board movement verification
+  const resolveBoardMovement = (actionKey: 'move' | 'run'): { error?: string; change?: CombatChange } => {
+    if (!boardId || !actorPart.character_id || !input.destination) {
+      return {};
+    }
+
+    const token = db
+      .select()
+      .from(board_tokens)
+      .where(and(eq(board_tokens.board_id, boardId), eq(board_tokens.character_id, actorPart.character_id)))
+      .get();
+
+    if (!token) {
+      return {};
+    }
+
+    if (input.force_move) {
+      return {
+        change: {
+          target_id: token.id,
+          target_name: actorPart.name,
+          field: 'token_position',
+          before: { x: token.x, y: token.y },
+          after: { x: input.destination.x, y: input.destination.y },
+          desc: `${actorPart.name} 強制移動: (${token.x},${token.y}) → (${input.destination.x},${input.destination.y})`,
+        },
+      };
+    }
+
+    const boardObs = db.select().from(board_objects).where(eq(board_objects.board_id, boardId)).all();
+    const otherTokens = db
+      .select()
+      .from(board_tokens)
+      .where(and(eq(board_tokens.board_id, boardId), ne(board_tokens.id, token.id)))
+      .all();
+    const otherCells = new Set(otherTokens.map((t) => `${t.x},${t.y}`));
+
+    const isPassable = (pt: { x: number; y: number }) => {
+      for (const obj of boardObs) {
+        if (obj.passable) continue;
+        const rot = obj.rotation ?? 0;
+        const w = rot === 90 || rot === 270 ? obj.h : obj.w;
+        const h = rot === 90 || rot === 270 ? obj.w : obj.h;
+        if (pt.x >= obj.x && pt.x < obj.x + w && pt.y >= obj.y && pt.y < obj.y + h) {
+          return false;
+        }
+      }
+      return true;
+    };
+    const canStop = (pt: { x: number; y: number }) => !otherCells.has(`${pt.x},${pt.y}`);
+
+    const boardRow = db.select().from(boards).where(eq(boards.id, boardId)).get();
+    let bounds: { cols: number; rows: number } | undefined = undefined;
+    if (boardRow) {
+      try {
+        const grid = JSON.parse(boardRow.grid || '{}');
+        if (grid.cols && grid.rows) {
+          bounds = { cols: grid.cols, rows: grid.rows };
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const reachable = findReachableSquares({
+      start: { x: token.x, y: token.y },
+      maxSquares: actorChar.stats.move,
+      isPassable,
+      canStop,
+      bounds,
+    });
+
+    const isOk = reachable.some(
+      (pt) => pt.x === input.destination!.x && pt.y === input.destination!.y,
+    );
+
+    if (!isOk) {
+      return {
+        error: `移動先 (${input.destination.x},${input.destination.y}) は移動範囲外です`,
+      };
+    }
+
+    return {
+      change: {
+        target_id: token.id,
+        target_name: actorPart.name,
+        field: 'token_position',
+        before: { x: token.x, y: token.y },
+        after: { x: input.destination.x, y: input.destination.y },
+        desc: `${actorPart.name} ${actionKey === 'run' ? '走る' : '移動'}: (${token.x},${token.y}) → (${input.destination.x},${input.destination.y})`,
+      },
+    };
+  };
+
   // 1. Move action
   if (input.action_key === 'move') {
+    const boardMove = resolveBoardMovement('move');
+    if (boardMove.error) {
+      return {
+        action_key: 'move',
+        actor_id: actorPart.id,
+        actor_name: actorPart.name,
+        success: false,
+        formula: boardMove.error,
+        breakdown: { destination: input.destination },
+        changes: [],
+        missing_inputs: [boardMove.error],
+      };
+    }
+
+    const changes: CombatChange[] = [
+      {
+        target_id: actorPart.id,
+        target_name: actorPart.name,
+        field: 'state',
+        before: { move_used: actorPart.move_used },
+        after: { move_used: true },
+        desc: `${actorPart.name} 移動アクション使用`,
+      },
+    ];
+    if (boardMove.change) {
+      changes.push(boardMove.change);
+    }
+
     return {
       action_key: 'move',
       actor_id: actorPart.id,
       actor_name: actorPart.name,
       success: true,
       formula: `MOVE ${actorChar.stats.move}マス (1マス2m) まで移動`,
-      breakdown: { move: actorChar.stats.move },
-      changes: [
-        {
-          target_id: actorPart.id,
-          target_name: actorPart.name,
-          field: 'state',
-          before: { move_used: actorPart.move_used },
-          after: { move_used: true },
-          desc: `${actorPart.name} 移動アクション使用`,
-        },
-      ],
+      breakdown: { move: actorChar.stats.move, ...(input.destination ? { destination: input.destination } : {}) },
+      changes,
     };
   }
 
   // 2. Run action
   if (input.action_key === 'run') {
+    const boardMove = resolveBoardMovement('run');
+    if (boardMove.error) {
+      return {
+        action_key: 'run',
+        actor_id: actorPart.id,
+        actor_name: actorPart.name,
+        success: false,
+        formula: boardMove.error,
+        breakdown: { destination: input.destination },
+        changes: [],
+        missing_inputs: [boardMove.error],
+      };
+    }
+
+    const changes: CombatChange[] = [
+      {
+        target_id: actorPart.id,
+        target_name: actorPart.name,
+        field: 'state',
+        before: { action_used: actorPart.action_used },
+        after: { action_used: true },
+        desc: `${actorPart.name} 走る (アクション使用)`,
+      },
+    ];
+    if (boardMove.change) {
+      changes.push(boardMove.change);
+    }
+
     return {
       action_key: 'run',
       actor_id: actorPart.id,
       actor_name: actorPart.name,
       success: true,
       formula: `追加で MOVE ${actorChar.stats.move}マス (1マス2m) 移動`,
-      breakdown: { move: actorChar.stats.move },
-      changes: [
-        {
-          target_id: actorPart.id,
-          target_name: actorPart.name,
-          field: 'state',
-          before: { action_used: actorPart.action_used },
-          after: { action_used: true },
-          desc: `${actorPart.name} 走る (アクション使用)`,
-        },
-      ],
+      breakdown: { move: actorChar.stats.move, ...(input.destination ? { destination: input.destination } : {}) },
+      changes,
     };
   }
 
@@ -363,7 +500,127 @@ export function resolveCombatAction(
     };
   }
 
-  // 5. Unconfirmed actions (take_cover, suppressive, brawl, hide, pickup, use_skill, item_cyberware, first_aid, dodge, other)
+  // 5. Pickup & Unconfirmed actions
+  if (input.action_key === 'pickup' && boardId && input.pickup_drop_id) {
+    const drop = db
+      .select()
+      .from(board_drops)
+      .where(eq(board_drops.id, input.pickup_drop_id))
+      .get();
+
+    if (!drop) {
+      return {
+        action_key: 'pickup',
+        actor_id: actorPart.id,
+        actor_name: actorPart.name,
+        success: false,
+        formula: '落とし物が見つかりません',
+        breakdown: {},
+        changes: [],
+        missing_inputs: ['指定された落とし物が存在しません'],
+      };
+    }
+
+    const actorToken = actorPart.character_id
+      ? db
+          .select()
+          .from(board_tokens)
+          .where(and(eq(board_tokens.board_id, boardId), eq(board_tokens.character_id, actorPart.character_id)))
+          .get()
+      : null;
+
+    if (actorToken) {
+      const dist = gridDistance({ x: actorToken.x, y: actorToken.y }, { x: drop.x, y: drop.y });
+      if (dist > 1) {
+        return {
+          action_key: 'pickup',
+          actor_id: actorPart.id,
+          actor_name: actorPart.name,
+          success: false,
+          formula: `落とし物まで離れすぎています (距離 ${dist}マス。隣接か同じマスのみ)`,
+          breakdown: { dist },
+          changes: [],
+          missing_inputs: ['落とし物は同じマスか隣接マスからのみ拾えます'],
+        };
+      }
+    }
+
+    let parsedEntry: any = {};
+    try {
+      parsedEntry = JSON.parse(drop.inventory_entry);
+    } catch {
+      parsedEntry = { name: '拾ったアイテム' };
+    }
+
+    const changes: CombatChange[] = [
+      {
+        target_id: actorPart.id,
+        target_name: actorPart.name,
+        field: 'state',
+        before: { action_used: actorPart.action_used },
+        after: { action_used: true },
+        desc: `${actorPart.name} アクション使用 (拾う)`,
+      },
+      {
+        target_id: drop.id,
+        target_name: parsedEntry.name || 'アイテム',
+        field: 'board_drop_remove',
+        before: { ...drop, inventory_entry: parsedEntry },
+        after: null,
+        desc: `${actorPart.name} が足元の ${parsedEntry.name || 'アイテム'} を拾った`,
+      },
+      {
+        target_id: actorChar.id,
+        target_name: actorChar.name,
+        field: 'inventory',
+        before: actorChar.inventory,
+        after: [...actorChar.inventory, parsedEntry],
+        desc: `${actorChar.name} 所持品に追加: ${parsedEntry.name || 'アイテム'}`,
+      },
+    ];
+
+    return {
+      action_key: 'pickup',
+      actor_id: actorPart.id,
+      actor_name: actorPart.name,
+      success: true,
+      formula: `${actorPart.name} が足元の ${parsedEntry.name || 'アイテム'} を拾う`,
+      breakdown: { drop_id: drop.id },
+      changes,
+    };
+  }
+
+  // Check brawl distance if on board
+  if (input.action_key === 'brawl' && boardId && actorPart.character_id && targetPart?.character_id) {
+    const actorToken = db
+      .select()
+      .from(board_tokens)
+      .where(and(eq(board_tokens.board_id, boardId), eq(board_tokens.character_id, actorPart.character_id)))
+      .get();
+    const targetToken = db
+      .select()
+      .from(board_tokens)
+      .where(and(eq(board_tokens.board_id, boardId), eq(board_tokens.character_id, targetPart.character_id)))
+      .get();
+    if (actorToken && targetToken) {
+      const dist = gridDistance({ x: actorToken.x, y: actorToken.y }, { x: targetToken.x, y: targetToken.y });
+      if (dist > 1) {
+        return {
+          action_key: 'brawl',
+          actor_id: actorPart.id,
+          actor_name: actorPart.name,
+          target_id: targetPart.id,
+          target_name: targetPart.name,
+          success: false,
+          formula: `格闘の対象が離れすぎています (現在: ${dist}マス。隣接1マスのみ)`,
+          breakdown: { distance: dist },
+          changes: [],
+          missing_inputs: ['格闘は隣接（1マス）の対象のみ可能です'],
+        };
+      }
+    }
+  }
+
   const unconfirmedKeys = [
     'take_cover',
     'suppressive',
@@ -457,6 +714,62 @@ export function resolveCombatAction(
             getRuleConstant<DvTable>(wData.dv_table_key);
           if (!dvTable) {
             missing_inputs.push('武器の DV 表がありません');
+          }
+        }
+      }
+    }
+
+    // Check board LoS and distance if combat has a board
+    let effectiveLos: 'clear' | 'cover' | 'blocked' = 'clear';
+    const coverChanges: CombatChange[] = [];
+
+    if (boardId && actorPart.character_id && targetPart?.character_id) {
+      const actorToken = db
+        .select()
+        .from(board_tokens)
+        .where(and(eq(board_tokens.board_id, boardId), eq(board_tokens.character_id, actorPart.character_id)))
+        .get();
+      const targetToken = db
+        .select()
+        .from(board_tokens)
+        .where(and(eq(board_tokens.board_id, boardId), eq(board_tokens.character_id, targetPart.character_id)))
+        .get();
+
+      if (actorToken && targetToken) {
+        const boardObs = db.select().from(board_objects).where(eq(board_objects.board_id, boardId)).all();
+        const losRes = checkLineOfSight(
+          { x: actorToken.x, y: actorToken.y },
+          { x: targetToken.x, y: targetToken.y },
+          boardObs,
+        );
+
+        if (input.distance_m === undefined || input.distance_m === null) {
+          input.distance_m = losRes.distanceMeters;
+        }
+
+        effectiveLos = input.los_override || losRes.status;
+        if (effectiveLos === 'blocked') {
+          missing_inputs.push('壁に遮られて射線が通りません');
+        } else if (effectiveLos === 'cover') {
+          if (input.hit_cover && input.cover_object_id) {
+            const coverObj = boardObs.find((o) => o.id === input.cover_object_id);
+            if (coverObj) {
+              if (input.cover_damage !== undefined && input.cover_damage !== null) {
+                const curHp = coverObj.cover_hp ?? 0;
+                const newHp = Math.max(0, curHp - input.cover_damage);
+                const newBlocksLos = newHp === 0 ? 'none' : coverObj.blocks_los;
+                coverChanges.push({
+                  target_id: coverObj.id,
+                  target_name: coverObj.label || '遮蔽物',
+                  field: 'cover_hp',
+                  before: { cover_hp: coverObj.cover_hp, blocks_los: coverObj.blocks_los },
+                  after: { cover_hp: newHp, blocks_los: newBlocksLos },
+                  desc: `${coverObj.label || '遮蔽物'} に ${input.cover_damage} ダメージ (HP ${coverObj.cover_hp ?? '不明'} → ${newHp}${newHp === 0 ? '、破壊' : ''})`,
+                });
+              } else {
+                missing_inputs.push('遮蔽物に与えるダメージを入力してください');
+              }
+            }
           }
         }
       }
@@ -675,6 +988,13 @@ export function resolveCombatAction(
 
       // Hit branch
       if (curTargetChar && curTargetPart) {
+        if (input.hit_cover && coverChanges.length > 0) {
+          subFormula += ` (遮蔽物に命中)`;
+          formulaParts.push(subFormula);
+          changes.push(...coverChanges);
+          continue;
+        }
+
         if (isAimed && att.aimed_location === 'held_item' && att.held_item_id) {
           changes.push({
             target_id: curTargetPart.id,
@@ -685,6 +1005,40 @@ export function resolveCombatAction(
             desc: `${curTargetPart.name} の持っている物を落とさせた`,
           });
           subFormula += ` (持っている物を落とした)`;
+
+          if (boardId && curTargetPart.character_id) {
+            const targetToken = db
+              .select()
+              .from(board_tokens)
+              .where(
+                and(
+                  eq(board_tokens.board_id, boardId),
+                  eq(board_tokens.character_id, curTargetPart.character_id),
+                ),
+              )
+              .get();
+            const droppedItem = curTargetChar.inventory.find(
+              (i) => i.entry_id === att.held_item_id || i.item_id === att.held_item_id,
+            );
+            if (targetToken && droppedItem) {
+              const dropId = generateUlid();
+              changes.push({
+                target_id: dropId,
+                target_name: droppedItem.name,
+                field: 'board_drop',
+                before: null,
+                after: {
+                  id: dropId,
+                  board_id: boardId,
+                  x: targetToken.x,
+                  y: targetToken.y,
+                  inventory_entry: droppedItem,
+                  from_character_id: curTargetChar.id,
+                },
+                desc: `${curTargetPart.name} が ${droppedItem.name} を足元 (${targetToken.x}, ${targetToken.y}) に落とした`,
+              });
+            }
+          }
         } else {
           // Requires damage dice
           if (!att.damage_dice || att.damage_dice.length === 0) {
@@ -888,6 +1242,35 @@ export function resolveCombatAction(
     if (!targetChar || !targetPart) {
       missing_inputs.push('対象を選択してください');
     } else {
+      if (boardId && actorPart.character_id && targetPart.character_id) {
+        const actorToken = db
+          .select()
+          .from(board_tokens)
+          .where(
+            and(
+              eq(board_tokens.board_id, boardId),
+              eq(board_tokens.character_id, actorPart.character_id),
+            ),
+          )
+          .get();
+        const targetToken = db
+          .select()
+          .from(board_tokens)
+          .where(
+            and(
+              eq(board_tokens.board_id, boardId),
+              eq(board_tokens.character_id, targetPart.character_id),
+            ),
+          )
+          .get();
+        if (actorToken && targetToken) {
+          const dist = gridDistance({ x: actorToken.x, y: actorToken.y }, { x: targetToken.x, y: targetToken.y });
+          if (dist > 1) {
+            missing_inputs.push(`近接攻撃は隣接（1マス）の対象のみ可能です (現在: ${dist}マス)`);
+          }
+        }
+      }
+
       if (!input.defense_roll) {
         missing_inputs.push('回避の出目を入力してください');
       } else if (
