@@ -4,5 +4,6 @@ export default defineConfig({
   test: {
     fileParallelism: false,
     exclude: [...configDefaults.exclude, 'e2e/**'],
+    setupFiles: ['./vitest.setup.ts'],
   },
 });

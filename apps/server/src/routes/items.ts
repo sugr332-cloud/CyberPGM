@@ -1,12 +1,11 @@
 import { Hono } from 'hono';
-import { db } from '../db/client.js';
+import { db, getImagesDir } from '../db/client.js';
 import { items, weapons, armors, images } from '../db/schema.js';
 import { eq, or, like, and, sql, asc, desc } from 'drizzle-orm';
 import {
   ItemsQuerySchema,
   ItemPatchInputSchema,
   generateUlid,
-  getProjectRoot,
 } from '@cyberpgm/shared';
 import { requireGm } from '../auth.js';
 import fs from 'node:fs';
@@ -306,8 +305,7 @@ itemsRouter.post('/:id/images', requireGm, async (c) => {
   }
 
   // Save to data/images/user/<ulid>.<ext>
-  const root = getProjectRoot();
-  const userImagesDir = path.join(root, 'data', 'images', 'user');
+  const userImagesDir = path.join(getImagesDir(), 'user');
   if (!fs.existsSync(userImagesDir)) {
     fs.mkdirSync(userImagesDir, { recursive: true });
   }

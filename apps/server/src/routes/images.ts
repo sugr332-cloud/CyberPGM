@@ -1,10 +1,9 @@
 import { Hono } from 'hono';
-import { db } from '../db/client.js';
+import { db, getImagesDir } from '../db/client.js';
 import { images } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { getProjectRoot } from '@cyberpgm/shared';
 import { authMiddleware, requireGm } from '../auth.js';
 import { z } from 'zod';
 
@@ -33,7 +32,7 @@ imagesRouter.get('/:id', async (c) => {
     }
   }
 
-  const baseDir = path.resolve(getProjectRoot(), 'data/images');
+  const baseDir = getImagesDir();
   const filePath = path.resolve(baseDir, imageRecord.path);
 
   // Prevent path traversal
@@ -118,7 +117,7 @@ imagesRouter.delete('/:id', requireGm, async (c) => {
 
   // If file is in user uploads, remove physical file
   if (existing.path.startsWith('user/')) {
-    const baseDir = path.resolve(getProjectRoot(), 'data/images');
+    const baseDir = getImagesDir();
     const fullPath = path.resolve(baseDir, existing.path);
     if (fullPath.startsWith(baseDir) && fs.existsSync(fullPath)) {
       try {

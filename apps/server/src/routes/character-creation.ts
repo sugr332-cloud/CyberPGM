@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { db } from '../db/client.js';
+import { db, getImagesDir } from '../db/client.js';
 import {
   character_submissions,
   rule_constants,
@@ -11,7 +11,6 @@ import {
 import { eq, like, desc } from 'drizzle-orm';
 import {
   generateUlid,
-  getProjectRoot,
   CpgmCharacterFileSchema,
   CreationMethodConfigSchema,
   CharacterDraft,
@@ -82,8 +81,7 @@ export function saveBase64Image(dataUrl: string): { imageId: string; imagePath: 
     const buffer = Buffer.from(matches[2], 'base64');
     if (buffer.length > 10 * 1024 * 1024) return null; // 10MB limit
 
-    const root = getProjectRoot();
-    const userDir = path.join(root, 'data', 'images', 'user');
+    const userDir = path.join(getImagesDir(), 'user');
     if (!fs.existsSync(userDir)) {
       fs.mkdirSync(userDir, { recursive: true });
     }
@@ -242,8 +240,7 @@ characterCreationRoutes.post('/character-submissions/image', async (c) => {
     return c.json({ error: '許可されていない形式です (PNG, JPEG, WebP のみ)' }, 400);
   }
 
-  const root = getProjectRoot();
-  const userDir = path.join(root, 'data', 'images', 'user');
+  const userDir = path.join(getImagesDir(), 'user');
   if (!fs.existsSync(userDir)) {
     fs.mkdirSync(userDir, { recursive: true });
   }
