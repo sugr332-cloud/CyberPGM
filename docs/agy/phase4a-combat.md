@@ -42,7 +42,7 @@ Phase 4 は 2 つに分ける。
 - **HP・SP・弾数・状態（`status`）・致命傷（`crit_injuries`）は `characters` の値を正本にする**（戦闘用に複製しない。PC のキャラシートと同じ値を書き換える）。`combat_participants.state` には戦闘の中だけの値（遮蔽中、落とした物とそのマス、状態の残りラウンド、死亡セーブのペナルティ）を持つ
 - NPC・モブ: `characters.kind = 'npc' | 'mook'`。いまの DB には 0 件で、FVTT にも NPC のデータはない。GM が **PC タブで NPC・モブを作れる** ようにする（名前、ロール、能力値、HP の最大、SP、武器・防具はカタログから選ぶ、画像）。**シードに NPC の数値を作って入れない**（E2E では一時 DB にテスト用の NPC を作る）
 - モブの人数を指定して参加させたら、元のモブを複製して「○○ #1」「#2」…を作る（戦闘の終了時に複製を消すかを GM が選ぶ）
-- 武器: FVTT の武器データの `fireModes.suppressiveFire` が取り込まれていないので、`weapons` に列 `suppressive` を足して取り込み直す（`autofire` と同じ扱い。GM が編集した列は上書きしない）
+- 武器: FVTT の武器データの `fireModes.suppressiveFire` が取り込まれていないので、`weapons` に列 `suppressive` を足して取り込み直す（`autofire` と同じ扱い。GM が編集した列は上書きしない）。**本番の DB への取り込み直しは agy が行わない**（マージ後に Claude が行う）。テストでは一時 DB で確かめる
 - 保存ファイル（cpgm-save）の `version` を 3 に上げ、戦闘の 3 テーブルを含める。version 1・2 も読めるようにする
 
 ## 2. 戦闘開始: 参加者チェックと行動順（モック「GM — 戦闘開始」）
