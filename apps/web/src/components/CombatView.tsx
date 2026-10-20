@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api.js';
 import {
   Combat,
@@ -43,6 +43,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [targetParticipantId, setTargetParticipantId] = useState<string | null>(null);
   const [distanceM, setDistanceM] = useState<number>(5);
   const [selectedWeaponId, setSelectedWeaponId] = useState<string | null>(null);
+  const [meleeIgnoreArmorInput, setMeleeIgnoreArmorInput] = useState<number | undefined>(undefined);
   const [ammoSpent, setAmmoSpent] = useState<number>(10);
   const [dodgeMode, setDodgeMode] = useState<'dv' | 'dodge'>('dv');
   const [aimedLocation, setAimedLocation] = useState<'head' | 'held_item' | 'leg'>('head');
@@ -92,20 +93,25 @@ export const CombatView: React.FC<CombatViewProps> = ({
     api.getCombatActions().then((res) => setActions(res.actions)).catch(() => {});
   }, [refreshCombat]);
 
-  // Auto-select first weapon for active participant if none is selected
+  // Weapon entries in inventory for active participant (kind === 'weapon')
+  const weaponEntries = useMemo(() => {
+    const inv = (activePart?.character?.inventory as any[]) || [];
+    return inv.filter((i: any) => i.kind === 'weapon');
+  }, [activePart]);
+
+  // Auto-select first weapon entry for active participant if none or invalid is selected
   useEffect(() => {
-    if (selectedActionKey && !selectedWeaponId && activePart?.character) {
-      const weps = (activePart.character.weapons as any[]) || [];
-      const inv = (activePart.character.inventory as any[]) || [];
-      const firstWep =
-        (typeof weps[0] === 'string' ? weps[0] : weps[0]?.item_id || weps[0]?.name) ||
-        inv[0]?.item_id ||
-        inv[0]?.name;
-      if (firstWep) {
-        setSelectedWeaponId(firstWep);
+    if (selectedActionKey && activePart?.character) {
+      const isValid = weaponEntries.some((w) => w.entry_id === selectedWeaponId);
+      if (!isValid) {
+        if (weaponEntries.length > 0) {
+          setSelectedWeaponId(weaponEntries[0].entry_id);
+        } else {
+          setSelectedWeaponId(null);
+        }
       }
     }
-  }, [selectedActionKey, selectedWeaponId, activePart]);
+  }, [selectedActionKey, selectedWeaponId, activePart, weaponEntries]);
 
   // Handle WebSocket updates
   useEffect(() => {
@@ -303,12 +309,22 @@ export const CombatView: React.FC<CombatViewProps> = ({
         });
       }
 
+      const selectedWep = weaponEntries.find((w) => w.entry_id === selectedWeaponId);
+      const ignoreArmorToSend =
+        selectedActionKey === 'melee'
+          ? typeof selectedWep?.ignore_armor_percent === 'number'
+            ? selectedWep.ignore_armor_percent
+            : meleeIgnoreArmorInput
+          : undefined;
+
       const res = await api.resolveCombatAction(combat.id, {
         action_key: selectedActionKey,
         actor_id: activePart.id,
         target_id: targetParticipantId || undefined,
         distance_m: distanceM,
         weapon_id: selectedWeaponId || undefined,
+        weapon_entry_id: selectedWeaponId || undefined,
+        ignore_armor_percent: ignoreArmorToSend,
         ammo_spent: selectedActionKey === 'autofire' ? ammoSpent : undefined,
         aimed_location: aimedLocation,
         held_item_id: heldItemId || undefined,
@@ -373,12 +389,22 @@ export const CombatView: React.FC<CombatViewProps> = ({
         });
       }
 
+      const selectedWep = weaponEntries.find((w) => w.entry_id === selectedWeaponId);
+      const ignoreArmorToSend =
+        selectedActionKey === 'melee'
+          ? typeof selectedWep?.ignore_armor_percent === 'number'
+            ? selectedWep.ignore_armor_percent
+            : meleeIgnoreArmorInput
+          : undefined;
+
       const res = await api.applyCombatAction(combat.id, {
         action_key: selectedActionKey,
         actor_id: activePart.id,
         target_id: targetParticipantId || undefined,
         distance_m: distanceM,
         weapon_id: selectedWeaponId || undefined,
+        weapon_entry_id: selectedWeaponId || undefined,
+        ignore_armor_percent: ignoreArmorToSend,
         ammo_spent: selectedActionKey === 'autofire' ? ammoSpent : undefined,
         aimed_location: aimedLocation,
         held_item_id: heldItemId || undefined,
@@ -554,6 +580,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>出目:</span>
                             <input
+                              data-testid={`init-input-${p.name}`}
                               type="number"
                               min={1}
                               max={10}
@@ -1088,54 +1115,76 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   })()}
 
                   {/* Weapon Selection (for ranged / melee / reload) */}
-                  {['ranged', 'aimed', 'autofire', 'melee', 'reload'].includes(selectedActionKey) && (() => {
-                    const weps = (activePart.character?.weapons as any[]) || [];
-                    const inv = (activePart.character?.inventory as any[]) || [];
-                    const weaponOptions: { id: string; name: string; ammo?: number }[] = [];
+                  {['ranged', 'aimed', 'autofire', 'melee', 'reload'].includes(selectedActionKey) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>使用する武器を選択:</span>
+                      <select
+                        value={selectedWeaponId || ''}
+                        onChange={(e) => setSelectedWeaponId(e.target.value || null)}
+                        style={{
+                          padding: '6px 10px',
+                          backgroundColor: 'var(--color-bg)',
+                          border: '1px solid var(--color-border-light)',
+                          borderRadius: '4px',
+                          color: 'var(--color-text)',
+                          fontSize: '0.85rem',
+                        }}
+                      >
+                        <option value="">-- 武器を選択してください --</option>
+                        {weaponEntries.map((wOpt) => (
+                          <option key={wOpt.entry_id} value={wOpt.entry_id}>
+                            {wOpt.name} (残弾: {wOpt.ammo !== undefined && wOpt.ammo !== null ? wOpt.ammo : '—'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
-                    weps.forEach((w: any) => {
-                      const name = typeof w === 'string' ? w : w.name;
-                      const id = typeof w === 'string' ? w : (w.item_id || w.id || w.name);
-                      const matchedInv = inv.find((i: any) => i.item_id === id || i.name === name);
-                      weaponOptions.push({
-                        id,
-                        name,
-                        ammo: matchedInv?.ammo,
-                      });
-                    });
-
-                    inv.forEach((i: any) => {
-                      if (i.equipped && !weaponOptions.some((opt) => opt.name === i.name || opt.id === (i.item_id || i.entry_id))) {
-                        weaponOptions.push({
-                          id: i.item_id || i.entry_id || i.name,
-                          name: i.name,
-                          ammo: i.ammo,
-                        });
-                      }
-                    });
-
+                  {/* Melee: Ignore armor percent if unconfigured on weapon */}
+                  {selectedActionKey === 'melee' && (() => {
+                    const selectedWep = weaponEntries.find((w) => w.entry_id === selectedWeaponId);
+                    const weaponIgnore = selectedWep?.ignore_armor_percent;
+                    if (typeof weaponIgnore === 'number') {
+                      return (
+                        <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                          防具無視率: <strong style={{ color: 'var(--color-text)' }}>{weaponIgnore}%</strong> (武器データより)
+                        </div>
+                      );
+                    }
                     return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>使用する武器を選択:</span>
-                        <select
-                          value={selectedWeaponId || ''}
-                          onChange={(e) => setSelectedWeaponId(e.target.value || null)}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '8px 10px',
+                          backgroundColor: 'rgba(235, 179, 58, 0.1)',
+                          borderRadius: '4px',
+                          border: '1px solid var(--color-warning)',
+                        }}
+                      >
+                        <span style={{ fontSize: '0.85rem', color: 'var(--color-warning)', fontWeight: 600 }}>
+                          防具無視率が不明。GM が入力 (%):
+                        </span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          placeholder="例: 50"
+                          value={meleeIgnoreArmorInput ?? ''}
+                          onChange={(e) =>
+                            setMeleeIgnoreArmorInput(e.target.value === '' ? undefined : Number(e.target.value))
+                          }
                           style={{
-                            padding: '6px 10px',
+                            width: '70px',
+                            padding: '4px 6px',
                             backgroundColor: 'var(--color-bg)',
                             border: '1px solid var(--color-border-light)',
                             borderRadius: '4px',
                             color: 'var(--color-text)',
                             fontSize: '0.85rem',
                           }}
-                        >
-                          <option value="">-- 武器を選択してください --</option>
-                          {weaponOptions.map((wOpt, idx) => (
-                            <option key={wOpt.id || idx} value={wOpt.id}>
-                              {wOpt.name} (残弾: {wOpt.ammo !== undefined && wOpt.ammo !== null ? wOpt.ammo : '—'})
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </div>
                     );
                   })()}

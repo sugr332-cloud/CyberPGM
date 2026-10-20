@@ -7,6 +7,8 @@ import {
   combat_log,
   characters,
   images,
+  items,
+  weapons,
   rule_constants,
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
@@ -25,7 +27,7 @@ import {
   Combat,
   CombatChange,
 } from '@cyberpgm/shared';
-import { resolveCombatAction } from '../services/combat-resolver.js';
+import { resolveCombatAction, WEAPON_NAME_ALIASES } from '../services/combat-resolver.js';
 import { woundState } from '@cyberpgm/rules';
 
 export const combatRoutes = new Hono();
@@ -57,6 +59,51 @@ export function getHydratedCombat(combatId: string): Combat | null {
       if (charRow) {
         const imgPath = charRow.image_id ? imageMap.get(charRow.image_id) ?? null : null;
         const formatted = formatCharacterRow(charRow, imgPath);
+        const hydratedInventory = formatted.inventory.map((inv) => {
+          let kind = inv.kind;
+          let wRow: any = null;
+          if (inv.item_id) {
+            const it = db.select({ kind: items.kind }).from(items).where(eq(items.id, inv.item_id)).get();
+            if (!kind) kind = it?.kind;
+            wRow = db.select().from(weapons).where(eq(weapons.item_id, inv.item_id)).get();
+          }
+          if (!kind || !wRow) {
+            const alias = WEAPON_NAME_ALIASES[inv.name];
+            const it =
+              db.select({ id: items.id, kind: items.kind }).from(items).where(eq(items.name_ja, inv.name)).get() ||
+              db.select({ id: items.id, kind: items.kind }).from(items).where(eq(items.name_ja_override, inv.name)).get() ||
+              db.select({ id: items.id, kind: items.kind }).from(items).where(eq(items.name_en, inv.name)).get() ||
+              (alias ? db.select({ id: items.id, kind: items.kind }).from(items).where(eq(items.name_ja, alias)).get() : undefined) ||
+              (alias ? db.select({ id: items.id, kind: items.kind }).from(items).where(eq(items.name_en, alias)).get() : undefined);
+            if (!kind) kind = it?.kind;
+            if (it && !wRow) {
+              wRow = db.select().from(weapons).where(eq(weapons.item_id, it.id)).get();
+            }
+          }
+          if (wRow) {
+            kind = 'weapon';
+          }
+          let ammo = inv.ammo;
+          if (
+            (ammo === undefined || ammo === null) &&
+            wRow &&
+            wRow.magazine_max !== null &&
+            wRow.magazine_max !== undefined
+          ) {
+            ammo = wRow.magazine_max;
+          }
+          const ignoreArmorPercent =
+            wRow && typeof wRow.ignore_armor_percent === 'number'
+              ? wRow.ignore_armor_percent
+              : (inv.ignore_armor_percent ?? null);
+
+          return {
+            ...inv,
+            ...(kind ? { kind } : {}),
+            ...(ammo !== undefined ? { ammo } : {}),
+            ignore_armor_percent: ignoreArmorPercent,
+          };
+        });
         charObj = {
           id: formatted.id,
           name: formatted.name,
@@ -70,7 +117,7 @@ export function getHydratedCombat(combatId: string): Combat | null {
           sp_head: formatted.sp_head,
           sp_body: formatted.sp_body,
           weapons: formatted.weapons,
-          inventory: formatted.inventory,
+          inventory: hydratedInventory,
           status: formatted.status,
           crit_injuries: formatted.crit_injuries,
         };

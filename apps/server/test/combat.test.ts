@@ -228,6 +228,7 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
           {
             entry_id: 'e_ammo',
             name: '大型拳銃用弾薬',
+            kind: 'ammo',
             qty: 5,
           },
         ]),
@@ -743,5 +744,334 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
     );
     expect(customSummary).toBeDefined();
     expect(customSummary.desc).toMatch(/命中 · ガンガー.* に \d+ ダメージ →/);
+  });
+
+  describe('Phase 4a Review 03: Defaults cleanup, Spare ammo by kind, and Weapon entry alignment (§12)', () => {
+    // 12.1: 作り話の既定値の全廃
+    it('12.1: halts reload when magazine_max is undefined or null', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+
+      // weaponIdMelee has magazine_max: null
+      const res = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'reload',
+          actor_id: pViper.id,
+          weapon_id: weaponIdMelee,
+        }),
+      });
+
+      const json = await res.json();
+      expect(json.result.success).toBe(false);
+      expect(json.result.formula).toBe('装弾数が不明なためリロードできません');
+      expect(json.result.missing_inputs).toContain('装弾数が不明なためリロードできません');
+    });
+
+    it('12.1: halts autofire when autofire cap is missing or unconfigured', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+      // weaponIdPistol has autofire: null
+      const res = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'autofire',
+          actor_id: pViper.id,
+          target_id: pGanger.id,
+          distance_m: 5,
+          weapon_id: weaponIdPistol,
+          ammo_spent: 10,
+          attack_roll: { first: 8 },
+          damage_dice: [2, 2],
+        }),
+      });
+
+      const json = await res.json();
+      expect(json.result.missing_inputs).toContain('倍率の上限が不明です');
+    });
+
+    it('12.1: requires GM input for ignore_armor_percent when weapon value is missing, and resolves once provided', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+      // Insert melee weapon with ignore_armor_percent: null
+      const nullIgnoreWepId = 'item-melee-null-ignore';
+      const now = Date.now();
+      db.insert(items).values({
+        id: nullIgnoreWepId,
+        kind: 'weapon',
+        name_en: 'Improvised Club',
+        name_ja: '角材',
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: now,
+        updated_at: now,
+      }).run();
+
+      db.insert(weapons).values({
+        item_id: nullIgnoreWepId,
+        weapon_type: 'melee',
+        skill: 'Melee Weapon',
+        damage: '2d6',
+        rof: 2,
+        magazine_max: null,
+        autofire: null,
+        suppressive: false,
+        dv_table_key: null,
+        is_ranged: false,
+        ignore_armor_percent: null,
+      }).run();
+
+      // Without GM input -> missing_inputs
+      const res1 = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'melee',
+          actor_id: pViper.id,
+          target_id: pGanger.id,
+          weapon_id: nullIgnoreWepId,
+          attack_roll: { first: 8 },
+          defense_roll: { first: 3 },
+          damage_dice: [4, 5],
+        }),
+      });
+      const json1 = await res1.json();
+      expect(json1.result.missing_inputs).toContain('防具無視率が不明です (GM が入力してください)');
+
+      // With GM input (30%) -> resolves successfully
+      const res2 = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'melee',
+          actor_id: pViper.id,
+          target_id: pGanger.id,
+          weapon_id: nullIgnoreWepId,
+          ignore_armor_percent: 30,
+          attack_roll: { first: 8 },
+          defense_roll: { first: 3 },
+          damage_dice: [4, 5],
+        }),
+      });
+      const json2 = await res2.json();
+      expect(json2.result.success).toBe(true);
+      expect(json2.result.formula).toContain('防具無視 30%');
+    });
+
+    it('12.1: does not check or deduct ammo when weapon magazine_max is null', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+      // weapon with magazine_max: null (e.g. bow or thrown weapon)
+      const thrownWepId = 'item-thrown-1';
+      const now = Date.now();
+      db.insert(items).values({
+        id: thrownWepId,
+        kind: 'weapon',
+        name_en: 'Thrown Knife',
+        name_ja: '投げナイフ',
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: now,
+        updated_at: now,
+      }).run();
+
+      db.insert(weapons).values({
+        item_id: thrownWepId,
+        weapon_type: 'pistol',
+        skill: 'Handgun',
+        damage: '2d6',
+        rof: 1,
+        magazine_max: null,
+        autofire: null,
+        suppressive: false,
+        dv_table_key: 'Pistol',
+        is_ranged: true,
+        ignore_armor_percent: 0,
+      }).run();
+
+      const res = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'ranged',
+          actor_id: pViper.id,
+          target_id: pGanger.id,
+          distance_m: 5,
+          weapon_id: thrownWepId,
+          attack_roll: { first: 7 },
+          damage_dice: [3, 4],
+        }),
+      });
+
+      const json = await res.json();
+      expect(json.result.success).toBe(true);
+      // No ammo change recorded
+      const ammoChange = json.result.changes.find((c: any) => c.field === 'ammo');
+      expect(ammoChange).toBeUndefined();
+    });
+
+    // 12.2: 予備弾薬を kind = 'ammo' で探索 & 予備なしリロード不可
+    it('12.2: prohibits reload when no spare ammo with kind = ammo is present in inventory', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+
+      // Set inventory with no kind = 'ammo' items (even if name has '弾薬')
+      db.update(characters)
+        .set({
+          inventory: JSON.stringify([
+            {
+              entry_id: 'e1',
+              item_id: weaponIdPistol,
+              name: 'ヘビーピストル',
+              kind: 'weapon',
+              qty: 1,
+              equipped: true,
+              ammo: 0,
+            },
+            {
+              entry_id: 'e_misc',
+              name: '弾薬箱 (空)',
+              qty: 1,
+            },
+          ]),
+        })
+        .where(eq(characters.id, pcId1))
+        .run();
+
+      const res = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'reload',
+          actor_id: pViper.id,
+          weapon_id: weaponIdPistol,
+        }),
+      });
+
+      const json = await res.json();
+      expect(json.result.success).toBe(false);
+      expect(json.result.formula).toBe('予備の弾薬がありません');
+      expect(json.result.missing_inputs).toContain('予備の弾薬がありません');
+    });
+
+    it('12.2: consumes spare ammo of qty 1 on reload and removes the entry completely from inventory', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+
+      // Set inventory with spare ammo qty: 1
+      db.update(characters)
+        .set({
+          inventory: JSON.stringify([
+            {
+              entry_id: 'e1',
+              item_id: weaponIdPistol,
+              name: 'ヘビーピストル',
+              kind: 'weapon',
+              qty: 1,
+              equipped: true,
+              ammo: 0,
+            },
+            {
+              entry_id: 'e_spare_single',
+              name: '大型拳銃弾 (予備パック)',
+              kind: 'ammo',
+              qty: 1,
+            },
+          ]),
+        })
+        .where(eq(characters.id, pcId1))
+        .run();
+
+      const applyRes = await app.request(`/api/combats/${combat.id}/apply`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'reload',
+          actor_id: pViper.id,
+          weapon_id: weaponIdPistol,
+        }),
+      });
+
+      expect(applyRes.status).toBe(200);
+      const reloadedChar = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+      const invReloaded = JSON.parse(reloadedChar.inventory);
+      const pistolReloaded = invReloaded.find((i: any) => i.item_id === weaponIdPistol);
+      expect(pistolReloaded.ammo).toBe(8); // restored to magazine_max
+
+      // Verify spare ammo entry was completely removed (not left at qty 0)
+      const spareEntry = invReloaded.find((i: any) => i.entry_id === 'e_spare_single');
+      expect(spareEntry).toBeUndefined();
+    });
+
+    // 12.3: 武器選択欄と計算武器の不一致解消
+    it('12.3: resolves action and deducts ammo by weapon_entry_id from kind = weapon inventory entries', async () => {
+      const combat = await createTestCombat();
+      const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+
+      // Character has 2 weapons in inventory
+      const customEntry1 = 'w_entry_primary';
+      const customEntry2 = 'w_entry_secondary';
+      db.update(characters)
+        .set({
+          inventory: JSON.stringify([
+            {
+              entry_id: customEntry1,
+              item_id: weaponIdPistol,
+              name: '大型拳銃 #1',
+              kind: 'weapon',
+              qty: 1,
+              equipped: true,
+              ammo: 8,
+            },
+            {
+              entry_id: customEntry2,
+              item_id: weaponIdPistol,
+              name: '大型拳銃 #2',
+              kind: 'weapon',
+              qty: 1,
+              equipped: true,
+              ammo: 4,
+            },
+          ]),
+        })
+        .where(eq(characters.id, pcId1))
+        .run();
+
+      // Fire weapon #2 using weapon_entry_id
+      const applyRes = await app.request(`/api/combats/${combat.id}/apply`, {
+        method: 'POST',
+        headers: { ...authGm, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_key: 'ranged',
+          actor_id: pViper.id,
+          target_id: pGanger.id,
+          distance_m: 5,
+          weapon_id: weaponIdPistol,
+          weapon_entry_id: customEntry2,
+          attack_roll: { first: 7 },
+          damage_dice: [3, 3, 3],
+        }),
+      });
+
+      expect(applyRes.status).toBe(200);
+      const updatedChar = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+      const inv = JSON.parse(updatedChar.inventory);
+      const w1 = inv.find((i: any) => i.entry_id === customEntry1);
+      const w2 = inv.find((i: any) => i.entry_id === customEntry2);
+
+      // Weapon #1 was untouched at 8
+      expect(w1.ammo).toBe(8);
+      // Weapon #2 decreased from 4 to 3
+      expect(w2.ammo).toBe(3);
+    });
   });
 });

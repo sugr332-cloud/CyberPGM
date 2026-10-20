@@ -86,7 +86,7 @@ describe('FVTT Importer', () => {
     expect(weaponSub.rof).toBe(2);
     expect(weaponSub.magazine_max).toBe(12);
     expect(weaponSub.is_ranged).toBe(1);
-    expect(weaponSub.ignore_armor_percent).toBe(0);
+    expect(weaponSub.ignore_armor_percent).toBeNull();
 
     // Verify melee weapon ignore_armor_percent
     const meleeItem = sqlite

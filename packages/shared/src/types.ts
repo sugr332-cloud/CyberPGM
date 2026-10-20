@@ -227,9 +227,11 @@ export interface InventoryEntry {
   entry_id: string;
   item_id?: string;
   name: string;
+  kind?: string;
   qty: number;
   equipped?: boolean;
   ammo?: number;
+  ignore_armor_percent?: number | null;
   notes?: string;
 }
 

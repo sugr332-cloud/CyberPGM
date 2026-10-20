@@ -24,9 +24,11 @@ export const InventoryEntrySchema = z.object({
   entry_id: z.string(),
   item_id: z.string().optional(),
   name: z.string(),
+  kind: z.string().optional(),
   qty: z.number().int().positive().default(1),
   equipped: z.boolean().optional(),
   ammo: z.number().int().nonnegative().optional(),
+  ignore_armor_percent: z.number().nullable().optional(),
   notes: z.string().optional(),
 });
 

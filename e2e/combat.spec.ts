@@ -42,6 +42,35 @@ test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM A
     ganger = db.select().from(characters).where(eq(characters.id, gId)).get();
   }
 
+  // Ensure Viper has weapon in inventory with kind: 'weapon' and ammo: 8
+  const viper = db.select().from(characters).where(eq(characters.name, 'ヴァイパー')).get();
+  if (viper) {
+    const inv = JSON.parse(viper.inventory || '[]');
+    const wIdx = inv.findIndex((i: any) => i.kind === 'weapon' || i.name === '大型拳銃' || i.name === 'ヘビー・ピストル');
+    if (wIdx >= 0) {
+      inv[wIdx] = {
+        ...inv[wIdx],
+        name: '大型拳銃',
+        kind: 'weapon',
+        ammo: 8,
+      };
+    } else {
+      inv.push({
+        entry_id: generateUlid(),
+        item_id: '01M5BTW75NVPEE0BDG9BDF05HW',
+        name: '大型拳銃',
+        kind: 'weapon',
+        qty: 1,
+        equipped: true,
+        ammo: 8,
+      });
+    }
+    db.update(characters)
+      .set({ inventory: JSON.stringify(inv) })
+      .where(eq(characters.id, viper.id))
+      .run();
+  }
+
   // 1. GM Context (1440x900)
   const gmContext = await browser.newContext({
     viewport: { width: 1440, height: 900 },
@@ -85,10 +114,9 @@ test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM A
   const sessionCode = healthData.session;
 
   // Set Viper initiative roll to 10 so Viper acts first
-  const viperInput = gmPage.locator('div').filter({ has: gmPage.getByText('ヴァイパー', { exact: true }) }).locator('input[type="number"]').last();
-  if (await viperInput.isVisible()) {
-    await viperInput.fill('10');
-  }
+  const viperInitInput = gmPage.getByTestId('init-input-ヴァイパー');
+  await expect(viperInitInput).toBeVisible();
+  await viperInitInput.fill('10');
 
   // Confirm Initiative and Start Combat
   await gmPage.getByRole('button', { name: '行動順を確定して戦闘開始' }).first().click();

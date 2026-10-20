@@ -761,7 +761,7 @@ function insertOrUpdateSubtables(
     const dvTableKey = sys.dvTable || null;
     const ammoTypes = Array.isArray(sys.ammoVariety) ? JSON.stringify(sys.ammoVariety) : null;
     const isRanged = sys.isRanged ? 1 : 0;
-    const ignoreArmorPercent = typeof sys.ignoreArmorPercent === 'number' ? sys.ignoreArmorPercent : (isRanged ? 0 : 50);
+    const ignoreArmorPercent = typeof sys.ignoreArmorPercent === 'number' ? sys.ignoreArmorPercent : null;
 
     const existing = sqlite.prepare('SELECT item_id FROM weapons WHERE item_id = ?').get(itemId);
     if (!existing) {

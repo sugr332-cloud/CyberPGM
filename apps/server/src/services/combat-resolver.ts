@@ -45,6 +45,17 @@ function stripHtml(text?: string | null): string {
   return text.replace(/<[^>]*>/g, '').trim();
 }
 
+export const WEAPON_NAME_ALIASES: Record<string, string> = {
+  'ヘビー・ピストル': '大型拳銃',
+  '大型拳銃': 'ヘビー・ピストル',
+  'ミディアム・ピストル': '中型拳銃',
+  '中型拳銃': 'ミディアム・ピストル',
+  'ライト・ピストル': '小型拳銃',
+  '小型拳銃': 'ライト・ピストル',
+  'ベリー・ヘビー・ピストル': '超大型拳銃',
+  '超大型拳銃': 'ベリー・ヘビー・ピストル',
+};
+
 export function resolveCombatAction(
   db: AppDatabase,
   input: ResolveInput,
@@ -77,17 +88,6 @@ export function resolveCombatAction(
     } catch {
       return null;
     }
-  };
-
-  const WEAPON_NAME_ALIASES: Record<string, string> = {
-    'ヘビー・ピストル': '大型拳銃',
-    '大型拳銃': 'ヘビー・ピストル',
-    'ミディアム・ピストル': '中型拳銃',
-    '中型拳銃': 'ミディアム・ピストル',
-    'ライト・ピストル': '小型拳銃',
-    '小型拳銃': 'ライト・ピストル',
-    'ベリー・ヘビー・ピストル': '超大型拳銃',
-    '超大型拳銃': 'ベリー・ヘビー・ピストル',
   };
 
   // Helper to load weapon data
@@ -224,7 +224,20 @@ export function resolveCombatAction(
 
   // 4. Reload
   if (input.action_key === 'reload') {
-    const wData = getWeaponData(input.weapon_id);
+    const actorInventory: InventoryEntry[] = (actorChar.inventory as InventoryEntry[]) || [];
+    const invWeapon = input.weapon_entry_id
+      ? actorInventory.find((i) => i.entry_id === input.weapon_entry_id)
+      : input.weapon_id
+        ? actorInventory.find(
+            (i) =>
+              i.entry_id === input.weapon_id ||
+              i.item_id === input.weapon_id ||
+              i.name === input.weapon_id,
+          )
+        : undefined;
+    const weaponItemId = invWeapon?.item_id || input.weapon_id;
+    const wData = getWeaponData(weaponItemId || invWeapon?.name);
+
     if (!wData) {
       return {
         action_key: 'reload',
@@ -238,35 +251,67 @@ export function resolveCombatAction(
       };
     }
 
-    const maxAmmo = wData.magazine_max ?? 8;
-    const actorInventory: InventoryEntry[] = (actorChar.inventory as InventoryEntry[]) || [];
-    const newInventory = [...actorInventory];
-
-    // Consume 1 unit of spare ammo from inventory if present
-    const ammoItemIdx = newInventory.findIndex(
-      (i) =>
-        i.name.includes('弾') ||
-        i.name.toLowerCase().includes('ammo') ||
-        i.name.toLowerCase().includes('bullet'),
-    );
-    if (ammoItemIdx >= 0) {
-      if (newInventory[ammoItemIdx].qty > 1) {
-        newInventory[ammoItemIdx] = {
-          ...newInventory[ammoItemIdx],
-          qty: newInventory[ammoItemIdx].qty - 1,
-        };
-      } else {
-        newInventory.splice(ammoItemIdx, 1);
-      }
+    if (wData.magazine_max === null || wData.magazine_max === undefined) {
+      return {
+        action_key: 'reload',
+        actor_id: actorPart.id,
+        actor_name: actorPart.name,
+        success: false,
+        formula: '装弾数が不明なためリロードできません',
+        breakdown: {},
+        changes: [],
+        missing_inputs: ['装弾数が不明なためリロードできません'],
+      };
     }
 
-    const weaponIdx = newInventory.findIndex(
-      (i) => i.item_id === wData.item_id || i.name === wData.name_ja,
-    );
+    const maxAmmo = wData.magazine_max;
+    const newInventory = [...actorInventory];
+
+    // Find spare ammo in inventory with kind === 'ammo'
+    const ammoItemIdx = newInventory.findIndex((i) => {
+      if (i.qty <= 0) return false;
+      if (i.kind === 'ammo') return true;
+      if (i.item_id) {
+        const it = db.select({ kind: items.kind }).from(items).where(eq(items.id, i.item_id)).get();
+        if (it?.kind === 'ammo') return true;
+      }
+      const itByName =
+        db.select({ kind: items.kind }).from(items).where(eq(items.name_ja, i.name)).get() ||
+        db.select({ kind: items.kind }).from(items).where(eq(items.name_en, i.name)).get();
+      return itByName?.kind === 'ammo';
+    });
+
+    if (ammoItemIdx < 0) {
+      return {
+        action_key: 'reload',
+        actor_id: actorPart.id,
+        actor_name: actorPart.name,
+        success: false,
+        formula: '予備の弾薬がありません',
+        breakdown: {},
+        changes: [],
+        missing_inputs: ['予備の弾薬がありません'],
+      };
+    }
+
+    const spareAmmoItem = newInventory[ammoItemIdx];
+    if (spareAmmoItem.qty > 1) {
+      newInventory[ammoItemIdx] = {
+        ...spareAmmoItem,
+        qty: spareAmmoItem.qty - 1,
+      };
+    } else {
+      newInventory.splice(ammoItemIdx, 1);
+    }
+
+    const weaponIdx = invWeapon
+      ? newInventory.findIndex((i) => i.entry_id === invWeapon.entry_id)
+      : newInventory.findIndex((i) => i.item_id === wData.item_id || i.name === wData.name_ja);
+
     const beforeAmmo =
       weaponIdx >= 0 && typeof newInventory[weaponIdx].ammo === 'number'
         ? newInventory[weaponIdx].ammo
-        : (wData.magazine_max ?? 0);
+        : 0;
 
     if (weaponIdx >= 0) {
       newInventory[weaponIdx] = { ...newInventory[weaponIdx], ammo: maxAmmo };
@@ -275,6 +320,7 @@ export function resolveCombatAction(
         entry_id: 'w-' + Math.random().toString(36).slice(2),
         item_id: wData.item_id,
         name: wData.name_ja,
+        kind: 'weapon',
         qty: 1,
         equipped: true,
         ammo: maxAmmo,
@@ -311,7 +357,7 @@ export function resolveCombatAction(
           field: 'inventory',
           before: actorInventory,
           after: newInventory,
-          desc: `${actorChar.name} ${wData.name_ja} をリロード (残弾 ${maxAmmo})`,
+          desc: `${actorChar.name} ${wData.name_ja} をリロード (残弾 ${maxAmmo}, 予備弾薬消費)`,
         },
       ],
     };
@@ -361,7 +407,19 @@ export function resolveCombatAction(
   // 6. Ranged / Aimed / Autofire
   if (['ranged', 'aimed', 'autofire'].includes(input.action_key)) {
     const missing_inputs: string[] = [];
-    const wData = getWeaponData(input.weapon_id);
+    const actorInventory: InventoryEntry[] = (actorChar.inventory as InventoryEntry[]) || [];
+    const invWeapon = input.weapon_entry_id
+      ? actorInventory.find((i) => i.entry_id === input.weapon_entry_id)
+      : input.weapon_id
+        ? actorInventory.find(
+            (i) =>
+              i.entry_id === input.weapon_id ||
+              i.item_id === input.weapon_id ||
+              i.name === input.weapon_id,
+          )
+        : undefined;
+    const weaponItemId = invWeapon?.item_id || input.weapon_id;
+    const wData = getWeaponData(weaponItemId || invWeapon?.name);
     if (!wData) {
       missing_inputs.push('武器を選択してください');
     }
@@ -384,8 +442,8 @@ export function resolveCombatAction(
             missing_inputs.push('オートファイアの DV 表がありません');
           }
         }
-        if (!wData.autofire) {
-          missing_inputs.push('この武器はオートファイアに対応していません');
+        if (typeof wData.autofire !== 'number' || wData.autofire <= 0) {
+          missing_inputs.push('倍率の上限が不明です');
         }
         if (input.ammo_spent === undefined || input.ammo_spent === null || input.ammo_spent <= 0) {
           missing_inputs.push('オートファイアの消費弾数を入力してください');
@@ -424,10 +482,6 @@ export function resolveCombatAction(
           ];
 
     // Ammo inventory verification
-    const actorInventory: InventoryEntry[] = (actorChar.inventory as InventoryEntry[]) || [];
-    const invWeapon = wData
-      ? actorInventory.find((i) => i.item_id === wData.item_id || i.name === wData.name_ja)
-      : undefined;
     const currentAmmo: number | null =
       wData && wData.magazine_max !== null && wData.magazine_max !== undefined
         ? invWeapon && typeof invWeapon.ammo === 'number'
@@ -491,9 +545,11 @@ export function resolveCombatAction(
     if (currentAmmo !== null) {
       const newAmmo = Math.max(0, currentAmmo - totalAmmoNeeded);
       const newInventory = [...actorInventory];
-      const wIdx = newInventory.findIndex(
-        (i) => i.item_id === wData.item_id || i.name === wData.name_ja,
-      );
+      const wIdx = invWeapon
+        ? newInventory.findIndex((i) => i.entry_id === invWeapon.entry_id)
+        : newInventory.findIndex(
+            (i) => i.item_id === wData.item_id || i.name === wData.name_ja,
+          );
       if (wIdx >= 0) {
         newInventory[wIdx] = { ...newInventory[wIdx], ammo: newAmmo };
       } else {
@@ -641,7 +697,7 @@ export function resolveCombatAction(
 
           let multiplier = 1;
           if (isAutofire) {
-            const cap = wData.autofire ?? 3;
+            const cap = wData.autofire!;
             multiplier = autofireMultiplier({ attackTotal, dv, weaponCap: cap });
           }
 
@@ -788,9 +844,32 @@ export function resolveCombatAction(
   // 7. Melee attack
   if (input.action_key === 'melee') {
     const missing_inputs: string[] = [];
-    const wData = getWeaponData(input.weapon_id);
+    const actorInventory: InventoryEntry[] = (actorChar.inventory as InventoryEntry[]) || [];
+    const invWeapon = input.weapon_entry_id
+      ? actorInventory.find((i) => i.entry_id === input.weapon_entry_id)
+      : input.weapon_id
+        ? actorInventory.find(
+            (i) =>
+              i.entry_id === input.weapon_id ||
+              i.item_id === input.weapon_id ||
+              i.name === input.weapon_id,
+          )
+        : undefined;
+    const weaponItemId = invWeapon?.item_id || input.weapon_id;
+    const wData = getWeaponData(weaponItemId || invWeapon?.name);
     if (!wData) {
       missing_inputs.push('武器を選択してください');
+    }
+
+    const weaponIgnore = wData?.ignore_armor_percent;
+    const ignoreArmorPercent =
+      typeof weaponIgnore === 'number'
+        ? weaponIgnore
+        : typeof input.ignore_armor_percent === 'number'
+          ? input.ignore_armor_percent
+          : null;
+    if (wData && ignoreArmorPercent === null) {
+      missing_inputs.push('防具無視率が不明です (GM が入力してください)');
     }
 
     if (!input.attack_roll) {
@@ -885,15 +964,14 @@ export function resolveCombatAction(
       }
 
       const targetSp = targetChar.sp_body;
-      const ignoreArmorPercent = wData.ignore_armor_percent ?? 50;
-      if (ignoreArmorPercent > 0) {
+      if (ignoreArmorPercent! > 0) {
         formula += ` (防具無視 ${ignoreArmorPercent}%)`;
       }
       const dmgRes = resolveDamage({
         dice: input.damage_dice,
         location: 'body',
         sp: targetSp,
-        ignoreArmorPercent,
+        ignoreArmorPercent: ignoreArmorPercent!,
         currentHp: targetChar.hp,
       });
 
@@ -922,7 +1000,7 @@ export function resolveCombatAction(
         field: 'hp',
         before: targetChar.hp,
         after: newHp,
-        desc: `${targetChar.name} HP ${targetChar.hp} → ${newHp} (${dmgRes.hpLoss} ダメージ, 防具無視 ${ignoreArmorPercent}%)`,
+        desc: `${targetChar.name} HP ${targetChar.hp} → ${newHp} (${dmgRes.hpLoss} ダメージ${ignoreArmorPercent! > 0 ? `, 防具無視 ${ignoreArmorPercent}%` : ''})`,
       });
 
       if (dmgRes.spAfter !== targetSp) {
