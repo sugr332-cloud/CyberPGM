@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   CharacterSheet,
   Scenario,
@@ -367,12 +367,70 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
   const [connectingMousePos, setConnectingMousePos] = useState<{ x: number; y: number } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
-  const getSvgPoint = (e: React.MouseEvent) => {
+  // Zoom & Pan state
+  const [zoom, setZoom] = useState<number>(1.0);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState<boolean>(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const fitToView = useCallback(() => {
+    if (!scenarioData || scenarioData.scenes.length === 0) {
+      setZoom(1.0);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+    const svg = svgRef.current;
+    const viewWidth = svg?.clientWidth || 700;
+    const viewHeight = svg?.clientHeight || 500;
+
+    const nodeWidth = 160;
+    const nodeHeight = 80;
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    for (const s of scenarioData.scenes) {
+      if (s.position.x < minX) minX = s.position.x;
+      if (s.position.x + nodeWidth > maxX) maxX = s.position.x + nodeWidth;
+      if (s.position.y < minY) minY = s.position.y;
+      if (s.position.y + nodeHeight > maxY) maxY = s.position.y + nodeHeight;
+    }
+
+    const contentWidth = maxX - minX;
+    const contentHeight = maxY - minY;
+    const padding = 40;
+
+    const scaleX = (viewWidth - padding * 2) / Math.max(contentWidth, 100);
+    const scaleY = (viewHeight - padding * 2) / Math.max(contentHeight, 100);
+    const newZoom = Math.min(1.0, Math.max(0.3, Math.min(scaleX, scaleY)));
+
+    const contentCenterX = (minX + maxX) / 2;
+    const contentCenterY = (minY + maxY) / 2;
+
+    const newPanX = viewWidth / 2 - contentCenterX * newZoom;
+    const newPanY = viewHeight / 2 - contentCenterY * newZoom;
+
+    setZoom(Number(newZoom.toFixed(2)));
+    setPan({ x: Math.round(newPanX), y: Math.round(newPanY) });
+  }, [scenarioData]);
+
+  useEffect(() => {
+    if (scenarioData && scenarioData.scenes.length > 0) {
+      const timer = setTimeout(() => {
+        fitToView();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [activeScenarioId]);
+
+  const getSvgCanvasPoint = (e: React.MouseEvent) => {
     if (!svgRef.current) return { x: 0, y: 0 };
     const rect = svgRef.current.getBoundingClientRect();
     return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: (e.clientX - rect.left - pan.x) / zoom,
+      y: (e.clientY - rect.top - pan.y) / zoom,
     };
   };
 
@@ -380,7 +438,7 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
     if (e.button !== 0) return;
     e.stopPropagation();
     setSelectedSceneId(scene.id);
-    const pt = getSvgPoint(e);
+    const pt = getSvgCanvasPoint(e);
     setDraggedNode({
       id: scene.id,
       startX: pt.x,
@@ -393,12 +451,30 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
   const handleMouseDownHandle = (scene: Scene, e: React.MouseEvent) => {
     e.stopPropagation();
     setConnectingFromId(scene.id);
-    const pt = getSvgPoint(e);
+    const pt = getSvgCanvasPoint(e);
     setConnectingMousePos(pt);
   };
 
+  const handleSvgMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 0 && e.target === svgRef.current) {
+      setIsPanning(true);
+      setPanStart({
+        x: e.clientX - pan.x,
+        y: e.clientY - pan.y,
+      });
+    }
+  };
+
   const handleSvgMouseMove = (e: React.MouseEvent) => {
-    const pt = getSvgPoint(e);
+    if (isPanning) {
+      setPan({
+        x: e.clientX - panStart.x,
+        y: e.clientY - panStart.y,
+      });
+      return;
+    }
+
+    const pt = getSvgCanvasPoint(e);
     if (draggedNode && scenarioData) {
       const dx = pt.x - draggedNode.startX;
       const dy = pt.y - draggedNode.startY;
@@ -417,6 +493,9 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
   };
 
   const handleSvgMouseUp = async (_e: React.MouseEvent) => {
+    if (isPanning) {
+      setIsPanning(false);
+    }
     if (draggedNode && scenarioData) {
       const s = scenarioData.scenes.find((sc) => sc.id === draggedNode.id);
       if (s) {
@@ -1055,10 +1134,9 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
 
               <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
                 <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>推奨人数</label>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>推奨人数（人）</label>
                   <input
                     type="number"
-                    placeholder="3-4"
                     value={scenarioData.scenario.meta?.players_min || ''}
                     onChange={(e) =>
                       setScenarioData({
@@ -1082,10 +1160,9 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                   />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>想定時間(h)</label>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>想定時間（時間）</label>
                   <input
                     type="number"
-                    placeholder="3"
                     value={scenarioData.scenario.meta?.hours || ''}
                     onChange={(e) =>
                       setScenarioData({
@@ -1114,7 +1191,6 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                 <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>報酬目安</label>
                 <input
                   type="text"
-                  placeholder="500eb + 武器1点"
                   value={scenarioData.scenario.meta?.reward_note || ''}
                   onChange={(e) =>
                     setScenarioData({
@@ -1200,8 +1276,65 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                   backgroundColor: 'rgba(0,0,0,0.1)',
                 }}
               >
-                <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
-                  {scenarioData ? `${scenarioData.scenes.length} シーン · ${scenarioData.links.length} 分岐` : ''}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                    {scenarioData ? `${scenarioData.scenes.length} シーン · ${scenarioData.links.length} 分岐` : ''}
+                  </span>
+                  {!isMobileMode && scenarioData && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '12px' }}>
+                      <button
+                        type="button"
+                        data-testid="btn-fit-flowchart"
+                        onClick={fitToView}
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: '0.75rem',
+                          borderRadius: '4px',
+                          border: '1px solid var(--color-border)',
+                          backgroundColor: 'var(--color-surface)',
+                          color: 'var(--color-text)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        全体を表示
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="btn-zoom-out"
+                        onClick={() => setZoom((z) => Math.max(0.3, Number((z - 0.1).toFixed(2))))}
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: '0.75rem',
+                          borderRadius: '4px',
+                          border: '1px solid var(--color-border)',
+                          backgroundColor: 'var(--color-surface)',
+                          color: 'var(--color-text)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        -
+                      </button>
+                      <span data-testid="zoom-level" style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', minWidth: '36px', textAlign: 'center' }}>
+                        {Math.round(zoom * 100)}%
+                      </span>
+                      <button
+                        type="button"
+                        data-testid="btn-zoom-in"
+                        onClick={() => setZoom((z) => Math.min(2.0, Number((z + 0.1).toFixed(2))))}
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: '0.75rem',
+                          borderRadius: '4px',
+                          border: '1px solid var(--color-border)',
+                          backgroundColor: 'var(--color-surface)',
+                          color: 'var(--color-text)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={handleAddScene}
@@ -1277,13 +1410,14 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                 <svg
                   ref={svgRef}
                   data-testid="flowchart-svg"
+                  onMouseDown={handleSvgMouseDown}
                   onMouseMove={handleSvgMouseMove}
                   onMouseUp={handleSvgMouseUp}
                   style={{
                     width: '100%',
                     height: '100%',
                     userSelect: 'none',
-                    cursor: draggedNode ? 'grabbing' : connectingFromId ? 'crosshair' : 'default',
+                    cursor: isPanning ? 'grabbing' : draggedNode ? 'grabbing' : connectingFromId ? 'crosshair' : 'default',
                   }}
                 >
                   <defs>
@@ -1300,140 +1434,145 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                     </marker>
                   </defs>
 
-                  {/* Links / Arrows */}
-                  {scenarioData?.links.map((link) => {
-                    const fromNode = scenarioData.scenes.find((s) => s.id === link.from_scene_id);
-                    const toNode = scenarioData.scenes.find((s) => s.id === link.to_scene_id);
-                    if (!fromNode || !toNode) return null;
+                  <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
+                    {/* Links / Arrows */}
+                    {scenarioData?.links.map((link) => {
+                      const fromNode = scenarioData.scenes.find((s) => s.id === link.from_scene_id);
+                      const toNode = scenarioData.scenes.find((s) => s.id === link.to_scene_id);
+                      if (!fromNode || !toNode) return null;
 
-                    const x1 = fromNode.position.x + 160;
-                    const y1 = fromNode.position.y + 40;
-                    const x2 = toNode.position.x;
-                    const y2 = toNode.position.y + 40;
-                    const midX = (x1 + x2) / 2;
-                    const midY = (y1 + y2) / 2;
+                      const x1 = fromNode.position.x + 160;
+                      const y1 = fromNode.position.y + 40;
+                      const x2 = toNode.position.x;
+                      const y2 = toNode.position.y + 40;
+                      const midX = (x1 + x2) / 2;
+                      const midY = (y1 + y2) / 2;
 
-                    // Curved bezier path
-                    const pathData = `M ${x1} ${y1} C ${x1 + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}`;
+                      // Curved bezier path
+                      const pathData = `M ${x1} ${y1} C ${x1 + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}`;
+                      const hasCondition = Boolean(link.condition && link.condition.trim());
 
-                    return (
-                      <g key={link.id} style={{ cursor: 'pointer' }}>
-                        <path
-                          d={pathData}
-                          fill="none"
+                      return (
+                        <g key={link.id} style={{ cursor: 'pointer' }}>
+                          <path
+                            d={pathData}
+                            fill="none"
+                            stroke="var(--color-accent)"
+                            strokeWidth="2.5"
+                            markerEnd="url(#arrow)"
+                            onClick={() => {
+                              setEditingLink(link);
+                              setLinkConditionInput(link.condition);
+                            }}
+                          />
+                          {/* Condition Text Badge: only render if condition is not empty */}
+                          {hasCondition && (
+                            <text
+                              x={midX}
+                              y={midY - 6}
+                              textAnchor="middle"
+                              fill="var(--color-text)"
+                              fontSize="11"
+                              fontWeight="bold"
+                              onClick={() => {
+                                setEditingLink(link);
+                                setLinkConditionInput(link.condition);
+                              }}
+                              style={{
+                                paintOrder: 'stroke',
+                                stroke: 'var(--color-surface)',
+                                strokeWidth: '4px',
+                                strokeLinejoin: 'round',
+                              }}
+                            >
+                              {link.condition}
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })}
+
+                    {/* In-progress connecting line */}
+                    {connectingFromId && connectingMousePos && (() => {
+                      const fromNode = scenarioData?.scenes.find((s) => s.id === connectingFromId);
+                      if (!fromNode) return null;
+                      const x1 = fromNode.position.x + 160;
+                      const y1 = fromNode.position.y + 40;
+                      return (
+                        <line
+                          x1={x1}
+                          y1={y1}
+                          x2={connectingMousePos.x}
+                          y2={connectingMousePos.y}
                           stroke="var(--color-accent)"
-                          strokeWidth="2.5"
-                          markerEnd="url(#arrow)"
-                          onClick={() => {
-                            setEditingLink(link);
-                            setLinkConditionInput(link.condition);
-                          }}
+                          strokeDasharray="4"
+                          strokeWidth="2"
                         />
-                        {/* Condition Text Badge */}
-                        <text
-                          x={midX}
-                          y={midY - 6}
-                          textAnchor="middle"
-                          fill="var(--color-text)"
-                          fontSize="11"
-                          fontWeight="bold"
-                          onClick={() => {
-                            setEditingLink(link);
-                            setLinkConditionInput(link.condition);
-                          }}
-                          style={{
-                            paintOrder: 'stroke',
-                            stroke: 'var(--color-surface)',
-                            strokeWidth: '4px',
-                            strokeLinejoin: 'round',
-                          }}
+                      );
+                    })()}
+
+                    {/* Scene Nodes */}
+                    {scenarioData?.scenes.map((scene) => {
+                      const isSelected = selectedSceneId === scene.id;
+                      return (
+                        <g
+                          key={scene.id}
+                          data-testid={`scene-node-${scene.id}`}
+                          transform={`translate(${scene.position.x}, ${scene.position.y})`}
+                          onMouseDown={(e) => handleMouseDownNode(scene, e)}
+                          onMouseUp={(e) => handleNodeMouseUp(scene, e)}
+                          style={{ cursor: 'grab' }}
                         >
-                          {link.condition || '条件なし'}
-                        </text>
-                      </g>
-                    );
-                  })}
+                          {/* Node Box */}
+                          <rect
+                            width="160"
+                            height="80"
+                            rx="6"
+                            fill="var(--color-surface)"
+                            stroke={isSelected ? 'var(--color-accent)' : 'var(--color-border)'}
+                            strokeWidth={isSelected ? '2.5' : '1'}
+                            style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }}
+                          />
 
-                  {/* In-progress connecting line */}
-                  {connectingFromId && connectingMousePos && (() => {
-                    const fromNode = scenarioData?.scenes.find((s) => s.id === connectingFromId);
-                    if (!fromNode) return null;
-                    const x1 = fromNode.position.x + 160;
-                    const y1 = fromNode.position.y + 40;
-                    return (
-                      <line
-                        x1={x1}
-                        y1={y1}
-                        x2={connectingMousePos.x}
-                        y2={connectingMousePos.y}
-                        stroke="var(--color-accent)"
-                        strokeDasharray="4"
-                        strokeWidth="2"
-                      />
-                    );
-                  })()}
+                          {/* Node Header */}
+                          <rect width="160" height="24" rx="6" fill={isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.05)'} />
+                          <text
+                            x="8"
+                            y="16"
+                            fill="var(--color-text)"
+                            fontSize="11"
+                            fontWeight="bold"
+                            style={{ pointerEvents: 'none' }}
+                          >
+                            {scene.title.length > 12 ? scene.title.slice(0, 12) + '...' : scene.title}
+                          </text>
 
-                  {/* Scene Nodes */}
-                  {scenarioData?.scenes.map((scene) => {
-                    const isSelected = selectedSceneId === scene.id;
-                    return (
-                      <g
-                        key={scene.id}
-                        data-testid={`scene-node-${scene.id}`}
-                        transform={`translate(${scene.position.x}, ${scene.position.y})`}
-                        onMouseDown={(e) => handleMouseDownNode(scene, e)}
-                        onMouseUp={(e) => handleNodeMouseUp(scene, e)}
-                        style={{ cursor: 'grab' }}
-                      >
-                        {/* Node Box */}
-                        <rect
-                          width="160"
-                          height="80"
-                          rx="6"
-                          fill="var(--color-surface)"
-                          stroke={isSelected ? 'var(--color-accent)' : 'var(--color-border)'}
-                          strokeWidth={isSelected ? '2.5' : '1'}
-                          style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }}
-                        />
+                          {/* Location preview */}
+                          <text
+                            x="8"
+                            y="42"
+                            fill="var(--color-text-muted)"
+                            fontSize="10"
+                            style={{ pointerEvents: 'none' }}
+                          >
+                            {scene.location || '場所未指定'}
+                          </text>
 
-                        {/* Node Header */}
-                        <rect width="160" height="24" rx="6" fill={isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.05)'} />
-                        <text
-                          x="8"
-                          y="16"
-                          fill="var(--color-text)"
-                          fontSize="11"
-                          fontWeight="bold"
-                          style={{ pointerEvents: 'none' }}
-                        >
-                          {scene.title.length > 12 ? scene.title.slice(0, 12) + '...' : scene.title}
-                        </text>
-
-                        {/* Location preview */}
-                        <text
-                          x="8"
-                          y="42"
-                          fill="var(--color-text-muted)"
-                          fontSize="10"
-                          style={{ pointerEvents: 'none' }}
-                        >
-                          📍 {scene.location || '場所未指定'}
-                        </text>
-
-                        {/* Connection Handle (Right Circle) */}
-                        <circle
-                          cx="160"
-                          cy="40"
-                          r="6"
-                          fill="var(--color-accent)"
-                          stroke="#fff"
-                          strokeWidth="1.5"
-                          onMouseDown={(e) => handleMouseDownHandle(scene, e)}
-                          style={{ cursor: 'crosshair' }}
-                        />
-                      </g>
-                    );
-                  })}
+                          {/* Connection Handle (Right Circle) */}
+                          <circle
+                            cx="160"
+                            cy="40"
+                            r="6"
+                            fill="var(--color-accent)"
+                            stroke="#fff"
+                            strokeWidth="1.5"
+                            onMouseDown={(e) => handleMouseDownHandle(scene, e)}
+                            style={{ cursor: 'crosshair' }}
+                          />
+                        </g>
+                      );
+                    })}
+                  </g>
                 </svg>
               )}
             </div>
@@ -1498,7 +1637,6 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                     <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>場所</label>
                     <input
                       type="text"
-                      placeholder="例: リトル・チャイナのアフターライフ"
                       value={selectedScene.location}
                       onChange={(e) => handleUpdateActiveSceneField('location', e.target.value)}
                       style={{
@@ -1575,7 +1713,7 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                         cursor: 'pointer',
                       }}
                     >
-                      🖼 {selectedScene.background_image_id ? '背景画像設定済' : '背景画像選択'}
+                      {selectedScene.background_image_id ? '背景画像設定済' : '背景画像選択'}
                     </button>
                   </div>
 
@@ -1780,7 +1918,7 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                       </div>
                       {selectedSceneClues.map((c) => (
                         <div key={c.id} style={{ fontSize: '0.75rem', padding: '4px 6px', backgroundColor: 'var(--color-bg)', borderRadius: '4px', marginBottom: '4px' }}>
-                          🔑 {c.title}
+                          {c.title}
                         </div>
                       ))}
                     </div>
@@ -1807,7 +1945,7 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                       </div>
                       {selectedSceneHandouts.map((h) => (
                         <div key={h.id} style={{ fontSize: '0.75rem', padding: '4px 6px', backgroundColor: 'var(--color-bg)', borderRadius: '4px', marginBottom: '4px' }}>
-                          📜 {h.title}
+                          {h.title}
                         </div>
                       ))}
                     </div>
@@ -1834,7 +1972,7 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                       </div>
                       {selectedSceneEncounters.map((e) => (
                         <div key={e.id} style={{ fontSize: '0.75rem', padding: '4px 6px', backgroundColor: 'var(--color-bg)', borderRadius: '4px', marginBottom: '4px' }}>
-                          ⚔️ {e.title}
+                          {e.title}
                         </div>
                       ))}
                     </div>
@@ -1940,7 +2078,7 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                         fontSize: '0.875rem',
                       }}
                     >
-                      <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>⚠️ 範囲の警告があります:</div>
+                      <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>範囲の警告があります:</div>
                       {tableRangeValidation.warnings.map((w, idx) => (
                         <div key={idx} style={{ marginLeft: '12px' }}>
                           • {w}
@@ -2110,7 +2248,7 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                     }}
                   >
                     <div style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '12px' }}>
-                      🎲 出目テスト・リアルダイス評価
+                      出目テスト・リアルダイス評価
                     </div>
 
                     <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>

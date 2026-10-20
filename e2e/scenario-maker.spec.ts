@@ -40,9 +40,22 @@ test('Phase 5a Scenario Maker E2E: Template creation, scene editing, choice with
   const svg = page.locator('[data-testid="flowchart-svg"]');
   await expect(svg).toBeVisible();
 
-  // Scene node labels: 依頼, 調査, 潜入, 戦闘, 報酬
+  // Verify all 5 scene node labels: 依頼, 調査, 潜入, 戦闘, 報酬
   const firstNodeText = svg.locator('text', { hasText: '依頼' });
   await expect(firstNodeText).toBeVisible();
+  const fifthNodeText = svg.locator('text', { hasText: '報酬' });
+  await expect(fifthNodeText).toBeVisible();
+
+  // Test "全体を表示" fit button
+  const fitBtn = page.locator('[data-testid="btn-fit-flowchart"]');
+  await expect(fitBtn).toBeVisible();
+  await fitBtn.click();
+  await page.waitForTimeout(300);
+
+  // Verify that "条件なし" is NOT rendered on flowchart links
+  await expect(page.locator('text=条件なし')).toHaveCount(0);
+  // Verify that no emoji "📍" is rendered
+  await expect(page.locator('text=📍')).toHaveCount(0);
 
   // Select the "依頼" scene node
   const firstNode = svg.locator('g[data-testid^="scene-node-"]').first();
@@ -104,13 +117,19 @@ test('Phase 5a Scenario Maker E2E: Template creation, scene editing, choice with
     'ネオン街の薄暗いバーで、謎のフィクサーが手招きしている。'
   );
 
-  // 2. Mobile 390px viewport for List View
+  // 2. Mobile 390px viewport for List View & GM Bottom Tabs
   await page.setViewportSize({ width: 390, height: 844 });
   const mobileListView = page.locator('[data-testid="mobile-list-view"]');
   await expect(mobileListView).toBeVisible();
   await expect(mobileListView.locator('text=シーン一覧 (スマホ表示)')).toBeVisible();
 
-  // Capture Screenshot 2: Mobile List View (390px)
+  // Verify GM bottom navigation tabs are displayed at 390px
+  const bottomNav = page.locator('[data-testid="gm-bottom-nav"]');
+  await expect(bottomNav).toBeVisible();
+  await expect(page.locator('[data-testid="gm-tab-scenario"]')).toBeVisible();
+  await expect(page.locator('[data-testid="gm-tab-combat"]')).toBeVisible();
+
+  // Capture Screenshot 2: Mobile List View with GM Bottom Tabs (390px)
   await page.screenshot({
     path: 'docs/agy/reports/img/phase5a-scenario-mobile-390.png',
   });
@@ -127,6 +146,10 @@ test('Phase 5a Scenario Maker E2E: Template creation, scene editing, choice with
   const newTableBtn = page.locator('[data-testid="btn-new-random-table"]');
   await expect(newTableBtn).toBeVisible();
   await newTableBtn.click();
+
+  // Verify no emoji in random tables and table editor is visible
+  await expect(page.locator('text=🎲')).toHaveCount(0);
+  await expect(page.locator('text=出目テスト・リアルダイス評価')).toBeVisible();
 
   // Test manual roll 7
   const manualRollInput = page.locator('[data-testid="input-manual-roll"]');
