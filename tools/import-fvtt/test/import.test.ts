@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import Database from 'better-sqlite3';
-import { runImport } from '../src/importer.js';
+import { runImport, findAttribution } from '../src/importer.js';
 
 describe('FVTT Importer', () => {
   const testDbPath = path.resolve(process.cwd(), 'data/test_import.db');
@@ -20,15 +20,20 @@ describe('FVTT Importer', () => {
     const sqlite = new Database(testDbPath);
     sqlite.pragma('foreign_keys = ON');
 
-    // Run migration sql directly
-    const migrationSql = fs.readFileSync(
-      path.resolve(process.cwd(), 'drizzle/0000_curvy_ken_ellis.sql'),
-      'utf-8',
-    );
-    const statements = migrationSql.split('--> statement-breakpoint');
-    for (const stmt of statements) {
-      if (stmt.trim()) {
-        sqlite.exec(stmt);
+    // Run migration sql files directly in order
+    const drizzleDir = path.resolve(process.cwd(), 'drizzle');
+    const sqlFiles = fs
+      .readdirSync(drizzleDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
+
+    for (const sqlFile of sqlFiles) {
+      const migrationSql = fs.readFileSync(path.join(drizzleDir, sqlFile), 'utf-8');
+      const statements = migrationSql.split('--> statement-breakpoint');
+      for (const stmt of statements) {
+        if (stmt.trim()) {
+          sqlite.exec(stmt);
+        }
       }
     }
     sqlite.close();
@@ -112,6 +117,7 @@ describe('FVTT Importer', () => {
     expect(imageRecord).toBeDefined();
     expect(imageRecord.path).toBe('fvtt/compendium/weapons/test_pistol.svg');
     expect(imageRecord.origin).toBe('fvtt_icon');
+    expect(imageRecord.visibility).toBe('players');
     expect(imageRecord.attribution).toContain('TestAuthor');
 
     sqlite.close();
@@ -183,5 +189,42 @@ describe('FVTT Importer', () => {
     expect(editedItem.notes).toBe('GM用メモテキスト');
 
     sqlite2.close();
+  });
+
+  it('preserves image visibility when GM manually changes it to gm (Issue #14 Review 02)', () => {
+    // Run 1
+    runImport({
+      srcDir: fixtureSrcDir,
+      dbPath: testDbPath,
+    });
+
+    const sqlite = new Database(testDbPath);
+    // GM changes visibility of fvtt_icon to 'gm'
+    sqlite.prepare(`UPDATE images SET visibility = 'gm' WHERE origin = 'fvtt_icon'`).run();
+    const updatedImg = sqlite
+      .prepare(`SELECT visibility FROM images WHERE origin = 'fvtt_icon'`)
+      .get() as { visibility: string };
+    expect(updatedImg.visibility).toBe('gm');
+    sqlite.close();
+
+    // Run 2
+    runImport({
+      srcDir: fixtureSrcDir,
+      dbPath: testDbPath,
+    });
+
+    // Check visibility remains 'gm'
+    const sqlite2 = new Database(testDbPath);
+    const finalImg = sqlite2
+      .prepare(`SELECT visibility FROM images WHERE origin = 'fvtt_icon'`)
+      .get() as { visibility: string };
+    expect(finalImg.visibility).toBe('gm');
+    sqlite2.close();
+  });
+
+  it('sets license = unknown and attribution = see CREDITS.md when icon has no matching credits entry', () => {
+    const result = findAttribution('src/icons/compendium/unknown/uncredited.svg', []);
+    expect(result.license).toBe('unknown');
+    expect(result.attribution).toBe('see CREDITS.md');
   });
 });

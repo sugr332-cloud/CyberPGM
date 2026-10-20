@@ -142,7 +142,7 @@ export function findAttribution(
       return { attribution: entry.attribution, license: entry.license };
     }
   }
-  return { attribution: 'see CREDITS.md', license: 'CC-BY 3.0' };
+  return { attribution: 'see CREDITS.md', license: 'unknown' };
 }
 
 export function loadBabeleTranslations(fvttRepoPath: string): Map<string, string> {
@@ -537,7 +537,7 @@ export function runImport(options: ImportOptions): ImportReportData {
                 .prepare(
                   `INSERT INTO images (
                     id, item_id, path, origin, license, attribution, source_book, source_page, visibility, is_primary
-                  ) VALUES (?, ?, ?, 'fvtt_icon', ?, ?, ?, ?, 'gm', 1)`,
+                  ) VALUES (?, ?, ?, 'fvtt_icon', ?, ?, ?, ?, 'players', 1)`,
                 )
                 .run(
                   imageId,
@@ -556,7 +556,7 @@ export function runImport(options: ImportOptions): ImportReportData {
         } else {
           itemId = existingItem.id;
 
-          const isDiff =
+          const isItemDiff =
             existingItem.name_en !== nameEn ||
             existingItem.name_ja !== nameJa ||
             existingItem.description_en !== descriptionEn ||
@@ -566,46 +566,70 @@ export function runImport(options: ImportOptions): ImportReportData {
             existingItem.source_page_en !== sourcePageEn ||
             existingItem.raw_system !== rawSystem;
 
-          if (isDiff) {
-            if (!dryRun) {
-              sqlite
-                .prepare(
-                  `UPDATE items SET
-                    kind = ?, name_en = ?, name_ja = ?, description_en = ?,
-                    price_eb = ?, price_category = ?, source_book = ?, source_page_en = ?,
-                    fvtt_type = ?, raw_system = ?, updated_at = ?
-                  WHERE id = ?`,
-                )
-                .run(
-                  kind,
-                  nameEn,
-                  nameJa,
-                  descriptionEn,
-                  priceEb,
-                  priceCategory,
-                  sourceBook,
-                  sourcePageEn,
-                  fvttType,
-                  rawSystem,
-                  now,
-                  itemId,
-                );
+          let isImageDiff = false;
+          let existingImg:
+            | { id: string; visibility: string; license: string | null; attribution: string | null; path: string }
+            | undefined;
 
-              insertOrUpdateSubtables(sqlite, itemId, kind, doc);
+          if (imgRelPath) {
+            existingImg = sqlite
+              .prepare(
+                `SELECT id, visibility, license, attribution, path FROM images WHERE item_id = ? AND origin = 'fvtt_icon'`,
+              )
+              .get(itemId) as
+              | { id: string; visibility: string; license: string | null; attribution: string | null; path: string }
+              | undefined;
+
+            if (!existingImg) {
+              isImageDiff = true;
+            } else {
+              if (
+                existingImg.path !== imgRelPath ||
+                existingImg.license !== imgCredit.license ||
+                existingImg.attribution !== imgCredit.attribution
+              ) {
+                isImageDiff = true;
+              }
+            }
+          }
+
+          if (isItemDiff || isImageDiff) {
+            if (!dryRun) {
+              if (isItemDiff) {
+                sqlite
+                  .prepare(
+                    `UPDATE items SET
+                      kind = ?, name_en = ?, name_ja = ?, description_en = ?,
+                      price_eb = ?, price_category = ?, source_book = ?, source_page_en = ?,
+                      fvtt_type = ?, raw_system = ?, updated_at = ?
+                    WHERE id = ?`,
+                  )
+                  .run(
+                    kind,
+                    nameEn,
+                    nameJa,
+                    descriptionEn,
+                    priceEb,
+                    priceCategory,
+                    sourceBook,
+                    sourcePageEn,
+                    fvttType,
+                    rawSystem,
+                    now,
+                    itemId,
+                  );
+
+                insertOrUpdateSubtables(sqlite, itemId, kind, doc);
+              }
 
               if (imgRelPath) {
-                const existingImg = sqlite
-                  .prepare(
-                    `SELECT id FROM images WHERE item_id = ? AND origin = 'fvtt_icon'`,
-                  )
-                  .get(itemId) as { id: string } | undefined;
                 if (!existingImg) {
                   const imageId = ulid();
                   sqlite
                     .prepare(
                       `INSERT INTO images (
                         id, item_id, path, origin, license, attribution, source_book, source_page, visibility, is_primary
-                      ) VALUES (?, ?, ?, 'fvtt_icon', ?, ?, ?, ?, 'gm', 1)`,
+                      ) VALUES (?, ?, ?, 'fvtt_icon', ?, ?, ?, ?, 'players', 1)`,
                     )
                     .run(
                       imageId,
@@ -616,7 +640,7 @@ export function runImport(options: ImportOptions): ImportReportData {
                       sourceBook,
                       sourcePageEn,
                     );
-                } else {
+                } else if (isImageDiff) {
                   sqlite
                     .prepare(
                       `UPDATE images SET path = ?, license = ?, attribution = ?, source_book = ?, source_page = ? WHERE id = ?`,
