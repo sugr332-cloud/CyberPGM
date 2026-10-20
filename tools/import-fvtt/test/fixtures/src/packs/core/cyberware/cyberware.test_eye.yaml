@@ -1,0 +1,19 @@
+_id: testCyber0000001
+name: Test Cybereye
+type: cyberware
+img: null
+system:
+  type: cybereye
+  installLocation: clinic
+  humanityLoss:
+    roll: 2d6
+    static: 7
+  core: true
+  size: 1
+  price:
+    market: 500
+  sources:
+    - book: Test Book
+      page: 44
+  description:
+    value: <p>A test cybereye description.</p>

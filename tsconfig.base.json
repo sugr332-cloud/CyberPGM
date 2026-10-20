@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@cyberpgm/shared": ["./packages/shared/src/index.ts"],
+      "@cyberpgm/rules": ["./packages/rules/src/index.ts"],
+      "@cyberpgm/server": ["./apps/server/src/index.ts"]
+    }
+  }
+}
