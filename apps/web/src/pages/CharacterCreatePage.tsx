@@ -19,6 +19,7 @@ import {
   successProbability,
 } from '@cyberpgm/rules';
 import { api } from '../api.js';
+import '../player-theme.css';
 
 const STORAGE_KEY = 'cpgm_char_draft';
 const SUBMISSION_ID_KEY = 'cpgm_submission_id';
@@ -390,6 +391,7 @@ export const CharacterCreatePage: React.FC = () => {
   if (submissionId && submissionStatus) {
     return (
       <div
+        className="cp-player"
         style={{
           minHeight: '100vh',
           backgroundColor: 'var(--color-bg)',
@@ -554,6 +556,7 @@ export const CharacterCreatePage: React.FC = () => {
 
   return (
     <div
+      className="cp-player"
       style={{
         minHeight: '100vh',
         backgroundColor: 'var(--color-bg)',

@@ -20,6 +20,7 @@ import { PlayerEquipmentView } from '../components/PlayerEquipmentView.js';
 import { PlayerSkillsView } from '../components/PlayerSkillsView.js';
 import { PlayerShopView } from '../components/PlayerShopView.js';
 import { PlayerActionSkills } from '../components/PlayerActionSkills.js';
+import '../player-theme.css';
 
 export const PlayerPage: React.FC = () => {
   const navigate = useNavigate();
@@ -338,6 +339,7 @@ export const PlayerPage: React.FC = () => {
   if (!token || !sheet) {
     return (
       <div
+        className="cp-player"
         style={{
           maxWidth: '430px',
           margin: '0 auto',
@@ -350,17 +352,21 @@ export const PlayerPage: React.FC = () => {
       >
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <h1
+            className="cp-title"
+            data-text="CYBERPUNK RED"
             style={{
               fontFamily: 'var(--font-display)',
-              fontSize: '1.75rem',
-              color: 'var(--color-accent)',
-              letterSpacing: '2px',
-              marginBottom: '4px',
+              fontSize: '1.9rem',
+              letterSpacing: '3px',
+              marginBottom: '6px',
             }}
           >
             CYBERPUNK RED
           </h1>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
+          <p style={{ color: 'var(--color-ally)', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', letterSpacing: '0.2em' }}>
+            {'// NIGHT CITY NET LINK'}
+          </p>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem', marginTop: '4px' }}>
             セッション参加 · キャラクター選択
           </p>
         </div>
@@ -692,6 +698,7 @@ export const PlayerPage: React.FC = () => {
 
   return (
     <div
+      className="cp-player"
       style={{
         maxWidth: '430px',
         margin: '0 auto',
@@ -702,6 +709,19 @@ export const PlayerPage: React.FC = () => {
         paddingBottom: '70px',
       }}
     >
+      {/* 上の帯: 接続状態とハンドルネーム（Phase 5j） */}
+      <div className="cp-statusbar" data-testid="cp-statusbar">
+        <span>
+          <span className={`cp-dot${isReconnecting ? ' is-off' : ''}`} />
+          {isReconnecting ? 'RECONNECTING' : 'NET LINK ONLINE'}
+        </span>
+        <span>
+          {playerList.find((p) => p.id === sheet.player_id)?.name ?? 'RUNNER'}
+          {' // '}
+          {sheet.name}
+        </span>
+      </div>
+
       {/* Reconnecting banner */}
       {isReconnecting && (
         <div
@@ -926,6 +946,7 @@ export const PlayerPage: React.FC = () => {
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Header Card: Name, Role, Funds */}
           <div
+            className="cp-id-card"
             style={{
               backgroundColor: 'var(--color-surface)',
               border: '1px solid var(--color-border)',
@@ -1021,6 +1042,7 @@ export const PlayerPage: React.FC = () => {
               </div>
               {/* HP Progress Bar */}
               <div
+                className="cp-hp-track"
                 style={{
                   height: '10px',
                   borderRadius: '5px',
@@ -1029,7 +1051,9 @@ export const PlayerPage: React.FC = () => {
                 }}
               >
                 <div
+                  className="cp-hp-fill"
                   style={{
+                    color: hpBarColor,
                     height: '100%',
                     width: `${hpPercent}%`,
                     backgroundColor: hpBarColor,
@@ -2186,6 +2210,7 @@ export const PlayerPage: React.FC = () => {
 
       {/* Bottom Navigation Tabs */}
       <nav
+        className="cp-tabbar"
         style={{
           position: 'fixed',
           bottom: 0,
@@ -2203,17 +2228,19 @@ export const PlayerPage: React.FC = () => {
       >
         {(
           [
-            { id: 'sheet', label: 'シート' },
-            { id: 'gear', label: '装備' },
-            { id: 'skills', label: '技能' },
-            { id: 'shop', label: '商店' },
-            { id: 'act', label: '行動' },
-            { id: 'handouts', label: '資料' },
+            { id: 'sheet', label: 'シート', code: 'ID' },
+            { id: 'gear', label: '装備', code: 'GEAR' },
+            { id: 'skills', label: '技能', code: 'SKL' },
+            { id: 'shop', label: '商店', code: 'SHOP' },
+            { id: 'act', label: '行動', code: 'ACT' },
+            { id: 'handouts', label: '資料', code: 'DATA' },
           ] as const
         ).map((tab) => (
           <button
             key={tab.id}
             data-testid={`player-tab-${tab.id}`}
+            aria-label={tab.label}
+            className={activeTab === tab.id ? 'is-active' : undefined}
             onClick={() => setActiveTab(tab.id)}
             style={{
               background: 'none',
@@ -2226,6 +2253,7 @@ export const PlayerPage: React.FC = () => {
               padding: 0,
             }}
           >
+            <span className="cp-tab-code" aria-hidden="true">{tab.code}</span>
             {tab.label}
           </button>
         ))}

@@ -1,0 +1,234 @@
+/*
+ * プレイヤーのスマホ画面のテーマ（Phase 5j）。ナイトシティの端末っぽく:
+ * ネオンの黄・シアン・マゼンタ、角を斜めに落としたパネル、走査線、格子の背景。
+ * 画面の部品はインラインの style で色を CSS 変数から取っているので、ここで変数を差し替え、飾りだけを足す。
+ */
+.cp-player {
+  --cp-yellow: #fcee0a;
+  --cp-cyan: #00e5ff;
+  --cp-magenta: #ff2a6d;
+  --cp-cut: 10px;
+
+  --color-bg: #05060a;
+  --color-surface: rgba(12, 16, 23, 0.92);
+  --color-surface-elevated: rgba(20, 27, 37, 0.95);
+  --color-border: #1b2a35;
+  --color-border-light: #2a4050;
+  --color-text: #e6f6fb;
+  --color-text-muted: #7d97a6;
+  --color-ally: var(--cp-cyan);
+  --color-enemy: var(--cp-magenta);
+  --color-accent: var(--cp-magenta);
+  --color-success: #39ff88;
+  --color-warning: var(--cp-yellow);
+  --color-danger: #ff3b3b;
+
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at 50% -10%, rgba(0, 229, 255, 0.12), transparent 55%),
+    radial-gradient(ellipse at 110% 110%, rgba(255, 42, 109, 0.12), transparent 50%),
+    linear-gradient(rgba(0, 229, 255, 0.045) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(90deg, rgba(0, 229, 255, 0.045) 1px, transparent 1px) 0 0 / 24px 24px,
+    var(--color-bg) !important;
+}
+
+/* 走査線（操作の邪魔をしない） */
+.cp-player::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 200;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
+  mix-blend-mode: multiply;
+}
+
+/* パネル: 右上と左下の角を斜めに落とし、左にネオンの線 */
+.cp-player [style*='background-color: var(--color-surface)'],
+.cp-player form[style*='background-color'] {
+  clip-path: polygon(0 0, calc(100% - var(--cp-cut)) 0, 100% var(--cp-cut), 100% 100%, var(--cp-cut) 100%, 0 calc(100% - var(--cp-cut)));
+  box-shadow: inset 2px 0 0 rgba(0, 229, 255, 0.55);
+  border-radius: 0 !important;
+}
+
+/* ボタン: 角を落として、押すと光る */
+.cp-player button {
+  border-radius: 0 !important;
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+  transition: box-shadow 0.15s, filter 0.15s, transform 0.05s;
+  -webkit-tap-highlight-color: transparent;
+}
+.cp-player button:not(:disabled):active {
+  transform: translateY(1px);
+  filter: brightness(1.25);
+}
+.cp-player button[style*='background-color: var(--color-ally)'],
+.cp-player button[style*='background-color: var(--color-enemy)'],
+.cp-player button[style*='background-color: var(--color-accent)'] {
+  text-shadow: none;
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.45);
+  letter-spacing: 0.04em;
+}
+.cp-player button[style*='background: none'],
+.cp-player button[style*='background-color: transparent'] {
+  clip-path: none;
+}
+.cp-player button:disabled {
+  filter: grayscale(0.6);
+}
+
+/* 入力欄 */
+.cp-player input,
+.cp-player select,
+.cp-player textarea {
+  border-radius: 0 !important;
+  caret-color: var(--cp-yellow);
+}
+.cp-player input:focus,
+.cp-player select:focus,
+.cp-player textarea:focus {
+  outline: none;
+  border-color: var(--cp-cyan) !important;
+  box-shadow: 0 0 0 1px var(--cp-cyan), 0 0 12px rgba(0, 229, 255, 0.35);
+}
+
+/* 見出し */
+.cp-player h1,
+.cp-player h2,
+.cp-player h3 {
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 10px rgba(0, 229, 255, 0.35);
+}
+
+/* タイトル（グリッチ） */
+.cp-title {
+  position: relative;
+  display: inline-block;
+  color: var(--cp-yellow) !important;
+  text-shadow: 2px 0 var(--cp-magenta), -2px 0 var(--cp-cyan), 0 0 18px rgba(252, 238, 10, 0.35);
+}
+.cp-title::before,
+.cp-title::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.cp-title::before {
+  color: var(--cp-cyan);
+  animation: cp-glitch-a 3.2s infinite steps(1);
+}
+.cp-title::after {
+  color: var(--cp-magenta);
+  animation: cp-glitch-b 2.7s infinite steps(1);
+}
+@keyframes cp-glitch-a {
+  0%, 92%, 100% { clip-path: inset(100% 0 0 0); transform: none; }
+  93% { clip-path: inset(10% 0 60% 0); transform: translateX(-3px); }
+  96% { clip-path: inset(55% 0 20% 0); transform: translateX(3px); }
+}
+@keyframes cp-glitch-b {
+  0%, 88%, 100% { clip-path: inset(100% 0 0 0); transform: none; }
+  89% { clip-path: inset(70% 0 5% 0); transform: translateX(3px); }
+  94% { clip-path: inset(20% 0 50% 0); transform: translateX(-2px); }
+}
+
+/* 上の帯: 接続状態 */
+.cp-statusbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  color: var(--cp-cyan);
+  background: linear-gradient(90deg, rgba(0, 229, 255, 0.14), transparent 70%);
+  border-bottom: 1px solid rgba(0, 229, 255, 0.35);
+  text-transform: uppercase;
+}
+.cp-statusbar .cp-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  background: var(--color-success);
+  box-shadow: 0 0 8px var(--color-success);
+  animation: cp-blink 1.6s infinite;
+}
+.cp-statusbar .cp-dot.is-off {
+  background: var(--cp-yellow);
+  box-shadow: 0 0 8px var(--cp-yellow);
+}
+@keyframes cp-blink {
+  50% { opacity: 0.35; }
+}
+
+/* キャラの見出しカード: 黄色の帯 */
+.cp-id-card {
+  position: relative;
+  border-top: 2px solid var(--cp-yellow) !important;
+}
+.cp-id-card::before {
+  content: 'ID // EDGERUNNER';
+  position: absolute;
+  top: -1px;
+  right: 18px;
+  padding: 1px 8px;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.15em;
+  color: #000;
+  background: var(--cp-yellow);
+}
+
+/* HP バー: 目盛りとグロー */
+.cp-hp-track {
+  height: 12px !important;
+  border-radius: 0 !important;
+  border: 1px solid var(--color-border-light);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 9%, rgba(0, 0, 0, 0.55) 9% 10%),
+    var(--color-bg) !important;
+}
+.cp-hp-fill {
+  box-shadow: 0 0 10px currentColor;
+  background-image: repeating-linear-gradient(90deg, transparent 0 9%, rgba(0, 0, 0, 0.45) 9% 10%) !important;
+}
+
+/* 下のタブ */
+.cp-tabbar {
+  background: rgba(5, 6, 10, 0.96) !important;
+  border-top: 1px solid rgba(0, 229, 255, 0.4) !important;
+  box-shadow: 0 -6px 20px rgba(0, 229, 255, 0.08);
+  backdrop-filter: blur(6px);
+}
+.cp-tabbar button {
+  clip-path: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+.cp-tab-code {
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+}
+.cp-tabbar button.is-active {
+  text-shadow: 0 0 8px var(--cp-cyan);
+  background: linear-gradient(0deg, rgba(0, 229, 255, 0.14), transparent) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cp-title::before,
+  .cp-title::after,
+  .cp-statusbar .cp-dot {
+    animation: none;
+  }
+}
