@@ -76,3 +76,24 @@ describe('initiative module (RULES_CHECK §2, settings.js criticalInitiative)', 
     expect(sorted[2].needsReroll).toBe(true);
   });
 });
+
+// Phase 5m: 同値は同じ値の人どうしで振り直す（ルール）
+describe('rerollTies', () => {
+  it('re-rolls only the tied entries, again if they tie again', async () => {
+    const { rerollTies } = await import('../src/initiative.js');
+    const rolls = [4, 4, 9, 2]; // a,b が 4 で同じ → もう一度 9 と 2
+    const roll = () => rolls.shift()!;
+    const out = rerollTies(
+      [
+        { id: 'a', total: 15, ref: 5 },
+        { id: 'c', total: 20, ref: 8 },
+        { id: 'b', total: 15, ref: 9 },
+      ],
+      roll,
+    );
+    expect(out.map((e) => e.id)).toEqual(['c', 'a', 'b']);
+    expect(out[0].tiebreak).toEqual([]);
+    expect(out[1].tiebreak).toEqual([4, 9]);
+    expect(out[2].tiebreak).toEqual([4, 2]);
+  });
+});

@@ -1203,4 +1203,117 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       expect(cur.combat.id).toBe(combat.id);
     });
   });
+
+  // Phase 5m: 攻撃の結果が HP・SP・状態に正しく入るか（ルールとの突き合わせ）
+  describe('Phase 5m: attack results reach HP/SP/status', () => {
+    const H = () => ({ ...authGm, 'Content-Type': 'application/json' });
+    const resolve = async (combatId: string, body: Record<string, unknown>) =>
+      (await (await app.request(`/api/combats/${combatId}/resolve`, { method: 'POST', headers: H(), body: JSON.stringify(body) })).json()).result;
+
+    it('applies both hits of a ROF 2 melee attack, the second from the HP/SP left by the first', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const g = ganger.character;
+      const hit = { target_id: ganger.id, attack_roll: { first: 9 }, defense_roll: { first: 2 }, damage_dice: [5, 5] };
+      const result = await resolve(combat.id, { action_key: 'melee', actor_id: viper.id, weapon_id: weaponIdMelee, attacks: [hit, hit] });
+      const hps = result.changes.filter((ch: any) => ch.field === 'hp');
+      expect(hps).toHaveLength(2);
+      // 近接武器は SP 半分（切り上げ）。1 回目のあと SP は 1 減る
+      const sp1 = Math.round(g.sp_body / 2);
+      const after1 = g.hp - (10 - sp1);
+      expect(hps[0].after).toBe(after1);
+      const sp2 = Math.round((g.sp_body - 1) / 2);
+      expect(hps[1].before).toBe(after1);
+      expect(hps[1].after).toBe(after1 - (10 - sp2));
+      const sps = result.changes.filter((ch: any) => ch.field === 'sp_body');
+      expect(sps.map((c: any) => c.after)).toEqual([g.sp_body - 1, g.sp_body - 2]);
+    });
+
+    it('writes both hits to the database on apply, and undo restores HP and SP', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const g = ganger.character;
+      const hit = { target_id: ganger.id, attack_roll: { first: 9 }, defense_roll: { first: 2 }, damage_dice: [5, 5] };
+      const res = await app.request(`/api/combats/${combat.id}/apply`, {
+        method: 'POST',
+        headers: H(),
+        body: JSON.stringify({ action_key: 'melee', actor_id: viper.id, weapon_id: weaponIdMelee, attacks: [hit, hit] }),
+      });
+      expect(res.status).toBe(200);
+      const row = db.select().from(characters).where(eq(characters.id, g.id)).get()!;
+      const after1 = g.hp - (10 - Math.round(g.sp_body / 2));
+      expect(row.hp).toBe(after1 - (10 - Math.round((g.sp_body - 1) / 2)));
+      expect(row.sp_body).toBe(g.sp_body - 2);
+      await app.request(`/api/combats/${combat.id}/undo`, { method: 'POST', headers: authGm });
+      const back = db.select().from(characters).where(eq(characters.id, g.id)).get()!;
+      expect(back.hp).toBe(g.hp);
+      expect(back.sp_body).toBe(g.sp_body);
+    });
+
+    it('refuses more attacks than the weapon ROF, and the wrong number of damage dice', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const hit = { target_id: ganger.id, attack_roll: { first: 9 }, defense_roll: { first: 2 }, damage_dice: [5, 5] };
+      const three = await resolve(combat.id, { action_key: 'melee', actor_id: viper.id, weapon_id: weaponIdMelee, attacks: [hit, hit, hit] });
+      expect(three.missing_inputs.join()).toContain('ROF は 2');
+      const wrongDice = await resolve(combat.id, { action_key: 'melee', actor_id: viper.id, weapon_id: weaponIdMelee, attacks: [{ ...hit, damage_dice: [5] }] });
+      expect(wrongDice.missing_inputs.join()).toContain('2d6 なので、d6 の出目を 2 個');
+    });
+
+    it('marks the target seriously wounded and adds +5 on a critical (two 6s)', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const g = ganger.character;
+      const result = await resolve(combat.id, {
+        action_key: 'melee', actor_id: viper.id, weapon_id: weaponIdMelee,
+        attacks: [{ target_id: ganger.id, attack_roll: { first: 9 }, defense_roll: { first: 2 }, damage_dice: [6, 6], crit_injury_roll: 7 }],
+      });
+      const hp = result.changes.find((ch: any) => ch.field === 'hp');
+      expect(g.hp - hp.after).toBe(12 - Math.round(g.sp_body / 2) + 5);
+      expect(result.changes.some((ch: any) => ch.field === 'crit_injuries')).toBe(true);
+      if (hp.after < Math.ceil(g.hp_max / 2)) expect(result.changes.some((ch: any) => ch.field === 'status')).toBe(true);
+    });
+
+    it('stabilizes a mortally wounded ally to HP 1 with first aid (DV 15)', async () => {
+      db.update(characters).set({ hp: 0, status: JSON.stringify(['mortally']) }).where(eq(characters.id, pcId2)).run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const fail = await resolve(combat.id, { action_key: 'first_aid', actor_id: viper.id, target_id: nyx.id, attack_roll: { first: 2 } });
+      expect(fail.formula).toContain('難易度 15（瀕死）-> 失敗');
+      const ok = await resolve(combat.id, { action_key: 'first_aid', actor_id: viper.id, target_id: nyx.id, attack_roll: { first: 10, extra: 9 } });
+      expect(ok.success).toBe(true);
+      expect(ok.changes.find((ch: any) => ch.field === 'hp').after).toBe(1);
+      expect(ok.changes.find((ch: any) => ch.field === 'status').after).toEqual(['seriously']);
+    });
+
+    it('lowers REF for ranged attacks by the heaviest worn armor penalty', async () => {
+      db.insert(items).values({ id: 'item-flak', kind: 'armor', name_en: 'Flak', name_ja: 'フラック', origin: 'official_verified', verify_status: 'official_verified', created_at: 1, updated_at: 1 }).run();
+      sqlite.prepare('INSERT INTO armors (item_id, sp_head, sp_body, is_head, is_body, is_shield, shield_hp, penalty) VALUES (?, 0, 15, 0, 1, 0, 0, 4)').run('item-flak');
+      const viperRow = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+      const inv = JSON.parse(viperRow.inventory);
+      db.update(characters).set({ inventory: JSON.stringify([...inv, { entry_id: 'flak', item_id: 'item-flak', name: 'フラック', kind: 'armor', qty: 1, equipped: true }]) }).where(eq(characters.id, pcId1)).run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      expect(viper.character.armor_penalty).toBe(4);
+      const r = await resolve(combat.id, { action_key: 'ranged', actor_id: viper.id, target_id: ganger.id, weapon_id: weaponIdPistol, distance_m: 5, attack_roll: { first: 5 }, damage_dice: [1, 1, 1] });
+      expect(r.formula).toContain('REF 4 + 技能 6');
+    });
+
+    it('allows running only after the move action, and cuts MOVE by 6 while mortally wounded', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const run = await resolve(combat.id, { action_key: 'run', actor_id: viper.id });
+      expect(run.missing_inputs.join()).toContain('移動アクションを使ったあと');
+      db.update(characters).set({ hp: 0 }).where(eq(characters.id, pcId1)).run();
+      const move = await resolve(combat.id, { action_key: 'move', actor_id: viper.id });
+      expect(move.formula).toContain('MOVE 1マス');
+      expect(move.formula).toContain('瀕死 6');
+    });
+  });
 });

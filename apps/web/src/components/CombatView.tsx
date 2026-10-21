@@ -15,6 +15,7 @@ import {
 import {
   initiativeTotal,
   sortInitiative,
+  rerollTies,
   InitiativeEntry,
   findReachableSquares,
   checkLineOfSight,
@@ -94,7 +95,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [selectedNpcId, setSelectedNpcId] = useState<string>('');
   const [autoRollAll, setAutoRollAll] = useState(false);
   const [initInputs, setInitInputs] = useState<Record<string, { first: number; extra?: number }>>({});
-  const [tieBreakMode, setTieBreakMode] = useState<'ref' | 'manual'>('ref');
+  const [tieBreakMode, setTieBreakMode] = useState<'reroll' | 'ref' | 'manual'>('reroll');
 
   // Active Combat: Turn Guide State
   const [selectedActionKey, setSelectedActionKey] = useState<string | null>(null);
@@ -122,6 +123,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [secondAttackFirst, setSecondAttackFirst] = useState<number | null>(null);
   const [secondAttackExtra, setSecondAttackExtra] = useState<number | undefined>(undefined);
   const [secondDamageDiceStr, setSecondDamageDiceStr] = useState<string>('');
+  // 第2攻撃の回避と致命傷の出目（回避は攻撃ごとに振る。Phase 5m）
+  const [secondDefenseFirst, setSecondDefenseFirst] = useState<number | null>(null);
+  const [secondCritRoll, setSecondCritRoll] = useState<number | undefined>(undefined);
   
   // Unconfirmed / Manual Inputs
   const [manualNotes, setManualNotes] = useState<string>('');
@@ -286,8 +290,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
     if (!token) return undefined;
 
     const start = { x: token.x, y: token.y };
-    const charMove = activePart.character?.stats?.move ?? 6;
-    const maxMoves = selectedActionKey === 'run' ? charMove * 2 : charMove;
+    // 走るは移動のあとにもう一度 MOVE 分。瀕死のあいだは MOVE −6（最低 1）（サーバーと同じ。Phase 5m）
+    const charMove = (activePart.character?.stats?.move ?? 6) - (activePart.character?.armor_penalty ?? 0);
+    const dying = (activePart.character?.hp ?? 1) < 1;
+    const maxMoves = Math.max(1, dying ? charMove - 6 : charMove);
 
     const blockedCells = new Set<string>();
     boardData.objects.forEach((obj) => {
@@ -516,7 +522,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
     // 参加者チェックで外した人は入れない。スマホから届いた出目はサーバーに残っている（Phase 5l）
     const entries: InitiativeEntry[] = combat.participants.filter((p) => p.active).map((p) => {
-      const ref = p.character?.stats?.ref ?? 5;
+      // 重い防具のペナルティを引いた REF（Phase 5m）
+      const ref = (p.character?.stats?.ref ?? 5) - (p.character?.armor_penalty ?? 0);
       let rollObj = initInputs[p.character_id || p.id] ?? phoneRoll(p);
       if (autoRollAll || !rollObj) {
         // Roll 1d10
@@ -532,13 +539,23 @@ export const CombatView: React.FC<CombatViewProps> = ({
       };
     });
 
-    const sorted = sortInitiative(entries, combat.settings.tieBreak || 'ref');
-    const updatePayload = sorted.map((s, index) => ({
-      id: s.id,
-      initiative: s.total,
-      initiative_roll: s.roll,
-      order_index: index,
-    }));
+    // 同値はルールどおり、同じ値の人どうしで 1d10 を振り直す（Phase 5m）。古い戦闘の 'ref' はそのまま
+    const tieBreak = combat.settings.tieBreak || 'reroll';
+    const d10 = () => Math.floor(Math.random() * 10) + 1;
+    const updatePayload =
+      tieBreak === 'reroll'
+        ? rerollTies(entries, d10).map((s, index) => ({
+            id: s.id,
+            initiative: s.total,
+            initiative_roll: { ...(s.roll as object), ...(s.tiebreak.length ? { tiebreak: s.tiebreak } : {}) },
+            order_index: index,
+          }))
+        : sortInitiative(entries, tieBreak).map((s, index) => ({
+            id: s.id,
+            initiative: s.total,
+            initiative_roll: s.roll,
+            order_index: index,
+          }));
 
     try {
       await api.setCombatInitiative(combat.id, updatePayload);
@@ -562,6 +579,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
     setSecondAttackFirst(null);
     setSecondAttackExtra(undefined);
     setSecondDamageDiceStr('');
+    setSecondDefenseFirst(null);
+    setSecondCritRoll(undefined);
   };
   useEffect(() => {
     resetRolls();
@@ -664,8 +683,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
           distance_m: distanceM ?? undefined,
           dodge_mode: dodgeMode,
           attack_roll: secondAttackFirst !== null ? { first: secondAttackFirst, extra: secondAttackExtra } : undefined,
-          defense_roll: dodgeMode === 'dodge' && defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
+          defense_roll: dodgeMode === 'dodge' && secondDefenseFirst !== null ? { first: secondDefenseFirst } : undefined,
           damage_dice: secondDamageDice.length > 0 ? secondDamageDice : undefined,
+          crit_injury_roll: secondCritRoll,
         });
       }
 
@@ -752,8 +772,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
           distance_m: distanceM ?? undefined,
           dodge_mode: dodgeMode,
           attack_roll: secondAttackFirst !== null ? { first: secondAttackFirst, extra: secondAttackExtra } : undefined,
-          defense_roll: dodgeMode === 'dodge' && defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
+          defense_roll: dodgeMode === 'dodge' && secondDefenseFirst !== null ? { first: secondDefenseFirst } : undefined,
           damage_dice: secondDamageDice.length > 0 ? secondDamageDice : undefined,
+          crit_injury_roll: secondCritRoll,
         });
       }
 
@@ -1219,7 +1240,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 </label>
                 <select
                   value={tieBreakMode}
-                  onChange={(e) => setTieBreakMode(e.target.value as 'ref' | 'manual')}
+                  onChange={(e) => setTieBreakMode(e.target.value as 'reroll' | 'ref')}
                   style={{
                     width: '100%',
                     padding: '6px',
@@ -1229,8 +1250,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     color: 'var(--color-text)',
                   }}
                 >
-                  <option value="ref">REFの高い順（既定）</option>
-                  <option value="manual">手動で振り直す</option>
+                  <option value="reroll">同じ値の人どうしで振り直す（ルール）</option>
+                  <option value="ref">REF の高い順（ハウスルール）</option>
                 </select>
               </div>
 
@@ -2022,12 +2043,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   )}
 
                   {/* Target & Distance Selection (for ranged / melee / brawl) */}
-                  {['ranged', 'aimed', 'autofire', 'melee', 'brawl'].includes(selectedActionKey) && (
+                  {['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'first_aid'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>対象を選択:</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{selectedActionKey === 'first_aid' ? '手当てする相手（自分も可）:' : '対象を選択:'}</span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         {combat.participants
-                          .filter((p) => p.id !== activePart.id && !p.out)
+                          .filter((p) => (selectedActionKey === 'first_aid' || p.id !== activePart.id) && !p.out)
                           .map((p) => (
                             <button
                               key={p.id}
@@ -2337,7 +2358,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     )}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>攻撃 1d10:</span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{selectedActionKey === 'first_aid' ? '判定 1d10:' : '攻撃 1d10:'}</span>
                         <input
                           type="number"
                           min={1}
@@ -2474,7 +2495,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     </div>
 
                     {/* ROF 2 multi-attack option */}
-                    {['ranged', 'melee'].includes(selectedActionKey) && (
+                    {['ranged', 'melee', 'brawl'].includes(selectedActionKey) && (
                       <div
                         style={{
                           marginTop: '6px',
@@ -2543,6 +2564,34 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                 />
                               </div>
                             )}
+
+                            {dodgeMode === 'dodge' && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>第2 回避 1d10:</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={10}
+                                  placeholder="1d10"
+                                  value={secondDefenseFirst ?? ''}
+                                  onChange={(e) => setSecondDefenseFirst(e.target.value ? Number(e.target.value) : null)}
+                                  style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }}
+                                />
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>第2 致命傷 2d6:</span>
+                              <input
+                                type="number"
+                                min={2}
+                                max={12}
+                                placeholder="2d6"
+                                value={secondCritRoll ?? ''}
+                                onChange={(e) => setSecondCritRoll(e.target.value ? Number(e.target.value) : undefined)}
+                                style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }}
+                              />
+                            </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>第2 ダメージ出目:</span>

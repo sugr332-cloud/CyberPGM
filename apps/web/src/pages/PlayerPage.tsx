@@ -1896,8 +1896,9 @@ export const PlayerPage: React.FC = () => {
                   combatTurnInfo?.is_my_turn ?? (activePart && activePart.character_id === sheet.id),
                 );
 
-                const refVal = sheet.stats.ref;
-                const dexVal = sheet.stats.dex;
+                // 重い防具のペナルティを引いた REF・DEX（Phase 5m）
+                const refVal = sheet.stats.ref - (sheet.armor_penalty ?? 0);
+                const dexVal = sheet.stats.dex - (sheet.armor_penalty ?? 0);
                 // 技能はキー（'handgun' など）で持っている。基準値は選んだ武器の技能で出す（Phase 5k）
                 const sk = (key: string) => sheet.skills[key] ?? 0;
                 const woundPen = sheet.woundPenalty;

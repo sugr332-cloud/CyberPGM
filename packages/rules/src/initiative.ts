@@ -103,3 +103,37 @@ export function sortInitiative(
     };
   });
 }
+
+/**
+ * イニシアチブが同じ人どうしで振り直して順番を決める（ルール: 同値は同じ者同士でもう一度振る。Phase 5m）。
+ * 振り直しでまた同じなら、その人たちでさらに振り直す。振った出目は tiebreak に残す
+ */
+export function rerollTies<T extends InitiativeEntry>(
+  entries: T[],
+  roll: () => number,
+): Array<T & { tiebreak: number[] }> {
+  const withTb = entries.map((e) => ({ ...e, tiebreak: [] as number[] }));
+  const orderGroup = (group: typeof withTb): typeof withTb => {
+    if (group.length <= 1) return group;
+    for (const e of group) e.tiebreak.push(roll());
+    const level = group[0].tiebreak.length - 1;
+    const sorted = [...group].sort((a, b) => b.tiebreak[level] - a.tiebreak[level]);
+    const out: typeof withTb = [];
+    for (let i = 0; i < sorted.length; ) {
+      let j = i;
+      while (j < sorted.length && sorted[j].tiebreak[level] === sorted[i].tiebreak[level]) j++;
+      out.push(...orderGroup(sorted.slice(i, j)));
+      i = j;
+    }
+    return out;
+  };
+  const byTotal = [...withTb].sort((a, b) => b.total - a.total);
+  const out: typeof withTb = [];
+  for (let i = 0; i < byTotal.length; ) {
+    let j = i;
+    while (j < byTotal.length && byTotal[j].total === byTotal[i].total) j++;
+    out.push(...orderGroup(byTotal.slice(i, j)));
+    i = j;
+  }
+  return out;
+}
