@@ -616,6 +616,9 @@ export class SessionManager {
    */
   public broadcastScreenUpdate(): void {
     const payload = this.buildScreenPayload();
+    // GM の画面でも BGM を鳴らせるように、いまの BGM を GM にも送る（Phase 5n）
+    const story = this.storyProvider?.();
+    this.sendToGm({ type: 'bgm:update', payload: story && story.active ? (story.bgm ?? null) : null });
     const msg = JSON.stringify({
       type: 'screen:update',
       payload,

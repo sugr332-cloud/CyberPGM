@@ -43,9 +43,58 @@ export function matchesAudioSignature(ext: string, buf: Buffer): boolean {
   }
 }
 
-// GET /api/audio: 音声の一覧（GM）
+/**
+ * BGM のフォルダ（data/audio）に置いた曲を一覧に入れる（Phase 5n）。サブフォルダも読む。
+ * 曲名はファイル名（サブフォルダは「フォルダ / 曲名」）。フォルダから消えた曲は一覧からも消す
+ */
+export function syncAudioFolder(): { added: number; removed: number } {
+  const base = getAudioDir();
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (ent.name.startsWith('.')) continue;
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) walk(full);
+      else if (TYPES[path.extname(ent.name).toLowerCase()]) found.push(path.relative(base, full));
+    }
+  };
+  walk(base);
+  const rows = db.select().from(audio).all();
+  const known = new Set(rows.map((r) => r.path));
+  let added = 0;
+  for (const rel of found) {
+    if (known.has(rel)) continue;
+    const ext = path.extname(rel).toLowerCase();
+    const dir = path.dirname(rel);
+    const name = path.basename(rel, ext);
+    db.insert(audio)
+      .values({
+        id: generateUlid(),
+        title: dir === '.' ? name : `${dir.split(path.sep).join(' / ')} / ${name}`,
+        path: rel,
+        mime: TYPES[ext],
+        size: fs.statSync(path.join(base, rel)).size,
+        duration_sec: null,
+        created_at: Date.now(),
+      })
+      .run();
+    added++;
+  }
+  const present = new Set(found);
+  let removed = 0;
+  for (const r of rows) {
+    if (!present.has(r.path)) {
+      db.delete(audio).where(eq(audio.id, r.id)).run();
+      removed++;
+    }
+  }
+  return { added, removed };
+}
+
+// GET /api/audio: 音声の一覧（GM）。開くたびに BGM フォルダを読み直す
 audioRoutes.get('/audio', requireGm, (c) => {
-  return c.json({ audio: db.select().from(audio).all() });
+  syncAudioFolder();
+  return c.json({ audio: db.select().from(audio).all().sort((a, b) => a.title.localeCompare(b.title, 'ja')), folder: getAudioDir() });
 });
 
 // POST /api/audio: 音声のアップロード（GM。multipart: file, title?）

@@ -34,7 +34,7 @@ import { sessionManager } from './session.js';
 import { createDailyBackup } from './config.js';
 import { resolveLanIp, startDualServer } from './net.js';
 import { linkTextWeapons } from './weapon-link.js';
-import { audioRoutes } from './routes/audio.js';
+import { audioRoutes, syncAudioFolder, getAudioDir } from './routes/audio.js';
 import { playerShopRoutes } from './routes/player-shop.js';
 import { playersRoutes } from './routes/players.js';
 
@@ -253,6 +253,8 @@ export async function startServer(): Promise<void> {
   }
 
   // 文字だけの武器を持ち物に移す（戦闘で選べるように。Phase 5j）
+  const bgm = syncAudioFolder();
+  if (bgm.added > 0) console.log(`[bgm] BGM フォルダ (${getAudioDir()}) の曲を ${bgm.added} 件、一覧に入れました`);
   const linked = linkTextWeapons();
   if (linked > 0) console.log(`[weapons] 文字だけの武器 ${linked} 件を持ち物に移しました`);
 

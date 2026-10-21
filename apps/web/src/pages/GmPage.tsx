@@ -11,6 +11,7 @@ import {
   api,
   getGmToken,
   setGmToken,
+  gmFetch,
 } from '../api.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { Footer } from '../components/Footer.js';
@@ -23,6 +24,8 @@ import { ScenarioPlayView } from '../components/ScenarioPlayView.js';
 import { ResumeQrPanel } from '../components/ResumeQrPanel.js';
 import { CharacterEditorView } from '../components/CharacterEditorView.js';
 import { CharacterDetail } from '../components/CharacterDetail.js';
+import { BgmPlayer, BgmState } from '../components/BgmPlayer.js';
+import { getGmBgmOn, onGmBgmChange } from '../gmBgm.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -110,7 +113,9 @@ export const GmPage: React.FC = () => {
   // WebSocket Message Handler
   const handleWsMessage = useCallback((type: string, payload: unknown) => {
     setLatestWsMessage({ type, payload });
-    if (type === 'gm:presence') {
+    if (type === 'bgm:update') {
+      setGmBgm((payload as BgmState | null) ?? null);
+    } else if (type === 'gm:presence') {
       const p = payload as { devices: DeviceInfo[] };
       setDevices(p.devices);
     } else if (type === 'gm:claim-request') {
@@ -124,6 +129,18 @@ export const GmPage: React.FC = () => {
     token,
     onMessage: handleWsMessage,
   });
+
+  // この PC（GM 画面）で BGM を鳴らす（Phase 5n）。いまの曲は bgm:update で届く
+  const [gmBgm, setGmBgm] = useState<BgmState | null>(null);
+  const [gmBgmOn, setGmBgmOnState] = useState(getGmBgmOn());
+  useEffect(() => onGmBgmChange(setGmBgmOnState), []);
+  useEffect(() => {
+    if (!token) return;
+    gmFetch('/api/display')
+      .then((r: Response) => r.json())
+      .then((res: { display?: { bgm?: BgmState | null } }) => setGmBgm(res.display?.bgm ?? null))
+      .catch(() => {});
+  }, [token]);
 
   // Fetch initial data
   const refreshAllData = useCallback(() => {
@@ -385,6 +402,7 @@ export const GmPage: React.FC = () => {
         paddingBottom: isMobile ? '56px' : '0',
       }}
     >
+      {gmBgmOn && <BgmPlayer bgm={gmBgm} compact />}
       {/* Top Header */}
       <header
         style={{
