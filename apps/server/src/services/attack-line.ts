@@ -7,7 +7,7 @@ import { items, rule_constants, weapons } from '../db/schema.js';
 
 /**
  * 出目を入れる前に出す「計算式と成功ライン」（仕様 §5.0.1。Phase 5n）。
- * 例: 「REF 8 + 拳銃 6 = 14 vs 難易度 15（8m）→ 2 以上で成功」
+ * 例: 「REF 8 + ハンドガン 6 = 14 vs 難易度 15（8m）→ 2 以上で成功」
  * 距離がまだ決まっていない射撃は、距離帯ごとの難易度と成功ラインを並べる（スマホ向け）
  */
 export interface AttackLine {

@@ -21,6 +21,7 @@ interface FVTTSkillDoc {
 export interface SkillCatalogEntry {
   key: string;
   name: string;
+  name_en: string;
   stat: string;
   category: string;
   basic: boolean;
@@ -30,28 +31,78 @@ export interface SkillCatalogEntry {
   provisional: boolean;
 }
 
-const PROVISIONAL_NAMES_JA: Record<string, string> = {
-  perception: '知覚',
-  tracking: '追跡',
-  concentration: '集中',
+/**
+ * 技能の日本語名。公式の日本語版（無料配布の VA-11 HALL-A・シングルショットパック・カラオケナイト・
+ * テイルズ・オブ・ザ・レッド＋・ガンマス）のキャラクターシートで使われている名前に合わせた。
+ * OFFICIAL_UNCONFIRMED はそれらに出てこない技能で、コアルールブックで確かめるまでの仮の名前
+ */
+const NAMES_JA: Record<string, string> = {
+  accounting: '経理',
+  acting: '演技',
+  air_vehicle_tech: '航空ヴィークル技術',
+  animal_handling: '動物使い',
   athletics: '運動',
-  stealth: '隠密',
-  education: '教養',
-  brawling: '格闘',
-  evasion: '回避',
-  melee_weapon: '近接武器',
-  handgun: '拳銃',
-  shoulder_arms: '肩撃ち武器',
-  autofire: 'オートファイア',
-  persuasion: '説得',
-  trading: '取引',
-  streetwise: '裏社会の事情通',
-  conversation: '会話',
-  human_perception: '人間の洞察',
-  first_aid: '応急手当',
+  autofire: 'フルオート射撃',
   basic_tech: '基礎技術',
-  electronics_security_tech: '電子工学/セキュリティ',
-  cybertech: 'サイバーテック',
+  brawling: '格闘',
+  bribery: '賄賂',
+  bureaucracy: '官僚制度',
+  business: 'ビジネス',
+  composition: '文筆',
+  conceal_reveal_object: '隠蔽／発見',
+  concentration: '精神集中',
+  conversation: '会話術',
+  criminology: '犯罪捜査',
+  cryptography: '暗号学',
+  cybertech: 'サイバー技術',
+  dance: '舞踊',
+  deduction: '推理',
+  drive_land_vehicle: '陸上ヴィークル運転',
+  education: '教養',
+  electronics_security_tech: '電子／保安技術',
+  endurance: '忍耐',
+  evasion: '回避',
+  first_aid: '応急手当',
+  forgery: '偽造',
+  gamble: 'ギャンブル',
+  handgun: 'ハンドガン',
+  heavy_weapons: '重火器',
+  human_perception: '真意看破',
+  interrogation: '尋問',
+  land_vehicle_tech: '陸上ヴィークル技術',
+  language_streetslang: '言語：ストリートスラング',
+  library_search: 'ライブラリ検索',
+  lip_reading: '読唇術',
+  local_expert_your_home: '土地鑑：自分の居住地',
+  melee_weapon: '近接武器',
+  paramedic: '救急医療',
+  perception: '知覚',
+  personal_grooming: '美容',
+  persuasion: '説得',
+  photography_film: '撮影',
+  pick_lock: '鍵開け',
+  pick_pocket: 'スリ',
+  pilot_air_vehicle: '航空ヴィークル操縦',
+  pilot_sea_vehicle: '海洋ヴィークル操縦',
+  resist_torture_drugs: '拷問／薬物抵抗',
+  sea_vehicle_tech: '海洋ヴィークル技術',
+  shoulder_arms: 'ライフル',
+  stealth: '隠密',
+  streetwise: '裏社会',
+  tactics: '戦術',
+  tracking: '追跡',
+  trading: '売買',
+  wardrobe___style: 'ファッション',
+  weaponstech: '武器技術',
+  wilderness_survival: '野外生存術',
+};
+
+const OFFICIAL_UNCONFIRMED: Record<string, string> = {
+  archery: '弓術',
+  contortionist: '軟体',
+  demolitions: '爆破',
+  paint_draw_sculpt: '絵画／彫刻',
+  riding: '乗馬',
 };
 
 function parseArgs() {
@@ -91,7 +142,7 @@ export function generateSkillCatalog(fvttRepoPath: string): SkillCatalogEntry[] 
 
     const key = file.replace(/^skill\./, '').replace(/\.yaml$/, '');
     const englishName = doc.name ?? key;
-    const name = PROVISIONAL_NAMES_JA[key] ?? englishName;
+    const name = NAMES_JA[key] ?? OFFICIAL_UNCONFIRMED[key] ?? englishName;
     const stat = doc.system?.stat ?? 'int';
     const category = doc.system?.category ?? 'general';
     const basic = Boolean(doc.system?.basic);
@@ -106,13 +157,14 @@ export function generateSkillCatalog(fvttRepoPath: string): SkillCatalogEntry[] 
     entries.push({
       key,
       name,
+      name_en: englishName,
       stat,
       category,
       basic,
       difficulty,
       multiplier,
       sources,
-      provisional: true,
+      provisional: !NAMES_JA[key],
     });
   }
 
@@ -142,6 +194,7 @@ function main() {
 export interface SkillCatalogEntry {
   key: string;
   name: string;
+  name_en: string;
   stat: string;
   category: string;
   basic: boolean;

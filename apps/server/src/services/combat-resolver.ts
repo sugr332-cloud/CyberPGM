@@ -70,7 +70,7 @@ const ACTION_LABEL: Record<string, string> = {
   take_cover: '遮蔽に入る',
   ranged: '射撃',
   aimed: '照準射撃',
-  autofire: 'オートファイア',
+  autofire: 'フルオート射撃',
   suppressive: '制圧射撃',
   hide: '身を隠す',
   pickup: '拾う',

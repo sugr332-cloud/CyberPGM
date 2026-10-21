@@ -17,17 +17,22 @@ describe('generateSkillCatalog', () => {
     expect(perception).toBeDefined();
     expect(perception?.name).toBe('知覚');
     expect(perception?.stat).toBe('int');
-    expect(perception?.provisional).toBe(true);
+    expect(perception?.provisional).toBe(false);
     expect(perception?.basic).toBe(true);
 
     const autofire = catalog.find((s) => s.key === 'autofire');
-    expect(autofire?.name).toBe('オートファイア');
+    expect(autofire?.name).toBe('フルオート射撃');
+    expect(autofire?.name_en).toBe('Autofire');
     expect(autofire?.multiplier).toBe(2);
     expect(autofire?.difficulty).toBe('difficult');
 
     const paramedic = catalog.find((s) => s.key === 'paramedic');
-    expect(paramedic?.name).toBe('Paramedic');
+    expect(paramedic?.name).toBe('救急医療');
     expect(paramedic?.multiplier).toBe(2);
-    expect(paramedic?.provisional).toBe(true);
+    expect(paramedic?.provisional).toBe(false);
+
+    // 公式の日本語版に出てこない技能は仮の名前のまま
+    expect(catalog.find((s) => s.key === 'riding')?.provisional).toBe(true);
+    expect(catalog.every((s) => /[^\x00-\x7f]/.test(s.name))).toBe(true);
   });
 });

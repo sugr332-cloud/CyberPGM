@@ -2127,7 +2127,7 @@ export const PlayerPage: React.FC = () => {
                         <button
                           disabled={!canAutofire}
                           onClick={() => {
-                            setChosenActionLabel('オートファイア');
+                            setChosenActionLabel('フルオート射撃');
                             setPadRollType('attack');
                             setShowDicePad(true);
                             setPadFirstRoll(null);
@@ -2145,10 +2145,10 @@ export const PlayerPage: React.FC = () => {
                             cursor: 'pointer',
                           }}
                         >
-                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>オートファイア</div>
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>フルオート射撃</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                             {canAutofire
-                              ? `REF ${refVal} + オートファイア ${sk('autofire')}${woundPen !== 0 ? ` ${woundPen}` : ''} = ${attackBaseAutofire} + 1d10`
+                              ? `REF ${refVal} + フルオート射撃 ${sk('autofire')}${woundPen !== 0 ? ` ${woundPen}` : ''} = ${attackBaseAutofire} + 1d10`
                               : 'この武器ではできません'}
                           </div>
                         </button>
