@@ -168,6 +168,8 @@ charactersRoutes.patch('/characters/:id', requireGm, async (c) => {
   if (d.crit_injuries !== undefined) updateValues.crit_injuries = JSON.stringify(d.crit_injuries);
   if (d.eb !== undefined) updateValues.eb = d.eb;
   if (d.notes_gm !== undefined) updateValues.notes_gm = d.notes_gm;
+  if (d.player_id !== undefined) updateValues.player_id = d.player_id;
+  if (d.scenario_id !== undefined) updateValues.scenario_id = d.scenario_id;
 
   db.update(characters)
     .set(updateValues)

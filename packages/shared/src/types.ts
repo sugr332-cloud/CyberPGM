@@ -258,6 +258,8 @@ export interface Character {
   crit_injuries: unknown[];
   eb: number;
   notes_gm?: string | null;
+  player_id?: string | null; // 持ち主のプレイヤー（Phase 5i）
+  scenario_id?: string | null; // 参加中で未クリアのシナリオ（Phase 5i）
   created_at: number;
   updated_at: number;
 }
@@ -323,6 +325,7 @@ export interface SaveFile {
   savedAt: number;
   name: string;
   characters: Character[];
+  players?: Array<{ id: string; name: string; created_at: number; updated_at: number }>;
   money_log: MoneyLogEntry[];
   char_log: CharLogEntry[];
   app_settings: Record<string, unknown>;

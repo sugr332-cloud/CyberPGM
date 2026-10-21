@@ -40,6 +40,8 @@ export function formatCharacterRow(row: typeof characters.$inferSelect, imagePat
     crit_injuries: JSON.parse(row.crit_injuries) as unknown[],
     eb: row.eb,
     notes_gm: row.notes_gm,
+    player_id: row.player_id,
+    scenario_id: row.scenario_id,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

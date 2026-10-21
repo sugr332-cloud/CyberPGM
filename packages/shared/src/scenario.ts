@@ -153,6 +153,8 @@ export const ScenarioMetaSchema = z.object({
   reward_note: z.string().optional(),
   tags: z.array(z.string()).default([]),
   shop_ids: z.array(z.string()).default([]),
+  // このシナリオで作るキャラの開始資金。未設定なら全体の設定を使う（Phase 5i）
+  starting_funds: z.number().int().nonnegative().nullable().optional(),
 });
 export type ScenarioMeta = z.infer<typeof ScenarioMetaSchema>;
 
