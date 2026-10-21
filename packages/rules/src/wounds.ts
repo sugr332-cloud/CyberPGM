@@ -78,3 +78,10 @@ export function deathSave(input: DeathSaveInput): DeathSaveResult {
     nextPenalty: success ? penalty + 1 : penalty,
   };
 }
+
+/**
+ * Max HP from BODY and WILL (FVTT cpr-actor.js: 10 + 5 * ceil((WILL + BODY) / 2)).
+ */
+export function hpMaxFromStats(body: number, will: number): number {
+  return 10 + 5 * Math.ceil((body + will) / 2);
+}

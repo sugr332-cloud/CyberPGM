@@ -57,7 +57,7 @@ export function calculateCharacterSheet(char: Character): CharacterSheet {
   // 1. Calculate max humanity from installed cyberware
   const cyberwareItems = char.cyberware.map((cw) => ({
     name: cw.name,
-    isBorgware: cw.type === 'borgware',
+    type: cw.type,
     staticLoss: cw.static_loss ?? 0,
   }));
 

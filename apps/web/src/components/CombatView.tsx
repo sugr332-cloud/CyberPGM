@@ -23,7 +23,7 @@ import {
   LosStatus,
 } from '@cyberpgm/rules';
 import { BoardView } from './BoardView.js';
-import { ItemNotes } from './ItemNotes.js';
+import { ItemDetailPopup } from './ItemDetail.js';
 import { JoinCombatDialog } from './JoinCombatDialog.js';
 
 interface CombatViewProps {
@@ -50,18 +50,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
     await gmFetch(`/api/combats/${combat.id}/participants/${participantId}/leave`, { method: 'POST' });
     refreshCombat();
   };
-  const [itemPopup, setItemPopup] = useState<{ name: string; item: any | null } | null>(null);
-  const openItemPopup = async (name: string, itemId?: string | null) => {
-    if (!itemId) {
-      setItemPopup({ name, item: null });
-      return;
-    }
-    try {
-      setItemPopup({ name, item: await api.getItem(itemId) });
-    } catch {
-      setItemPopup({ name, item: null });
-    }
-  };
+  const [itemPopup, setItemPopup] = useState<{ name: string; itemId?: string | null } | null>(null);
+  const openItemPopup = (name: string, itemId?: string | null) => setItemPopup({ name, itemId });
   const activePart = combat?.participants?.[combat.turn_index];
   const [actions, setActions] = useState<CombatActionDef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2669,60 +2659,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         />
       )}
 
-      {itemPopup && (
-        <div
-          data-testid="item-popup"
-          onClick={() => setItemPopup(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: 'min(420px, 92vw)',
-              backgroundColor: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '8px',
-              padding: '14px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 700 }}>{itemPopup.item?.name_ja_override || itemPopup.item?.name_ja || itemPopup.name}</span>
-              <button type="button" onClick={() => setItemPopup(null)} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
-                ✕
-              </button>
-            </div>
-            {itemPopup.item ? (
-              <>
-                <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
-                  {itemPopup.item.weapon
-                    ? `${itemPopup.item.weapon.damage ?? '—'} · ROF ${itemPopup.item.weapon.rof ?? '—'} · 装弾数 ${itemPopup.item.weapon.magazine_max ?? '—'}`
-                    : itemPopup.item.armor
-                    ? itemPopup.item.armor.is_shield
-                      ? `シールド HP ${itemPopup.item.armor.shield_hp ?? '—'}`
-                      : `SP 頭 ${itemPopup.item.armor.sp_head ?? '—'} / 胴 ${itemPopup.item.armor.sp_body ?? '—'}`
-                    : itemPopup.item.cyberware
-                    ? `人間性 −${itemPopup.item.cyberware.humanity_loss_static ?? '—'}（${itemPopup.item.cyberware.humanity_loss_roll ?? '—'}）`
-                    : `${itemPopup.item.price_eb ?? '—'} eb`}
-                </div>
-                <ItemNotes item={itemPopup.item} />
-              </>
-            ) : (
-              <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>品目の情報なし</div>
-            )}
-          </div>
-        </div>
-      )}
+      {itemPopup && <ItemDetailPopup name={itemPopup.name} itemId={itemPopup.itemId} onClose={() => setItemPopup(null)} />}
     </div>
   );
 

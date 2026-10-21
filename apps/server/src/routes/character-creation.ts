@@ -16,7 +16,7 @@ import {
   CharacterDraft,
   CreationMethodConfig,
 } from '@cyberpgm/shared';
-import { validateCharacterDraft } from '@cyberpgm/rules';
+import { validateCharacterDraft, hpMaxFromStats } from '@cyberpgm/rules';
 import { requireGm } from '../auth.js';
 import { triggerAutoSave } from './saves.js';
 import fs from 'node:fs';
@@ -411,7 +411,7 @@ characterCreationRoutes.post('/character-submissions/:id/accept', requireGm, asy
   // Calculate HP, Humanity, EMP
   const bodyStat = draft.stats.body ?? 6;
   const willStat = draft.stats.will ?? 6;
-  const hpMax = 10 + 5 * Math.ceil((bodyStat + willStat) / 2);
+  const hpMax = hpMaxFromStats(bodyStat, willStat);
 
   const humanity = valResult.humanity.currentHumanity;
   const empMax = valResult.humanity.currentEmp;

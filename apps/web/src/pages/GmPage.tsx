@@ -21,7 +21,8 @@ import { CombatView } from '../components/CombatView.js';
 import { ScenarioMakerView } from '../components/ScenarioMakerView.js';
 import { ScenarioPlayView } from '../components/ScenarioPlayView.js';
 import { ResumeQrPanel } from '../components/ResumeQrPanel.js';
-import { PortraitPicker } from '../components/PortraitPicker.js';
+import { CharacterEditorView } from '../components/CharacterEditorView.js';
+import { CharacterDetail } from '../components/CharacterDetail.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -50,7 +51,7 @@ export const GmPage: React.FC = () => {
   }, []);
 
   // GM Main View State
-  const [activeTab, setActiveTab] = useState<'pc' | 'combat' | 'scenario' | 'shop' | 'skills' | 'db'>('pc');
+  const [activeTab, setActiveTab] = useState<'pc' | 'chara' | 'combat' | 'scenario' | 'shop' | 'skills' | 'db'>('pc');
   const [scenarioSubMode, setScenarioSubMode] = useState<'maker' | 'play'>('maker');
   const [isMobile, setIsMobile] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -72,6 +73,13 @@ export const GmPage: React.FC = () => {
   const [startingFunds, setStartingFunds] = useState<string>('');
   const [isUpdatingFunds, setIsUpdatingFunds] = useState(false);
   const [pcSubTab, setPcSubTab] = useState<'list' | 'reception'>('list');
+  // キャラ作成タブ（Phase 5f）: PC タブの「編集」「＋ 追加」から開く対象
+  const [editorRequest, setEditorRequest] = useState<{ id: string } | { kind: 'pc' | 'npc' | 'mook' } | null>(null);
+  const [detailPcIds, setDetailPcIds] = useState<Set<string>>(new Set());
+  const openEditor = (req: { id: string } | { kind: 'pc' | 'npc' | 'mook' }) => {
+    setEditorRequest(req);
+    setActiveTab('chara');
+  };
   const [pendingSubmissionsCount, setPendingSubmissionsCount] = useState<number>(0);
 
   // Money Quick Send State
@@ -88,135 +96,11 @@ export const GmPage: React.FC = () => {
   const [saveList, setSaveList] = useState<SaveSummary[]>([]);
   const [newSaveName, setNewSaveName] = useState('');
 
-  const [showPcModal, setShowPcModal] = useState(false);
-  const [editingPc, setEditingPc] = useState<CharacterSheet | null>(null);
-  const [pcFormName, setPcFormName] = useState('');
-  const [pcFormRole, setPcFormRole] = useState('');
-  const [pcFormHp, setPcFormHp] = useState('35');
-  const [pcFormSpHead, setPcFormSpHead] = useState('7');
-  const [pcFormSpBody, setPcFormSpBody] = useState('7');
-  const [pcFormEb, setPcFormEb] = useState('1000');
-  const [pcFormPortrait, setPcFormPortrait] = useState<string | null>(null);
-
-  const handleOpenAddPc = () => {
-    setEditingPc(null);
-    setPcFormName('');
-    setPcFormRole('ソロ');
-    setPcFormHp('35');
-    setPcFormSpHead('7');
-    setPcFormSpBody('7');
-    setPcFormEb('1000');
-    setPcFormPortrait(null);
-    setShowPcModal(true);
-  };
-
-  const handleOpenEditPc = (pc: CharacterSheet) => {
-    setEditingPc(pc);
-    setPcFormName(pc.name);
-    setPcFormRole(pc.role);
-    setPcFormHp(String(pc.hp_max));
-    setPcFormSpHead(String(pc.sp_head));
-    setPcFormSpBody(String(pc.sp_body));
-    setPcFormEb(String(pc.eb));
-    setPcFormPortrait(pc.portrait_image_id ?? null);
-    setShowPcModal(true);
-  };
-
-  const handleSavePc = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pcFormName.trim()) return;
-
-    const hpVal = Number(pcFormHp) || 30;
-    const spHVal = Number(pcFormSpHead) || 0;
-    const spBVal = Number(pcFormSpBody) || 0;
-    const ebVal = Number(pcFormEb) || 0;
-
-    try {
-      if (editingPc) {
-        await api.updateCharacter(editingPc.id, {
-          name: pcFormName.trim(),
-          role: pcFormRole.trim(),
-          hp: hpVal,
-          hp_max: hpVal,
-          sp_head: spHVal,
-          sp_body: spBVal,
-          eb: ebVal,
-          portrait_image_id: pcFormPortrait,
-        });
-      } else {
-        await api.createCharacter({
-          name: pcFormName.trim(),
-          role: pcFormRole.trim(),
-          hp: hpVal,
-          hp_max: hpVal,
-          sp_head: spHVal,
-          sp_body: spBVal,
-          eb: ebVal,
-          portrait_image_id: pcFormPortrait,
-          stats: { int: 6, ref: 6, dex: 6, tech: 6, cool: 6, will: 6, luck: 5, move: 6, body: 6, emp: 6 },
-          skills: { handgun: 4, evasion: 4, perception: 4 },
-          humanity: 60,
-          emp_max: 6,
-        });
-      }
-      setShowPcModal(false);
-      refreshAllData();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      alert(`PC保存に失敗しました: ${msg}`);
-    }
-  };
-
   // Claim Request Alert from other devices
   const [pendingClaim, setPendingClaim] = useState<WsClaimRequestPayload | null>(null);
   const [latestWsMessage, setLatestWsMessage] = useState<{ type: string; payload: any } | null>(null);
 
   // NPC / Mook creation state
-  const [showNpcModal, setShowNpcModal] = useState(false);
-  const [npcKind, setNpcKind] = useState<'npc' | 'mook'>('mook');
-  const [npcName, setNpcName] = useState('');
-  const [npcRole, setNpcRole] = useState('Ganger');
-  const [npcHp, setNpcHp] = useState('25');
-  const [npcSpHead, setNpcSpHead] = useState('4');
-  const [npcSpBody, setNpcSpBody] = useState('7');
-  const [npcRef, setNpcRef] = useState('5');
-  const [npcDex, setNpcDex] = useState('5');
-  const [npcBody, setNpcBody] = useState('6');
-
-  const handleSaveNpc = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!npcName.trim()) return;
-    const hpVal = Number(npcHp) || 25;
-    const spHVal = Number(npcSpHead) || 0;
-    const spBVal = Number(npcSpBody) || 0;
-    const refVal = Number(npcRef) || 5;
-    const dexVal = Number(npcDex) || 5;
-    const bodyVal = Number(npcBody) || 6;
-
-    try {
-      await api.createCharacter({
-        kind: npcKind,
-        name: npcName.trim(),
-        role: npcRole.trim(),
-        hp: hpVal,
-        hp_max: hpVal,
-        sp_head: spHVal,
-        sp_body: spBVal,
-        eb: 0,
-        stats: { int: 4, ref: refVal, dex: dexVal, tech: 3, cool: 4, will: 4, luck: 0, move: 5, body: bodyVal, emp: 3 },
-        skills: { Handgun: 4, Evasion: 4, Brawling: 4, 'Melee Weapon': 4 },
-        humanity: 30,
-        emp_max: 3,
-      });
-      setShowNpcModal(false);
-      setNpcName('');
-      refreshAllData();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      alert(`NPC/モブの作成に失敗しました: ${msg}`);
-    }
-  };
-
   // WebSocket Message Handler
   const handleWsMessage = useCallback((type: string, payload: unknown) => {
     setLatestWsMessage({ type, payload });
@@ -517,6 +401,7 @@ export const GmPage: React.FC = () => {
             <nav style={{ display: 'flex', gap: '4px', marginLeft: '24px' }}>
               {[
                 { id: 'pc', label: 'PC' },
+                { id: 'chara', label: 'キャラ作成' },
                 { id: 'combat', label: '戦闘' },
                 { id: 'scenario', label: 'シナリオ' },
                 { id: 'shop', label: '商店' },
@@ -844,7 +729,7 @@ export const GmPage: React.FC = () => {
                   保存
                 </button>
                 <button
-                  onClick={handleOpenAddPc}
+                  onClick={() => openEditor({ kind: 'pc' })}
                   style={{
                     backgroundColor: 'var(--color-ally)',
                     border: 'none',
@@ -860,7 +745,7 @@ export const GmPage: React.FC = () => {
                   ＋ PC追加
                 </button>
                 <button
-                  onClick={() => setShowNpcModal(true)}
+                  onClick={() => openEditor({ kind: 'npc' })}
                   style={{
                     backgroundColor: 'var(--color-enemy)',
                     border: 'none',
@@ -891,6 +776,7 @@ export const GmPage: React.FC = () => {
                 return (
                   <div
                     key={pc.id}
+                    data-testid="pc-card"
                     style={{
                       backgroundColor: 'var(--color-surface)',
                       border: '1px solid var(--color-border)',
@@ -942,7 +828,7 @@ export const GmPage: React.FC = () => {
                         {isOnline ? '● 接続中' : '○ 未接続'}
                       </span>
                       <button
-                        onClick={() => handleOpenEditPc(pc)}
+                        onClick={() => openEditor({ id: pc.id })}
                         style={{
                           background: 'none',
                           border: 'none',
@@ -1024,6 +910,30 @@ export const GmPage: React.FC = () => {
                         </div>
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDetailPcIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(pc.id)) next.delete(pc.id);
+                          else next.add(pc.id);
+                          return next;
+                        })
+                      }
+                      style={{
+                        background: 'none',
+                        border: '1px solid var(--color-border-light)',
+                        borderRadius: '4px',
+                        color: 'var(--color-text-muted)',
+                        fontSize: '0.8rem',
+                        padding: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {detailPcIds.has(pc.id) ? '詳細を閉じる' : '能力値・技能・装備を見る'}
+                    </button>
+                    {detailPcIds.has(pc.id) && <CharacterDetail character={pc} />}
 
                     {/* Quick send / deduct buttons */}
                     <div style={{ display: 'flex', gap: '8px' }}>
@@ -1120,6 +1030,13 @@ export const GmPage: React.FC = () => {
             </div>
           )}
           </div>
+        ) : activeTab === 'chara' ? (
+          <CharacterEditorView
+            characters={characters}
+            onSaved={refreshAllData}
+            request={editorRequest}
+            onRequestHandled={() => setEditorRequest(null)}
+          />
         ) : activeTab === 'combat' ? (
           <CombatView
             characters={characters}
@@ -1596,450 +1513,6 @@ export const GmPage: React.FC = () => {
         </div>
       )}
 
-      {/* NPC / Mook Add Modal */}
-      {showNpcModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '24px',
-          }}
-        >
-          <form
-            onSubmit={handleSaveNpc}
-            style={{
-              backgroundColor: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '12px',
-              padding: '24px',
-              maxWidth: '480px',
-              width: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>
-                新規 NPC / モブ追加
-              </h2>
-              <button
-                type="button"
-                onClick={() => setShowNpcModal(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--color-text-muted)',
-                  fontSize: '1.2rem',
-                  cursor: 'pointer',
-                }}
-              >
-                ×
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.9rem' }}>
-                <input
-                  type="radio"
-                  name="npcKind"
-                  checked={npcKind === 'mook'}
-                  onChange={() => setNpcKind('mook')}
-                />
-                モブ（戦闘で複数体複製可能）
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.9rem' }}>
-                <input
-                  type="radio"
-                  name="npcKind"
-                  checked={npcKind === 'npc'}
-                  onChange={() => setNpcKind('npc')}
-                />
-                単体 NPC
-              </label>
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
-                名前:
-              </label>
-              <input
-                type="text"
-                required
-                value={npcName}
-                onChange={(e) => setNpcName(e.target.value)}
-                placeholder="例: ガンガー"
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  backgroundColor: 'var(--color-bg)',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: '4px',
-                  color: 'var(--color-text)',
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
-                ロール / 役割:
-              </label>
-              <input
-                type="text"
-                value={npcRole}
-                onChange={(e) => setNpcRole(e.target.value)}
-                placeholder="例: Ganger, Solo"
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  backgroundColor: 'var(--color-bg)',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: '4px',
-                  color: 'var(--color-text)',
-                }}
-              />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-              <div>
-                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
-                  HP 最大:
-                </label>
-                <input
-                  type="number"
-                  value={npcHp}
-                  onChange={(e) => setNpcHp(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '6px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
-                  SP 頭:
-                </label>
-                <input
-                  type="number"
-                  value={npcSpHead}
-                  onChange={(e) => setNpcSpHead(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '6px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
-                  SP 胴:
-                </label>
-                <input
-                  type="number"
-                  value={npcSpBody}
-                  onChange={(e) => setNpcSpBody(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '6px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-              <div>
-                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
-                  REF:
-                </label>
-                <input
-                  type="number"
-                  value={npcRef}
-                  onChange={(e) => setNpcRef(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '6px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
-                  DEX:
-                </label>
-                <input
-                  type="number"
-                  value={npcDex}
-                  onChange={(e) => setNpcDex(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '6px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '2px' }}>
-                  BODY:
-                </label>
-                <input
-                  type="number"
-                  value={npcBody}
-                  onChange={(e) => setNpcBody(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '6px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
-              <button
-                type="button"
-                onClick={() => setShowNpcModal(false)}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: 'transparent',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: '4px',
-                  color: 'var(--color-text)',
-                  cursor: 'pointer',
-                }}
-              >
-                キャンセル
-              </button>
-              <button
-                type="submit"
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: 'var(--color-enemy)',
-                  border: 'none',
-                  borderRadius: '4px',
-                  color: '#000',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                保存する
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* PC Add / Edit Modal */}
-      {showPcModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '24px',
-          }}
-        >
-          <form
-            onSubmit={handleSavePc}
-            style={{
-              backgroundColor: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '12px',
-              padding: '24px',
-              maxWidth: '480px',
-              width: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>
-                {editingPc ? `PC編集: ${editingPc.name}` : '新規PC追加'}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setShowPcModal(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--color-text-muted)',
-                  fontSize: '1.25rem',
-                  cursor: 'pointer',
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{ marginBottom: '12px' }}>
-              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>立ち絵（表示ウィンドウに出す絵）</label>
-              <PortraitPicker value={pcFormPortrait} onChange={setPcFormPortrait} />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>名前</label>
-                <input
-                  type="text"
-                  value={pcFormName}
-                  onChange={(e) => setPcFormName(e.target.value)}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>ロール</label>
-                <input
-                  type="text"
-                  value={pcFormRole}
-                  onChange={(e) => setPcFormRole(e.target.value)}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>最大HP</label>
-                <input
-                  type="number"
-                  value={pcFormHp}
-                  onChange={(e) => setPcFormHp(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>所持金 (eb)</label>
-                <input
-                  type="number"
-                  value={pcFormEb}
-                  onChange={(e) => setPcFormEb(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>頭部 SP</label>
-                <input
-                  type="number"
-                  value={pcFormSpHead}
-                  onChange={(e) => setPcFormSpHead(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>胴体 SP</label>
-                <input
-                  type="number"
-                  value={pcFormSpBody}
-                  onChange={(e) => setPcFormSpBody(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                  }}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
-              <button
-                type="button"
-                onClick={() => setShowPcModal(false)}
-                style={{
-                  backgroundColor: 'var(--color-surface-elevated)',
-                  border: '1px solid var(--color-border-light)',
-                  color: 'var(--color-text)',
-                  padding: '8px 16px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                }}
-              >
-                キャンセル
-              </button>
-              <button
-                type="submit"
-                style={{
-                  backgroundColor: 'var(--color-ally)',
-                  border: 'none',
-                  color: '#000',
-                  padding: '8px 20px',
-                  borderRadius: '4px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                保存
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
       {/* Mobile Bottom Navigation Tabs */}
       {isMobile && (
         <nav
@@ -2053,12 +1526,13 @@ export const GmPage: React.FC = () => {
             backgroundColor: 'var(--color-surface)',
             borderTop: '1px solid var(--color-border)',
             display: 'grid',
-            gridTemplateColumns: 'repeat(6, 1fr)',
+            gridTemplateColumns: 'repeat(7, 1fr)',
             zIndex: 100,
           }}
         >
           {[
             { id: 'pc', label: 'PC' },
+            { id: 'chara', label: '作成' },
             { id: 'combat', label: '戦闘' },
             { id: 'scenario', label: 'シナリオ' },
             { id: 'shop', label: '商店' },
