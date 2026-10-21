@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { woundState, woundPenalty, deathSave } from '../src/wounds.js';
+import { woundState, woundPenalty, deathSave, hpMaxFromStats } from '../src/wounds.js';
 import { DEFAULT_RULES } from '../src/constants.js';
 
 describe('wounds module (RULES_CHECK §3, FVTT _setWoundState, deathSave)', () => {
@@ -47,5 +47,14 @@ describe('wounds module (RULES_CHECK §3, FVTT _setWoundState, deathSave)', () =
   it('throws on invalid death save dice roll', () => {
     expect(() => deathSave({ roll: 0, body: 5 })).toThrow();
     expect(() => deathSave({ roll: 11, body: 5 })).toThrow();
+  });
+});
+
+describe('hpMaxFromStats (FVTT cpr-actor.js)', () => {
+  it('rounds the BODY + WILL average up', () => {
+    expect(hpMaxFromStats(6, 6)).toBe(40);
+    expect(hpMaxFromStats(6, 5)).toBe(40);
+    expect(hpMaxFromStats(2, 2)).toBe(20);
+    expect(hpMaxFromStats(8, 7)).toBe(50);
   });
 });
