@@ -289,6 +289,8 @@ export class SessionManager {
       type: 'combat:update',
       payload: combat,
     });
+    // スマホには中身を送らず、知らせるだけ。スマホは自分向けに伏せた戦闘を読み直す（Phase 5l）
+    this.broadcastToPlayers({ type: 'combat:changed' });
     this.broadcastScreenUpdate();
   }
 

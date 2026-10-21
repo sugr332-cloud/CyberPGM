@@ -43,7 +43,7 @@ import {
   resolveOpposed,
 } from '@cyberpgm/rules';
 import { getHydratedBoard } from './boards.js';
-import { addCombatParticipants } from './combat.js';
+import { addCombatParticipants, getHydratedCombat, pcsInPlay } from './combat.js';
 
 export const scenarioPlayRoutes = new Hono();
 
@@ -1438,8 +1438,9 @@ scenarioPlayRoutes.post('/scenarios/encounters/:encounterId/start-combat', requi
 
   let order = 0;
 
-  // Add all active PCs as participants
+  // PC は全員入れ、シナリオに入っている・つながっている PC だけ最初からチェックする（Phase 5l）
   const pcRows = db.select().from(characters).where(eq(characters.kind, 'pc')).all();
+  const inPlay = pcsInPlay(pcRows);
   for (const pc of pcRows) {
     db.insert(combat_participants)
       .values({
@@ -1451,7 +1452,7 @@ scenarioPlayRoutes.post('/scenarios/encounters/:encounterId/start-combat', requi
         initiative: 0,
         initiative_roll: '{}',
         order_index: order++,
-        active: true,
+        active: inPlay.has(pc.id),
         out: false,
         move_used: false,
         action_used: false,
@@ -1488,6 +1489,8 @@ scenarioPlayRoutes.post('/scenarios/encounters/:encounterId/start-combat', requi
     combat_id: combatId,
     encounter_id: encounterId,
   });
+
+  sessionManager.broadcastCombatUpdate(getHydratedCombat(combatId)); // スマホにも戦闘準備中を知らせる（Phase 5l）
 
   return c.json({
     success: true,

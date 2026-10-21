@@ -34,6 +34,12 @@ interface CombatViewProps {
   isStandaloneWindow?: boolean;
 }
 
+// スマホから届いたイニシアチブの出目（準備中に参加者に残っている。Phase 5l）
+const phoneRoll = (p: { initiative_roll?: unknown }) => {
+  const r = p.initiative_roll as { first?: number; extra?: number } | undefined;
+  return r && typeof r.first === 'number' ? { first: r.first, extra: r.extra } : undefined;
+};
+
 // 1 ターンに使えるアクションの数（サーバーの actionsAllowed と同じ。Phase 5j）
 const actionsAllowedOf = (p: { state?: Record<string, unknown> }) =>
   Math.max(1, Number(p.state?.actions_per_turn ?? 1)) + Math.max(0, Number(p.state?.bonus_actions ?? 0));
@@ -102,20 +108,20 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [aimedLocation, setAimedLocation] = useState<'head' | 'held_item' | 'leg'>('head');
   const [heldItemId, setHeldItemId] = useState<string>('');
   
-  // Rolls in Guide
-  const [attackFirst, setAttackFirst] = useState<number>(7);
+  // Rolls in Guide. 決め打ちの出目は置かない（入れ忘れると計算が「出目を入力してください」で止まる。Phase 5l）
+  const [attackFirst, setAttackFirst] = useState<number | null>(null);
   const [attackExtra, setAttackExtra] = useState<number | undefined>(undefined);
-  const [defenseFirst, setDefenseFirst] = useState<number>(5);
+  const [defenseFirst, setDefenseFirst] = useState<number | null>(null);
   const [defenseExtra, setDefenseExtra] = useState<number | undefined>(undefined);
-  const [damageDiceStr, setDamageDiceStr] = useState<string>('6, 6, 2');
+  const [damageDiceStr, setDamageDiceStr] = useState<string>('');
   const [critRoll, setCritRoll] = useState<number | undefined>(undefined);
-  const [deathSaveRoll, setDeathSaveRoll] = useState<number>(5);
+  const [deathSaveRoll, setDeathSaveRoll] = useState<number | undefined>(undefined);
 
   // Multi-attack for ROF 2
   const [secondAttackEnabled, setSecondAttackEnabled] = useState<boolean>(false);
-  const [secondAttackFirst, setSecondAttackFirst] = useState<number>(7);
+  const [secondAttackFirst, setSecondAttackFirst] = useState<number | null>(null);
   const [secondAttackExtra, setSecondAttackExtra] = useState<number | undefined>(undefined);
-  const [secondDamageDiceStr, setSecondDamageDiceStr] = useState<string>('4, 3, 2');
+  const [secondDamageDiceStr, setSecondDamageDiceStr] = useState<string>('');
   
   // Unconfirmed / Manual Inputs
   const [manualNotes, setManualNotes] = useState<string>('');
@@ -402,6 +408,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
     });
   }, [boardData, activePart]);
 
+  // 近接攻撃・格闘は、相手はいつも DEX + 回避 で受ける（Phase 5l）
+  useEffect(() => {
+    if (selectedActionKey === 'melee' || selectedActionKey === 'brawl') setDodgeMode('dodge');
+  }, [selectedActionKey]);
+
   // Weapon entries in inventory for active participant (kind === 'weapon')
   const weaponEntries = useMemo(() => {
     const inv = (activePart?.character?.inventory as any[]) || [];
@@ -503,9 +514,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const handleConfirmInitiative = async () => {
     if (!combat) return;
 
-    const entries: InitiativeEntry[] = combat.participants.map((p) => {
+    // 参加者チェックで外した人は入れない。スマホから届いた出目はサーバーに残っている（Phase 5l）
+    const entries: InitiativeEntry[] = combat.participants.filter((p) => p.active).map((p) => {
       const ref = p.character?.stats?.ref ?? 5;
-      let rollObj = initInputs[p.character_id || p.id];
+      let rollObj = initInputs[p.character_id || p.id] ?? phoneRoll(p);
       if (autoRollAll || !rollObj) {
         // Roll 1d10
         const rolledFirst = Math.floor(Math.random() * 10) + 1;
@@ -537,6 +549,23 @@ export const CombatView: React.FC<CombatViewProps> = ({
       alert(`行動順の確定に失敗しました: ${err.message}`);
     }
   };
+
+  // 出目の入力を空に戻す。行動を反映したとき・手番が変わったとき（前の人の出目を使い回さない。Phase 5l）
+  const resetRolls = () => {
+    setAttackFirst(null);
+    setAttackExtra(undefined);
+    setDefenseFirst(null);
+    setDefenseExtra(undefined);
+    setDamageDiceStr('');
+    setCritRoll(undefined);
+    setDeathSaveRoll(undefined);
+    setSecondAttackFirst(null);
+    setSecondAttackExtra(undefined);
+    setSecondDamageDiceStr('');
+  };
+  useEffect(() => {
+    resetRolls();
+  }, [combat?.turn_index, combat?.round]);
 
   // 1 ターンのアクション回数を変える（Phase 5j）
   const handleSetActions = async (participantId: string, data: { actions_per_turn?: number; bonus?: 1 | -1 }) => {
@@ -616,8 +645,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
           target_id: targetParticipantId || undefined,
           distance_m: distanceM ?? undefined,
           dodge_mode: dodgeMode,
-          attack_roll: { first: attackFirst, extra: attackExtra },
-          defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
+          attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
+          defense_roll: dodgeMode === 'dodge' && defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
           damage_dice: damageDice.length > 0 ? damageDice : undefined,
           crit_injury_roll: critRoll,
           aimed_location: aimedLocation,
@@ -634,8 +663,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
           target_id: targetParticipantId || undefined,
           distance_m: distanceM ?? undefined,
           dodge_mode: dodgeMode,
-          attack_roll: { first: secondAttackFirst, extra: secondAttackExtra },
-          defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
+          attack_roll: secondAttackFirst !== null ? { first: secondAttackFirst, extra: secondAttackExtra } : undefined,
+          defense_roll: dodgeMode === 'dodge' && defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
           damage_dice: secondDamageDice.length > 0 ? secondDamageDice : undefined,
         });
       }
@@ -660,8 +689,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
         aimed_location: aimedLocation,
         held_item_id: heldItemId || undefined,
         dodge_mode: dodgeMode,
-        attack_roll: { first: attackFirst, extra: attackExtra },
-        defense_roll: { first: defenseFirst, extra: defenseExtra },
+        attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
+        defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
         damage_dice: damageDice.length > 0 ? damageDice : undefined,
         crit_injury_roll: critRoll,
         death_save_roll: deathSaveRoll,
@@ -704,8 +733,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
           target_id: targetParticipantId || undefined,
           distance_m: distanceM ?? undefined,
           dodge_mode: dodgeMode,
-          attack_roll: { first: attackFirst, extra: attackExtra },
-          defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
+          attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
+          defense_roll: dodgeMode === 'dodge' && defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
           damage_dice: damageDice.length > 0 ? damageDice : undefined,
           crit_injury_roll: critRoll,
           aimed_location: aimedLocation,
@@ -722,8 +751,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
           target_id: targetParticipantId || undefined,
           distance_m: distanceM ?? undefined,
           dodge_mode: dodgeMode,
-          attack_roll: { first: secondAttackFirst, extra: secondAttackExtra },
-          defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
+          attack_roll: secondAttackFirst !== null ? { first: secondAttackFirst, extra: secondAttackExtra } : undefined,
+          defense_roll: dodgeMode === 'dodge' && defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
           damage_dice: secondDamageDice.length > 0 ? secondDamageDice : undefined,
         });
       }
@@ -748,8 +777,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
         aimed_location: aimedLocation,
         held_item_id: heldItemId || undefined,
         dodge_mode: dodgeMode,
-        attack_roll: { first: attackFirst, extra: attackExtra },
-        defense_roll: { first: defenseFirst, extra: defenseExtra },
+        attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
+        defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
         damage_dice: damageDice.length > 0 ? damageDice : undefined,
         crit_injury_roll: critRoll,
         death_save_roll: deathSaveRoll,
@@ -777,6 +806,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       setPreviewResult(null);
       setSelectedActionKey(null);
       setSecondAttackEnabled(false);
+      resetRolls();
       onRefreshCharacters();
     } catch (err: any) {
       alert(`反映に失敗しました: ${err.message}`);
@@ -856,7 +886,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
   // --- 1. SETUP / PARTICIPANT CHECK VIEW ---
   if (!combat || combat.status === 'setup' || combat.status === 'ended') {
-    const npcList = characters.filter((c) => c.kind === 'npc' || c.kind === 'mook');
+    // もう戦闘に入っているキャラ（複製したモブを含む）は出さない（Phase 5l）
+    const inCombat = new Set((combat?.participants ?? []).map((p) => p.character_id));
+    const npcList = characters.filter((c) => (c.kind === 'npc' || c.kind === 'mook') && !inCombat.has(c.id));
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -989,7 +1021,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                               min={1}
                               max={10}
                               placeholder="手動"
-                              value={initInputs[p.character_id || p.id]?.first ?? ''}
+                              value={initInputs[p.character_id || p.id]?.first ?? phoneRoll(p)?.first ?? ''}
                               onChange={(e) => {
                                 const val = Number(e.target.value);
                                 setInitInputs((prev) => ({
@@ -2214,7 +2246,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         </div>
                       )}
 
-                      {/* Dodge mode if applicable */}
+                      {/* Dodge mode if applicable（近接攻撃・格闘はいつも回避で受けるので出さない。Phase 5l） */}
+                      {!['melee', 'brawl'].includes(selectedActionKey) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
                         <span style={{ fontSize: '0.85rem' }}>受け方:</span>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', cursor: 'pointer' }}>
@@ -2236,6 +2269,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           回避で受ける
                         </label>
                       </div>
+                      )}
 
                       {/* Aimed shot specific */}
                       {selectedActionKey === 'aimed' && (
@@ -2285,6 +2319,22 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   {/* Dice Roll Inputs */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>出目の入力:</span>
+                    {/* 死亡セーブの出目（スマホから届けば入る。NPC は GM が入れる。Phase 5l） */}
+                    {selectedActionKey === 'death_save' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>死亡セーブ 1d10:</span>
+                        <input
+                          data-testid="death-save-input"
+                          type="number"
+                          min={1}
+                          max={10}
+                          placeholder="1d10"
+                          value={deathSaveRoll ?? ''}
+                          onChange={(e) => setDeathSaveRoll(e.target.value ? Number(e.target.value) : undefined)}
+                          style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }}
+                        />
+                      </div>
+                    )}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>攻撃 1d10:</span>
@@ -2292,8 +2342,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           type="number"
                           min={1}
                           max={10}
-                          value={attackFirst}
-                          onChange={(e) => setAttackFirst(Number(e.target.value) || 1)}
+                          value={attackFirst ?? ''}
+                          placeholder="1d10"
+                          onChange={(e) => setAttackFirst(e.target.value ? Number(e.target.value) : null)}
                           style={{
                             width: '46px',
                             padding: '4px',
@@ -2339,8 +2390,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
                               type="number"
                               min={1}
                               max={10}
-                              value={defenseFirst}
-                              onChange={(e) => setDefenseFirst(Number(e.target.value) || 1)}
+                              value={defenseFirst ?? ''}
+                              placeholder="1d10"
+                              onChange={(e) => setDefenseFirst(e.target.value ? Number(e.target.value) : null)}
                               style={{
                                 width: '46px',
                                 padding: '4px',
@@ -2452,8 +2504,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                 type="number"
                                 min={1}
                                 max={10}
-                                value={secondAttackFirst}
-                                onChange={(e) => setSecondAttackFirst(Number(e.target.value) || 1)}
+                                value={secondAttackFirst ?? ''}
+                                placeholder="1d10"
+                                onChange={(e) => setSecondAttackFirst(e.target.value ? Number(e.target.value) : null)}
                                 style={{
                                   width: '46px',
                                   padding: '4px',

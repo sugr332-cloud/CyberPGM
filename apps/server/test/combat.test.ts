@@ -10,6 +10,7 @@ import {
 import { generateUlid } from '@cyberpgm/shared';
 import { registerDevice } from '../src/auth.js';
 import { sessionManager } from '../src/session.js';
+import { saveInitiativeRoll } from '../src/routes/combat.js';
 
 describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
   let authGm: { Authorization: string };
@@ -1156,6 +1157,50 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       expect(a2.auto_advanced).toBe(true);
       // 次のターンでも 2 回のまま
       expect(a2.combat.participants[0].state.actions_per_turn).toBe(2);
+    });
+  });
+
+  // Phase 5l: 流れに沿った点検で見つかった戦闘の不具合
+  describe('Phase 5l: brawl, participant check, phone initiative', () => {
+    const H = () => ({ ...authGm, 'Content-Type': 'application/json' });
+
+    it('resolves a brawl with damage dice from BODY (BODY 7 = 3d6), armor applies', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const res = await app.request(`/api/combats/${combat.id}/resolve`, {
+        method: 'POST',
+        headers: H(),
+        body: JSON.stringify({
+          action_key: 'brawl',
+          actor_id: viper.id,
+          target_id: ganger.id,
+          attack_roll: { first: 9 },
+          defense_roll: { first: 2 },
+          damage_dice: [4, 4, 4],
+        }),
+      });
+      const { result } = await res.json();
+      expect(result.formula).toContain('格闘 (3d6)');
+      const hp = result.changes.find((ch: any) => ch.field === 'hp');
+      expect(hp.before - hp.after).toBe(12 - ganger.character.sp_body);
+    });
+
+    it('drops unchecked participants when the combat starts', async () => {
+      const combat = await createTestCombat();
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      await app.request(`/api/combats/${combat.id}/participants/${nyx.id}`, { method: 'PATCH', headers: H(), body: JSON.stringify({ active: false }) });
+      const started = await (await app.request(`/api/combats/${combat.id}`, { method: 'PATCH', headers: H(), body: JSON.stringify({ action: 'start' }) })).json();
+      expect(started.combat.participants.some((p: any) => p.name === 'ニクス')).toBe(false);
+    });
+
+    it('keeps the initiative roll sent from a phone on the participant', async () => {
+      const combat = await createTestCombat();
+      saveInitiativeRoll(pcId1, { first: 7 });
+      const cur = await (await app.request('/api/combats/current', { headers: authGm })).json();
+      const viper = cur.combat.participants.find((p: any) => p.character_id === pcId1);
+      expect(viper.initiative_roll).toEqual({ first: 7 });
+      expect(cur.combat.id).toBe(combat.id);
     });
   });
 });

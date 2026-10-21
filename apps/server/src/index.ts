@@ -16,7 +16,7 @@ import { shopsRoutes } from './routes/shops.js';
 import { commerceRoutes } from './routes/commerce.js';
 import { characterCreationRoutes } from './routes/character-creation.js';
 import { skillNotesRoutes } from './routes/skill-notes.js';
-import { combatRoutes, getCurrentCombat } from './routes/combat.js';
+import { combatRoutes, getCurrentCombat, saveInitiativeRoll } from './routes/combat.js';
 import { boardsRoutes, getHydratedBoard } from './routes/boards.js';
 import { scenariosRouter } from './routes/scenarios.js';
 import {
@@ -155,6 +155,8 @@ app.get(
             }
           } else if (data && data.type === 'combat:roll') {
             if (role === 'player' && characterId) {
+              // イニシアチブの出目はサーバーにも残す。GM の戦闘画面が開いていなくても消えない（Phase 5l）
+              if (data.payload?.roll_type === 'initiative') saveInitiativeRoll(characterId, data.payload);
               sessionManager.forwardCombatRollToGm({
                 ...data.payload,
                 character_id: characterId,
