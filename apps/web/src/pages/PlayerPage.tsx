@@ -1271,6 +1271,30 @@ export const PlayerPage: React.FC = () => {
             </div>
           </div>
 
+          {/* 致命傷（効果の説明つき。Phase 5n） */}
+          {(sheet.crit_injuries as Array<{ name?: string; summary?: string }>).length > 0 && (
+            <div
+              data-testid="player-crit-injuries"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-accent)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+              }}
+            >
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-accent)' }}>致命傷</div>
+              {(sheet.crit_injuries as Array<{ name?: string; summary?: string }>).map((ci, i) => (
+                <div key={i} style={{ fontSize: '0.8rem' }}>
+                  <strong>{ci.name ?? '致命傷'}</strong>
+                  {ci.summary && <div style={{ color: 'var(--color-text-muted)', marginTop: '2px' }}>{ci.summary}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Stats Grid (10 Stats) */}
           <div
             style={{

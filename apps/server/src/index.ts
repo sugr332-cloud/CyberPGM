@@ -34,6 +34,7 @@ import { sessionManager } from './session.js';
 import { createDailyBackup } from './config.js';
 import { resolveLanIp, startDualServer } from './net.js';
 import { linkTextWeapons } from './weapon-link.js';
+import { startLogFile } from './logfile.js';
 import { audioRoutes, syncAudioFolder, getAudioDir } from './routes/audio.js';
 import { playerShopRoutes } from './routes/player-shop.js';
 import { playersRoutes } from './routes/players.js';
@@ -245,6 +246,8 @@ app.get('*', async (c, next) => {
 
 // Server boot logic
 export async function startServer(): Promise<void> {
+  const logFile = startLogFile();
+  console.log(`[log] ログは ${logFile} にも残します`);
   // 1. Daily backup
   const dbPath = path.join(root, 'data', 'cyberpgm.db');
   const backupFile = createDailyBackup(dbPath);

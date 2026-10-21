@@ -324,6 +324,20 @@ export const GmPage: React.FC = () => {
     }
   };
 
+  // セーブの名前を変える（Phase 5n）
+  const handleRenameSave = async (id: string, name: string) => {
+    const next = prompt('新しい名前', name)?.trim();
+    if (!next || next === name) return;
+    try {
+      await api.renameSave(id, next);
+      const res = await api.getSaves();
+      setSaveList(res.saves);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`名前の変更に失敗しました: ${msg}`);
+    }
+  };
+
   const handleOverwriteSave = async (id: string, name: string) => {
     if (!confirm(`セーブ「${name}」を現在の状態で上書きしますか？`)) return;
     try {
@@ -1591,6 +1605,20 @@ export const GmPage: React.FC = () => {
                         >
                           書き出し
                         </a>
+                        <button
+                          onClick={() => handleRenameSave(sv.id, sv.name)}
+                          style={{
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border-light)',
+                            color: 'var(--color-text)',
+                            borderRadius: '4px',
+                            padding: '4px 8px',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          名前を変える
+                        </button>
                         <button
                           onClick={() => handleDeleteSave(sv.id, sv.name)}
                           style={{
