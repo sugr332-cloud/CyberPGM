@@ -1189,6 +1189,39 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
               </div>
 
               <div style={{ marginBottom: '8px' }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                  開始資金（eb）· このシナリオの進行中に作るキャラの資金。空欄なら全体の設定
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={scenarioData.scenario.meta?.starting_funds ?? ''}
+                  onChange={(e) =>
+                    setScenarioData({
+                      ...scenarioData,
+                      scenario: {
+                        ...scenarioData.scenario,
+                        meta: {
+                          ...scenarioData.scenario.meta,
+                          starting_funds: e.target.value === '' ? null : Math.max(0, Math.floor(Number(e.target.value))),
+                        },
+                      },
+                    })
+                  }
+                  style={{
+                    width: '100%',
+                    padding: '4px 6px',
+                    fontSize: '0.75rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--color-border)',
+                    backgroundColor: 'var(--color-bg)',
+                    color: 'var(--color-text)',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '8px' }}>
                 <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>報酬目安</label>
                 <input
                   type="text"

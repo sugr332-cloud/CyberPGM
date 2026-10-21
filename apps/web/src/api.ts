@@ -65,6 +65,38 @@ export function removePlayerToken(): void {
   localStorage.removeItem('cpgm_player_token');
 }
 
+// このスマホを使っている人（Phase 5i）。開いたアドレスごとに別に保管されるので、別の Wi-Fi では空になる
+export function getPlayerId(): string | null {
+  try {
+    return localStorage.getItem('cpgm_player_id');
+  } catch {
+    return null;
+  }
+}
+
+export function setPlayerId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem('cpgm_player_id', id);
+    else localStorage.removeItem('cpgm_player_id');
+  } catch {
+    // 保存できなくても、毎回名前を選べば使える
+  }
+}
+
+export interface JoinCharacter {
+  id: string;
+  name: string;
+  role: string;
+  image_id: string | null;
+  image_path: string | null;
+  claimed: boolean;
+  player_id: string | null;
+  scenario_id: string | null;
+  scenario_title: string | null;
+  locked: boolean;
+  lock_reason: string | null;
+}
+
 async function request<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
   const headers = new Headers(options.headers);
   if (token) {
@@ -94,30 +126,34 @@ export const api = {
       method: 'POST',
     }),
 
-  joinSession: (code: string) =>
-    request<{
-      code: string;
-      characters: Array<{
-        id: string;
-        name: string;
-        role: string;
-        image_id: string | null;
-        image_path: string | null;
-        claimed: boolean;
-      }>;
-    }>('/api/auth/join', {
+  joinSession: (code: string, player_id?: string | null) =>
+    request<{ code: string; characters: JoinCharacter[] }>('/api/auth/join', {
       method: 'POST',
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ code, player_id: player_id ?? null }),
     }),
 
-  claimCharacter: (code: string, character_id: string) =>
-    request<{ token: string; role: 'player'; character_id: string; deviceId: string }>(
+  claimCharacter: (code: string, character_id: string, player_id?: string | null) =>
+    request<{ token: string; role: 'player'; character_id: string; player_id: string | null; deviceId: string }>(
       '/api/auth/claim',
       {
         method: 'POST',
-        body: JSON.stringify({ code, character_id }),
+        body: JSON.stringify({ code, character_id, player_id: player_id ?? null }),
       },
     ),
+
+  // プレイヤー（Phase 5i）。GM はコードなしで一覧を見られる
+  getPlayers: (code?: string) =>
+    request<{ players: Array<{ id: string; name: string }> }>(
+      code ? `/api/players?code=${encodeURIComponent(code)}` : '/api/players',
+      {},
+      code ? null : getGmToken(),
+    ),
+
+  createPlayer: (code: string, name: string) =>
+    request<{ id: string; name: string }>('/api/players', {
+      method: 'POST',
+      body: JSON.stringify({ code, name }),
+    }),
 
   resolveClaim: (requestId: string, allow: boolean) =>
     request<{ success: boolean }>(`/api/auth/claim/${requestId}/resolve`, {
@@ -350,6 +386,7 @@ export const api = {
       methods: CreationMethodConfig[];
       active_method: string;
       starting_funds: number | null;
+      scenario_title?: string | null;
     }>('/api/creation-methods'),
 
   updateCreationMethod: (key: string, data: CreationMethodConfig) =>
@@ -393,7 +430,8 @@ export const api = {
       validation_results: any;
     }>('/api/character-submissions', {
       method: 'POST',
-      body: JSON.stringify({ character, source, created_with }),
+      // 作った人（Phase 5i）。GM が受け付けると、この人のキャラになる
+      body: JSON.stringify({ character, source, created_with, player_id: getPlayerId() }),
     }),
 
   getCharacterSubmissions: () =>

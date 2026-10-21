@@ -59,6 +59,7 @@ export const CharacterCreatePage: React.FC = () => {
   const [methodConfig, setMethodConfig] = useState<CreationMethodConfig | null>(null);
   const [activeMethodKey, setActiveMethodKey] = useState<string>('complete_package');
   const [startingFunds, setStartingFunds] = useState<number | null>(null);
+  const [fundsScenarioTitle, setFundsScenarioTitle] = useState<string | null>(null);
   const [skillNotes, setSkillNotes] = useState<Record<string, string>>({});
 
   // Draft State
@@ -116,6 +117,7 @@ export const CharacterCreatePage: React.FC = () => {
         setMethodConfig(activeMethod);
         setActiveMethodKey(methodsRes.active_method || 'complete_package');
         setStartingFunds(methodsRes.starting_funds);
+        setFundsScenarioTitle(methodsRes.scenario_title ?? null);
         setSkillNotes(notesRes.notes || {});
         setCatalogItems(itemsRes.items || []);
       } catch (err) {
@@ -1323,7 +1325,7 @@ export const CharacterCreatePage: React.FC = () => {
           >
             <div>
               <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                所持金 / 開始資金
+                所持金 / 開始資金{fundsScenarioTitle ? `（「${fundsScenarioTitle}」）` : ''}
               </div>
               <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>
                 {validationResults.funds.unconfigured ? (

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { createDb } from '../apps/server/src/db/client.js';
+import { joinAsPlayer } from './join.js';
 
 // Phase 5g E2E: スマホの「装備」「技能」「商店」。商店は GM が出した店の在庫だけで、購入は GM に申請 → GM が承認すると買える
 test('Player phone: equipment, skills, and shop purchase requests approved by the GM', async ({ browser, request }) => {
@@ -21,8 +22,7 @@ test('Player phone: equipment, skills, and shop purchase requests approved by th
   // スマホ: ヴァイパーで参加
   const session = await (await request.get('/api/session', { headers: H })).json();
   const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true })).newPage();
-  await phone.goto(`/player?join=${session.code}`);
-  await phone.getByRole('button', { name: /ヴァイパー/ }).click();
+  await joinAsPlayer(phone, session.code, 'ヴァイパー');
 
   // 技能: 基本値の一覧
   await phone.getByTestId('player-tab-skills').click();

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { createDb } from '../apps/server/src/db/client.js';
 import { devices } from '../apps/server/src/db/schema.js';
+import { joinAsPlayer } from './join.js';
 
 test('GM direct access (no PIN), player QR join, and real-time fund notification flow', async ({ browser }) => {
   const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
@@ -70,16 +71,7 @@ test('GM direct access (no PIN), player QR join, and real-time fund notification
   const playerPage = await playerContext.newPage();
 
   // Navigate to /player?join=<sessionCode>
-  await playerPage.goto(`/player?join=${sessionCode}`);
-  await expect(playerPage.getByText('自分のキャラクターを選択:')).toBeVisible();
-
-  // Take Screenshot: Player Join Screen
-  await playerPage.screenshot({
-    path: 'docs/agy/reports/img/phase2-player-join.png',
-  });
-
-  // Select "ヴァイパー"
-  await playerPage.getByRole('button', { name: /ヴァイパー/i }).click();
+  await joinAsPlayer(playerPage, sessionCode, 'ヴァイパー');
 
   // Verify Player Character Sheet loaded
   await expect(playerPage.getByRole('heading', { name: 'ヴァイパー' })).toBeVisible();

@@ -157,7 +157,12 @@ authRoutes.post('/claim', async (c) => {
 
   const userAgent = c.req.header('User-Agent') || 'Player Mobile';
 
-  if (existingDevice) {
+  // 持ち主本人なら GM の承認なしで取り直す（別の Wi-Fi でスマホが記録を忘れたとき。Phase 5i）
+  const isOwner = !!char.player_id && parsed.data.player_id === char.player_id;
+
+  if (existingDevice && isOwner) {
+    revokeCharacterDevices(char.id);
+  } else if (existingDevice) {
     // Collision! Request GM permission
     const requestId = generateUlid();
     const allowed = await sessionManager.requestClaim({

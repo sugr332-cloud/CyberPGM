@@ -10,6 +10,9 @@ import {
   getPlayerToken,
   setPlayerToken,
   removePlayerToken,
+  getPlayerId,
+  setPlayerId,
+  JoinCharacter,
 } from '../api.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { Footer } from '../components/Footer.js';
@@ -25,9 +28,17 @@ export const PlayerPage: React.FC = () => {
 
   // Join state
   const [joinCode, setJoinCode] = useState(searchParams.get('join') || '');
-  const [availableChars, setAvailableChars] = useState<
-    Array<{ id: string; name: string; role: string; claimed: boolean }>
-  >([]);
+  const [availableChars, setAvailableChars] = useState<JoinCharacter[]>([]);
+  // このスマホを使っている人（Phase 5i）。コードが通ったら「あなたは？」→ その人のキャラ
+  const [playerId, setPlayerIdState] = useState<string | null>(getPlayerId());
+  const [codeOk, setCodeOk] = useState(false);
+  const [playerList, setPlayerList] = useState<Array<{ id: string; name: string }>>([]);
+  const [newPlayerName, setNewPlayerName] = useState('');
+  const choosePlayer = (id: string | null) => {
+    setPlayerId(id);
+    setPlayerIdState(id);
+    autoClaimTried.current = false; // 人を選び直したら、その人のキャラをまた自動で選べる
+  };
   const [isJoining, setIsJoining] = useState(false);
   const [joinError, setJoinError] = useState('');
   const [claimWaitMessage, setClaimWaitMessage] = useState('');
@@ -205,6 +216,39 @@ export const PlayerPage: React.FC = () => {
       .catch(() => {});
   }, [token]);
 
+  // コードが通ったら、人が決まっていればその人のキャラ、まだなら「あなたは？」の一覧を読む（Phase 5i）
+  const loadForCode = useCallback(
+    async (code: string) => {
+      const list = (await api.getPlayers(code)).players;
+      setPlayerList(list);
+      // 覚えていた人が GM の PC にいない（消された・別のデータ）なら、選び直してもらう
+      if (playerId && !list.some((p) => p.id === playerId)) {
+        choosePlayer(null);
+        setCodeOk(true);
+        return;
+      }
+      if (playerId) {
+        const res = await api.joinSession(code, playerId);
+        setAvailableChars(res.characters);
+      }
+      setCodeOk(true);
+    },
+    [playerId],
+  );
+
+  const handleRegisterPlayer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPlayerName.trim()) return;
+    setJoinError('');
+    try {
+      const res = await api.createPlayer(joinCode.trim(), newPlayerName.trim());
+      setNewPlayerName('');
+      choosePlayer(res.id);
+    } catch (err: unknown) {
+      setJoinError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   // Handle Join Code submit
   const handleFetchCharacters = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -213,8 +257,7 @@ export const PlayerPage: React.FC = () => {
     setIsJoining(true);
     setJoinError('');
     try {
-      const res = await api.joinSession(joinCode.trim());
-      setAvailableChars(res.characters);
+      await loadForCode(joinCode.trim());
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setJoinError(msg || '参加コードが無効です');
@@ -224,15 +267,26 @@ export const PlayerPage: React.FC = () => {
   };
 
   // If join code is provided in URL, automatically fetch available characters
+  // （人を選び直したときも読み直す。Phase 5i）
   useEffect(() => {
     const urlCode = searchParams.get('join');
-    if (urlCode && !token) {
+    if (urlCode && !token && !searchParams.get('pc')) {
       setJoinCode(urlCode);
-      api.joinSession(urlCode)
-        .then((res: { characters: Array<{ id: string; name: string; role: string; claimed: boolean }> }) => setAvailableChars(res.characters))
-        .catch(() => {});
+      loadForCode(urlCode).catch(() => {});
+    } else if (codeOk && !token && joinCode) {
+      loadForCode(joinCode).catch(() => {});
     }
-  }, [searchParams, token]);
+  }, [searchParams, token, loadForCode]);
+
+  // 自分のキャラで、いま選べるのが 1 人だけなら自動で選ぶ（Phase 5i）
+  const autoClaimTried = React.useRef(false);
+  useEffect(() => {
+    if (token || !playerId || autoClaimTried.current || searchParams.get('pc')) return;
+    const mine = availableChars.filter((ch) => ch.player_id === playerId && !ch.locked);
+    if (mine.length !== 1) return;
+    autoClaimTried.current = true;
+    handleClaim(mine[0].id);
+  }, [availableChars, playerId, token]);
 
   // キャラごとの再開 QR（?join=<コード>&pc=<キャラ ID>）: キャラ選びを飛ばしてそのキャラで参加する（Phase 5d）
   const resumeTried = React.useRef(false);
@@ -245,8 +299,9 @@ export const PlayerPage: React.FC = () => {
     setJoinCode(urlCode);
     setClaimWaitMessage('参加をリクエスト中…（別端末が参加中の場合はGMの承認待ち）');
     api
-      .claimCharacter(urlCode, pcId)
+      .claimCharacter(urlCode, pcId, playerId)
       .then((res) => {
+        if (res.player_id) choosePlayer(res.player_id);
         setPlayerToken(res.token);
         setToken(res.token);
         setClaimWaitMessage('');
@@ -255,7 +310,7 @@ export const PlayerPage: React.FC = () => {
         const msg = err instanceof Error ? err.message : String(err);
         setClaimWaitMessage('');
         setJoinError(`この QR のキャラでは参加できませんでした（${msg}）。下の一覧からキャラを選んでください。`);
-        api.joinSession(urlCode).then((res: { characters: Array<{ id: string; name: string; role: string; claimed: boolean }> }) => setAvailableChars(res.characters)).catch(() => {});
+        loadForCode(urlCode).catch(() => {});
       });
   }, [searchParams, token, sheet?.id]);
 
@@ -264,7 +319,8 @@ export const PlayerPage: React.FC = () => {
     setJoinError('');
     setClaimWaitMessage('参加をリクエスト中…（別端末が参加中の場合はGMの承認待ち）');
     try {
-      const res = await api.claimCharacter(joinCode.trim(), charId);
+      const res = await api.claimCharacter(joinCode.trim(), charId, playerId);
+      if (res.player_id) choosePlayer(res.player_id);
       setPlayerToken(res.token);
       setToken(res.token);
       setClaimWaitMessage('');
@@ -306,7 +362,7 @@ export const PlayerPage: React.FC = () => {
           </p>
         </div>
 
-        {availableChars.length === 0 ? (
+        {!codeOk ? (
           <form
             onSubmit={handleFetchCharacters}
             style={{
@@ -381,6 +437,76 @@ export const PlayerPage: React.FC = () => {
               </button>
             </div>
           </form>
+        ) : !playerId ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <p style={{ fontSize: '0.95rem', fontWeight: 600 }}>あなたは？</p>
+            {playerList.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => choosePlayer(p.id)}
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  padding: '14px 16px',
+                  textAlign: 'left',
+                  fontSize: '1.05rem',
+                  fontWeight: 700,
+                  color: 'var(--color-text)',
+                  cursor: 'pointer',
+                }}
+              >
+                {p.name}
+              </button>
+            ))}
+            <form
+              onSubmit={handleRegisterPlayer}
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+              }}
+            >
+              <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                {playerList.length > 0 ? 'はじめての人は名前を登録' : '名前を登録（次からはこの名前を選ぶだけ）'}
+              </label>
+              <input
+                type="text"
+                value={newPlayerName}
+                onChange={(e) => setNewPlayerName(e.target.value)}
+                placeholder="例: たろう"
+                maxLength={40}
+                style={{
+                  backgroundColor: 'var(--color-bg)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '6px',
+                  padding: '10px',
+                  fontSize: '1rem',
+                  color: 'var(--color-text)',
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!newPlayerName.trim()}
+                style={{
+                  backgroundColor: 'var(--color-ally)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '10px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                登録する
+              </button>
+            </form>
+            {joinError && <p style={{ color: 'var(--color-accent)', fontSize: '0.85rem' }}>{joinError}</p>}
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -388,7 +514,26 @@ export const PlayerPage: React.FC = () => {
                 コード: <strong style={{ color: 'var(--color-text)' }}>{joinCode}</strong>
               </span>
               <button
-                onClick={() => setAvailableChars([])}
+                onClick={() => {
+                  setAvailableChars([]);
+                  choosePlayer(null);
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-ally)',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
+              >
+                別の人に切り替える
+              </button>
+              <button
+                onClick={() => {
+                  setAvailableChars([]);
+                  setCodeOk(false);
+                }}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -402,7 +547,15 @@ export const PlayerPage: React.FC = () => {
               </button>
             </div>
 
-            <p style={{ fontSize: '0.95rem', fontWeight: 600 }}>自分のキャラクターを選択:</p>
+            <p style={{ fontSize: '0.95rem', fontWeight: 600 }}>
+              {playerList.find((p) => p.id === playerId)?.name ?? ''}
+              {playerList.find((p) => p.id === playerId) ? ' さんの' : '自分の'}キャラクターを選択:
+            </p>
+            {availableChars.length === 0 && (
+              <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                まだキャラがいません。下の「＋ 新しくキャラを作る」から作ってください。
+              </p>
+            )}
 
             {claimWaitMessage && (
               <div
@@ -429,7 +582,9 @@ export const PlayerPage: React.FC = () => {
                 <button
                   key={char.id}
                   onClick={() => handleClaim(char.id)}
+                  disabled={char.locked}
                   style={{
+                    opacity: char.locked ? 0.5 : 1,
                     backgroundColor: 'var(--color-surface)',
                     border: '1px solid var(--color-border)',
                     borderRadius: '8px',
@@ -466,7 +621,14 @@ export const PlayerPage: React.FC = () => {
                     <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{char.name}</div>
                     <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
                       ロール: {char.role}
+                      {char.player_id === null && ' · 持ち主なし（選ぶとあなたのキャラになります）'}
+                      {char.scenario_title && !char.locked && ` · 「${char.scenario_title}」の途中`}
                     </div>
+                    {char.lock_reason && (
+                      <div style={{ fontSize: '0.8rem', color: 'var(--color-warning)', marginTop: '2px' }}>
+                        {char.lock_reason}
+                      </div>
+                    )}
                   </div>
                   {char.claimed && (
                     <span
@@ -783,6 +945,29 @@ export const PlayerPage: React.FC = () => {
               <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
                 {sheet.role}
               </span>
+              {/* ほかの持ちキャラに替える（Phase 5i） */}
+              <button
+                onClick={() => {
+                  if (!confirm('キャラを選び直しますか？')) return;
+                  removePlayerToken();
+                  setToken(null);
+                  setSheet(null);
+                  autoClaimTried.current = true; // 選び直すときは自動で選ばない
+                  if (joinCode) loadForCode(joinCode).catch(() => {});
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-ally)',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  marginLeft: '8px',
+                  padding: 0,
+                }}
+              >
+                キャラを変える
+              </button>
             </div>
             <div style={{ textAlign: 'right' }}>
               <div
