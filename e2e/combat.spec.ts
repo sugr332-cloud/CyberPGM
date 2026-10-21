@@ -148,6 +148,8 @@ test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM A
     // 攻撃する相手と武器を選んでから射撃（Phase 5j）
     await playerPage.getByTestId('attack-target').filter({ hasText: 'ガンガー #1' }).click();
     await playerPage.getByTestId('attack-weapon').first().click();
+    // 基準値は選んだ武器の技能で出す（Phase 5k）
+    await expect(rangedBtn).toContainText(/REF 8 \+ .+ \d+ = \d+ \+ 1d10/);
     await playerPage.screenshot({ path: 'docs/agy/reports/img/phase5j-player-attack-picker-390.png' });
     await rangedBtn.click();
     // Use Dice Pad: tap 7

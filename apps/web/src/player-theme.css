@@ -76,6 +76,8 @@
 }
 .cp-player button:disabled {
   filter: grayscale(0.6);
+  opacity: 0.45;
+  cursor: not-allowed !important;
 }
 
 /* 入力欄 */

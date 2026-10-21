@@ -26,6 +26,7 @@ import {
   CombatLogEntry,
   Combat,
   CombatChange,
+  skillNameToKey,
 } from '@cyberpgm/shared';
 import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES } from '../services/combat-resolver.js';
 import { woundState, initiativeTotal } from '@cyberpgm/rules';
@@ -104,6 +105,10 @@ export function getHydratedCombat(combatId: string): Combat | null {
             ...(kind ? { kind } : {}),
             ...(ammo !== undefined ? { ammo } : {}),
             ignore_armor_percent: ignoreArmorPercent,
+            // スマホの攻撃ボタンの基準値を武器に合わせるため（Phase 5k）
+            ...(wRow
+              ? { skill_key: skillNameToKey(wRow.skill), is_ranged: Boolean(wRow.is_ranged), autofire: wRow.autofire ?? null }
+              : {}),
           };
         });
         charObj = {
