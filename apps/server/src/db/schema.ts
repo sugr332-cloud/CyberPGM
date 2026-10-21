@@ -471,6 +471,7 @@ export const scenario_sessions = sqliteTable('scenario_sessions', {
   current_scene_id: text('current_scene_id').references(() => scenes.id, { onDelete: 'set null' }),
   started_at: integer('started_at').notNull(),
   ended_at: integer('ended_at'),
+  cleared_at: integer('cleared_at'), // シナリオクリアで終えた時刻。null で ended_at ありは中断（続きから再開できる。Phase 5j）
   revealed: text('revealed').notNull().default('{"clue_ids":[],"handout_ids":[]}'), // JSON: { clue_ids: string[], handout_ids: string[] }
 });
 

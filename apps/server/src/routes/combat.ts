@@ -27,9 +27,10 @@ import {
   Combat,
   CombatChange,
 } from '@cyberpgm/shared';
-import { resolveCombatAction, WEAPON_NAME_ALIASES } from '../services/combat-resolver.js';
+import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES } from '../services/combat-resolver.js';
 import { woundState, initiativeTotal } from '@cyberpgm/rules';
 import { randomInt } from 'node:crypto';
+import { linkTextWeapons } from '../weapon-link.js';
 
 export const combatRoutes = new Hono();
 
@@ -286,6 +287,7 @@ combatRoutes.get('/combats/current', async (c) => {
  * POST /api/combats: Create a new combat (GM only).
  */
 combatRoutes.post('/combats', requireGm, async (c) => {
+  linkTextWeapons(); // 文字だけの武器も選べるように（Phase 5j）
   const body = await c.req.json().catch(() => ({}));
   const parsed = CreateCombatInputSchema.safeParse(body);
   if (!parsed.success) {
@@ -480,6 +482,7 @@ export function addCombatParticipants(combatId: string, input: AddParticipantsIn
  * POST /api/combats/:id/participants: Add participant (GM only).
  */
 combatRoutes.post('/combats/:id/participants', requireGm, async (c) => {
+  linkTextWeapons(); // 文字だけの武器も選べるように（Phase 5j）
   const combatId = c.req.param('id');
   if (!combatId) return c.json({ error: 'Missing combat ID' }, 400);
   const body = await c.req.json();
@@ -510,6 +513,7 @@ combatRoutes.post('/combats/:id/participants', requireGm, async (c) => {
  *  - rolls: 足す人ごとのイニシアチブの出目（PC は GM かスマホの出目を入れる）。ない人はアプリで振る（NPC の自動ロールと同じ。SPEC §5.1）
  */
 combatRoutes.post('/combats/:id/join', requireGm, async (c) => {
+  linkTextWeapons(); // 文字だけの武器も選べるように（Phase 5j）
   const combatId = c.req.param('id')!;
   const body = await c.req.json();
   const cb = db.select().from(combats).where(eq(combats.id, combatId)).get();
@@ -711,6 +715,137 @@ combatRoutes.post('/combats/:id/initiative', requireGm, async (c) => {
   return c.json({ combat: updated });
 });
 
+interface TurnSnapshot {
+  turn_index: number;
+  round: number;
+  participants: Array<{ id: string; move_used: boolean; action_used: boolean; state: string }>;
+}
+
+/**
+ * 次の手番へ進める。今の手番の人の行動済みを戻し、退場・離脱した人は飛ばす。一周したらラウンドを進める。
+ * 戻せるように、進める前の状態を 'turn' の変化として返す（Phase 5j）
+ */
+function advanceTurn(combatId: string): CombatChange | null {
+  const cb = db.select().from(combats).where(eq(combats.id, combatId)).get();
+  if (!cb) return null;
+  const parts = db
+    .select()
+    .from(combat_participants)
+    .where(eq(combat_participants.combat_id, combatId))
+    .orderBy(asc(combat_participants.order_index))
+    .all();
+  if (parts.length === 0) return null;
+
+  const before: TurnSnapshot = {
+    turn_index: cb.turn_index,
+    round: cb.round,
+    participants: parts.map((p) => ({ id: p.id, move_used: p.move_used, action_used: p.action_used, state: p.state || '{}' })),
+  };
+
+  // 今の手番の人: 行動済みと、このターンだけの回数を戻す
+  const curPart = parts[cb.turn_index];
+  if (curPart) {
+    const st = JSON.parse(curPart.state || '{}');
+    delete st.actions_taken;
+    delete st.bonus_actions;
+    db.update(combat_participants)
+      .set({ move_used: false, action_used: false, state: JSON.stringify(st) })
+      .where(eq(combat_participants.id, curPart.id))
+      .run();
+  }
+
+  let nextIndex = (cb.turn_index + 1) % parts.length;
+  let roundIncrement = nextIndex === 0 ? 1 : 0;
+  let searched = 0;
+  while ((!parts[nextIndex].active || parts[nextIndex].out) && searched < parts.length) {
+    nextIndex = (nextIndex + 1) % parts.length;
+    if (nextIndex === 0) roundIncrement++;
+    searched++;
+  }
+
+  const updates: Record<string, unknown> = { turn_index: nextIndex };
+  if (roundIncrement > 0) {
+    updates.round = cb.round + roundIncrement;
+    // Decrement status rounds on participants
+    for (const p of db.select().from(combat_participants).where(eq(combat_participants.combat_id, combatId)).all()) {
+      try {
+        const st = JSON.parse(p.state || '{}');
+        if (st.statusRounds) {
+          const updatedRounds: Record<string, number> = {};
+          for (const [sKey, rNum] of Object.entries(st.statusRounds as Record<string, number>)) {
+            if (rNum > 1) updatedRounds[sKey] = rNum - 1;
+          }
+          st.statusRounds = updatedRounds;
+          db.update(combat_participants)
+            .set({ state: JSON.stringify(st) })
+            .where(eq(combat_participants.id, p.id))
+            .run();
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+  db.update(combats).set(updates).where(eq(combats.id, combatId)).run();
+
+  const next = parts[nextIndex];
+  return {
+    target_id: combatId,
+    target_name: next.name,
+    field: 'turn',
+    before,
+    after: { turn_index: nextIndex, round: (updates.round as number | undefined) ?? cb.round },
+    desc: `手番終了 → ${next.name} の手番${roundIncrement > 0 ? `（ラウンド ${(updates.round as number)}）` : ''}`,
+  };
+}
+
+function broadcastTurn(combatId: string) {
+  const updated = getHydratedCombat(combatId);
+  const activePart = updated?.participants[updated.turn_index];
+  if (!updated || !activePart) return;
+  sessionManager.broadcastCombatTurn({
+    combat_id: combatId,
+    round: updated.round,
+    turn_index: updated.turn_index,
+    actor_id: activePart.id,
+    actor_name: activePart.name,
+    actor_char_id: activePart.character_id,
+  });
+}
+
+/**
+ * POST /api/combats/:id/participants/:pid/actions: 1 ターンのアクション回数（Phase 5j）
+ * { actions_per_turn?: 1-5 } 毎ターンの回数（ボスの 2 回行動など） / { bonus?: 1 | -1 } このターンだけ増減
+ */
+combatRoutes.post('/combats/:id/participants/:pid/actions', requireGm, async (c) => {
+  const combatId = c.req.param('id')!;
+  const pid = c.req.param('pid')!;
+  const body = await c.req.json().catch(() => ({}));
+  const part = db.select().from(combat_participants).where(eq(combat_participants.id, pid)).get();
+  if (!part || part.combat_id !== combatId) return c.json({ error: 'Participant not found' }, 404);
+
+  const st = JSON.parse(part.state || '{}');
+  if (body.actions_per_turn !== undefined) {
+    const n = Number(body.actions_per_turn);
+    if (!Number.isInteger(n) || n < 1 || n > 5) return c.json({ error: 'actions_per_turn は 1〜5' }, 400);
+    st.actions_per_turn = n;
+  }
+  if (body.bonus !== undefined) {
+    const b = Number(body.bonus);
+    if (b !== 1 && b !== -1) return c.json({ error: 'bonus は 1 か -1' }, 400);
+    st.bonus_actions = Math.max(0, Number(st.bonus_actions ?? 0) + b);
+  }
+  const actionUsed = Number(st.actions_taken ?? 0) >= actionsAllowed({ state: st });
+  db.update(combat_participants)
+    .set({ state: JSON.stringify(st), action_used: actionUsed })
+    .where(eq(combat_participants.id, pid))
+    .run();
+
+  const updated = getHydratedCombat(combatId);
+  sessionManager.broadcastCombatUpdate(updated);
+  return c.json({ combat: updated });
+});
+
 /**
  * PATCH /api/combats/:id: Update combat state (settings, next turn, start, end).
  */
@@ -757,58 +892,16 @@ combatRoutes.patch('/combats/:id', requireGm, async (c) => {
       }
     }
   } else if (body.action === 'next_turn') {
-    // Current combat participants
-    const parts = db
-      .select()
-      .from(combat_participants)
-      .where(eq(combat_participants.combat_id, combatId))
-      .orderBy(asc(combat_participants.order_index))
-      .all();
-
-    if (parts.length > 0) {
-      // Clear current participant's action / move used
-      const curPart = parts[cb.turn_index];
-      if (curPart) {
-        db.update(combat_participants)
-          .set({ move_used: false, action_used: false })
-          .where(eq(combat_participants.id, curPart.id))
-          .run();
-      }
-
-      // Advance to next valid participant
-      let nextIndex = (cb.turn_index + 1) % parts.length;
-      let roundIncrement = nextIndex === 0 ? 1 : 0;
-      let searched = 0;
-
-      while ((!parts[nextIndex].active || parts[nextIndex].out) && searched < parts.length) {
-        nextIndex = (nextIndex + 1) % parts.length;
-        if (nextIndex === 0) roundIncrement++;
-        searched++;
-      }
-
-      updates.turn_index = nextIndex;
-      if (roundIncrement > 0) {
-        updates.round = cb.round + roundIncrement;
-        // Decrement status rounds on participants
-        for (const p of parts) {
-          try {
-            const st = JSON.parse(p.state || '{}');
-            if (st.statusRounds) {
-              const updatedRounds: Record<string, number> = {};
-              for (const [sKey, rNum] of Object.entries(st.statusRounds as Record<string, number>)) {
-                if (rNum > 1) updatedRounds[sKey] = rNum - 1;
-              }
-              st.statusRounds = updatedRounds;
-              db.update(combat_participants)
-                .set({ state: JSON.stringify(st) })
-                .where(eq(combat_participants.id, p.id))
-                .run();
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
+    // 「一手戻る」で戻せるようにログに残す（Phase 5j）
+    const turnChange = advanceTurn(combatId);
+    if (turnChange) {
+      const curPart = (turnChange.before as TurnSnapshot).participants[cb.turn_index];
+      sqlite
+        .prepare(
+          `INSERT INTO combat_log (id, combat_id, round, actor_id, action_key, input, breakdown, changes, undone, at)
+           VALUES (?, ?, ?, ?, 'next_turn', '{}', '{}', ?, 0, ?)`,
+        )
+        .run(generateUlid(), combatId, cb.round, curPart?.id ?? combatId, JSON.stringify([turnChange]), Date.now());
     }
   }
 
@@ -819,19 +912,7 @@ combatRoutes.patch('/combats/:id', requireGm, async (c) => {
   const updated = getHydratedCombat(combatId);
   sessionManager.broadcastCombatUpdate(updated);
 
-  if (body.action === 'next_turn' && updated) {
-    const activePart = updated.participants[updated.turn_index];
-    if (activePart) {
-      sessionManager.broadcastCombatTurn({
-        combat_id: combatId,
-        round: updated.round,
-        turn_index: updated.turn_index,
-        actor_id: activePart.id,
-        actor_name: activePart.name,
-        actor_char_id: activePart.character_id,
-      });
-    }
-  }
+  if (body.action === 'next_turn' && updated) broadcastTurn(combatId);
 
   return c.json({ combat: updated });
 });
@@ -888,6 +969,9 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
 
   // Re-resolve calculation on server
   const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants, combat.board_id, combat.settings);
+  if (result.missing_inputs?.length && result.changes.length === 0) {
+    return c.json({ error: result.missing_inputs.join(' / '), result }, 400);
+  }
   const now = Date.now();
   const logId = generateUlid();
 
@@ -958,6 +1042,7 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
           if (afterObj.move_used !== undefined) moveUsed = afterObj.move_used ? 1 : 0;
           if (afterObj.action_used !== undefined) actionUsed = afterObj.action_used ? 1 : 0;
           if (afterObj.deathSavePenalty !== undefined) newState.deathSavePenalty = afterObj.deathSavePenalty;
+          if (afterObj.actions_taken !== undefined) newState.actions_taken = afterObj.actions_taken;
 
           sqlite
             .prepare('UPDATE combat_participants SET state = ?, move_used = ?, action_used = ? WHERE id = ?')
@@ -1016,6 +1101,26 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
   });
 
   applyTx();
+
+  // 移動アクションとアクションを使い切った、または行動した人が倒れたら、自動で次の手番へ（Phase 5j）
+  // 同じログに 'turn' の変化として残すので、「取り消し」で手番も戻る
+  let autoAdvanced = false;
+  const cbNow = db.select().from(combats).where(eq(combats.id, combatId)).get();
+  const actorNow = db.select().from(combat_participants).where(eq(combat_participants.id, actor.id)).get();
+  const ordered = getHydratedCombat(combatId)?.participants ?? [];
+  if (
+    cbNow?.status === 'active' &&
+    actorNow &&
+    ordered[cbNow.turn_index]?.id === actor.id &&
+    ((actorNow.move_used && actorNow.action_used) || actorNow.out)
+  ) {
+    const turnChange = advanceTurn(combatId);
+    if (turnChange) {
+      autoAdvanced = true;
+      const changes = [...result.changes, turnChange];
+      sqlite.prepare('UPDATE combat_log SET changes = ? WHERE id = ?').run(JSON.stringify(changes), logId);
+    }
+  }
 
   if (combat.board_id) {
     sessionManager.broadcastBoardUpdate({ id: combat.board_id });
@@ -1085,8 +1190,9 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
 
   const updatedCombat = getHydratedCombat(combatId);
   sessionManager.broadcastCombatUpdate(updatedCombat);
+  if (autoAdvanced) broadcastTurn(combatId);
 
-  return c.json({ result, combat: updatedCombat });
+  return c.json({ result, combat: updatedCombat, auto_advanced: autoAdvanced });
 });
 
 /**
@@ -1157,6 +1263,7 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
           if (beforeObj.move_used !== undefined) moveUsed = beforeObj.move_used ? 1 : 0;
           if (beforeObj.action_used !== undefined) actionUsed = beforeObj.action_used ? 1 : 0;
           if (beforeObj.deathSavePenalty !== undefined) newState.deathSavePenalty = beforeObj.deathSavePenalty;
+          if (beforeObj.actions_taken !== undefined) newState.actions_taken = beforeObj.actions_taken;
 
           sqlite
             .prepare('UPDATE combat_participants SET state = ?, move_used = ?, action_used = ? WHERE id = ?')
@@ -1189,6 +1296,15 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
         for (const cid of a.created_character_ids) sqlite.prepare('DELETE FROM characters WHERE id = ?').run(cid);
         for (const o of b.order) sqlite.prepare('UPDATE combat_participants SET order_index = ? WHERE id = ?').run(o.order_index, o.id);
         sqlite.prepare('UPDATE combats SET turn_index = ? WHERE id = ?').run(b.turn_index, ch.target_id);
+      } else if (ch.field === 'turn') {
+        // 自動で進んだ手番を戻す（Phase 5j）
+        const b = ch.before as TurnSnapshot;
+        sqlite.prepare('UPDATE combats SET turn_index = ?, round = ? WHERE id = ?').run(b.turn_index, b.round, ch.target_id);
+        for (const p of b.participants) {
+          sqlite
+            .prepare('UPDATE combat_participants SET move_used = ?, action_used = ?, state = ? WHERE id = ?')
+            .run(p.move_used ? 1 : 0, p.action_used ? 1 : 0, p.state, p.id);
+        }
       } else if (ch.field === 'board_drop') {
         sqlite.prepare('DELETE FROM board_drops WHERE id = ?').run(ch.target_id);
       } else if (ch.field === 'board_drop_remove') {

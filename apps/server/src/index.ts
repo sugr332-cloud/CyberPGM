@@ -33,6 +33,7 @@ import { verifyToken, authMiddleware } from './auth.js';
 import { sessionManager } from './session.js';
 import { createDailyBackup } from './config.js';
 import { resolveLanIp, startDualServer } from './net.js';
+import { linkTextWeapons } from './weapon-link.js';
 import { audioRoutes } from './routes/audio.js';
 import { playerShopRoutes } from './routes/player-shop.js';
 import { playersRoutes } from './routes/players.js';
@@ -248,6 +249,10 @@ export async function startServer(): Promise<void> {
   if (backupFile) {
     console.log(`[backup] Daily snapshot created: ${backupFile}`);
   }
+
+  // 文字だけの武器を持ち物に移す（戦闘で選べるように。Phase 5j）
+  const linked = linkTextWeapons();
+  if (linked > 0) console.log(`[weapons] 文字だけの武器 ${linked} 件を持ち物に移しました`);
 
   // 2. Resolve LAN IP
   const lanArg = process.argv.find((a) => a.startsWith('--lan='))?.split('=')[1] ??

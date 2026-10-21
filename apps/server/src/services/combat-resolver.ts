@@ -62,6 +62,36 @@ export const WEAPON_NAME_ALIASES: Record<string, string> = {
   '超大型拳銃': 'ベリー・ヘビー・ピストル',
 };
 
+const MOVE_ACTION_KEYS = ['move', 'take_cover'];
+
+/**
+ * 1 ターンに使えるアクションの数（Phase 5j）。ふつうは 1。
+ * state.actions_per_turn: GM が決めた毎ターンの回数（ボスの 2 回行動など）
+ * state.bonus_actions: このターンだけ増やした回数（GM の「+1 アクション」）
+ */
+export function actionsAllowed(p: Pick<CombatParticipant, 'state'>): number {
+  const st = (p.state ?? {}) as Record<string, unknown>;
+  return Math.max(1, Number(st.actions_per_turn ?? 1)) + Math.max(0, Number(st.bonus_actions ?? 0));
+}
+
+function actionsTaken(p: Pick<CombatParticipant, 'state'>): number {
+  return Number(((p.state ?? {}) as Record<string, unknown>).actions_taken ?? 0);
+}
+
+// アクションを 1 回使う変化。回数が残っていれば action_used は false のまま
+function useAction(p: CombatParticipant) {
+  const taken = actionsTaken(p);
+  return {
+    before: { action_used: p.action_used, actions_taken: taken },
+    after: { action_used: taken + 1 >= actionsAllowed(p), actions_taken: taken + 1 },
+  };
+}
+
+function actionCountLabel(p: CombatParticipant): string {
+  const allowed = actionsAllowed(p);
+  return allowed > 1 ? ` ${actionsTaken(p) + 1}/${allowed} 回目` : '';
+}
+
 export function resolveCombatAction(
   db: AppDatabase,
   input: ResolveInput,
@@ -82,6 +112,28 @@ export function resolveCombatAction(
 
   if (!actorChar) {
     throw new Error(`Actor character data missing for participant ${actorPart.id}`);
+  }
+
+  // 使い切った移動アクション・アクションは使えない（Phase 5j）
+  const usesMove = MOVE_ACTION_KEYS.includes(input.action_key);
+  const usesAction = !usesMove && input.action_key !== 'death_save';
+  const spent =
+    usesMove && actorPart.move_used
+      ? '移動アクションは使用済みです（もう一度動くなら「走る」でアクションを使います）'
+      : usesAction && actorPart.action_used
+        ? 'このターンのアクションは使い切っています（GM は「+1 アクション」で追加できます）'
+        : null;
+  if (spent) {
+    return {
+      action_key: input.action_key,
+      actor_id: actorPart.id,
+      actor_name: actorPart.name,
+      success: false,
+      formula: spent,
+      breakdown: {},
+      changes: [],
+      missing_inputs: [spent],
+    };
   }
 
   const actorWound = woundState(actorChar.hp, actorChar.hp_max);
@@ -285,9 +337,8 @@ export function resolveCombatAction(
         target_id: actorPart.id,
         target_name: actorPart.name,
         field: 'state',
-        before: { action_used: actorPart.action_used },
-        after: { action_used: true },
-        desc: `${actorPart.name} 走る (アクション使用)`,
+        ...useAction(actorPart),
+        desc: `${actorPart.name} 走る (アクション使用)${actionCountLabel(actorPart)}`,
       },
     ];
     if (boardMove.change) {
@@ -485,9 +536,8 @@ export function resolveCombatAction(
           target_id: actorPart.id,
           target_name: actorPart.name,
           field: 'state',
-          before: { action_used: actorPart.action_used },
-          after: { action_used: true },
-          desc: `${actorPart.name} アクション使用 (リロード)`,
+          ...useAction(actorPart),
+          desc: `${actorPart.name} アクション使用 (リロード)${actionCountLabel(actorPart)}`,
         },
         {
           target_id: actorChar.id,
@@ -566,9 +616,8 @@ export function resolveCombatAction(
         target_id: actorPart.id,
         target_name: actorPart.name,
         field: 'state',
-        before: { action_used: actorPart.action_used },
-        after: { action_used: true },
-        desc: `${actorPart.name} アクション使用 (拾う)`,
+        ...useAction(actorPart),
+        desc: `${actorPart.name} アクション使用 (拾う)${actionCountLabel(actorPart)}`,
       },
       {
         target_id: drop.id,
@@ -650,9 +699,8 @@ export function resolveCombatAction(
         target_id: actorPart.id,
         target_name: actorPart.name,
         field: 'state',
-        before: isMove ? { move_used: actorPart.move_used } : { action_used: actorPart.action_used },
-        after: isMove ? { move_used: true } : { action_used: true },
-        desc: `${actorPart.name} ${isMove ? '移動' : 'アクション'}使用 (${input.action_key})`,
+        ...(isMove ? { before: { move_used: actorPart.move_used }, after: { move_used: true } } : useAction(actorPart)),
+        desc: `${actorPart.name} ${isMove ? '移動' : 'アクション'}使用 (${input.action_key})${isMove ? '' : actionCountLabel(actorPart)}`,
       },
       ...manualChanges,
     ];
@@ -866,9 +914,8 @@ export function resolveCombatAction(
         target_id: actorPart.id,
         target_name: actorPart.name,
         field: 'state',
-        before: { action_used: actorPart.action_used },
-        after: { action_used: true },
-        desc: `${actorPart.name} アクション使用 (${input.action_key})`,
+        ...useAction(actorPart),
+        desc: `${actorPart.name} アクション使用 (${input.action_key})${actionCountLabel(actorPart)}`,
       },
     ];
 
@@ -1342,9 +1389,8 @@ export function resolveCombatAction(
         target_id: actorPart.id,
         target_name: actorPart.name,
         field: 'state',
-        before: { action_used: actorPart.action_used },
-        after: { action_used: true },
-        desc: `${actorPart.name} アクション使用 (近接攻撃)`,
+        ...useAction(actorPart),
+        desc: `${actorPart.name} アクション使用 (近接攻撃)${actionCountLabel(actorPart)}`,
       },
     ];
 

@@ -133,6 +133,7 @@ export interface CombatChange {
     | 'board_drop'
     | 'board_drop_remove'
     | 'participant_join'
+    | 'turn'
     | 'custom';
   before?: unknown;
   after?: unknown;
@@ -158,6 +159,7 @@ export const CombatChangeSchema = z.object({
     'board_drop',
     'board_drop_remove',
     'participant_join',
+    'turn',
     'custom',
   ]),
   before: z.unknown().optional(),

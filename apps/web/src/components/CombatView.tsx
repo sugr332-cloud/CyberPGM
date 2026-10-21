@@ -34,6 +34,10 @@ interface CombatViewProps {
   isStandaloneWindow?: boolean;
 }
 
+// 1 ターンに使えるアクションの数（サーバーの actionsAllowed と同じ。Phase 5j）
+const actionsAllowedOf = (p: { state?: Record<string, unknown> }) =>
+  Math.max(1, Number(p.state?.actions_per_turn ?? 1)) + Math.max(0, Number(p.state?.bonus_actions ?? 0));
+
 export const CombatView: React.FC<CombatViewProps> = ({
   characters,
   onRefreshCharacters,
@@ -534,6 +538,17 @@ export const CombatView: React.FC<CombatViewProps> = ({
     }
   };
 
+  // 1 ターンのアクション回数を変える（Phase 5j）
+  const handleSetActions = async (participantId: string, data: { actions_per_turn?: number; bonus?: 1 | -1 }) => {
+    if (!combat) return;
+    try {
+      const res = await api.setCombatActions(combat.id, participantId, data);
+      setCombat(res.combat);
+    } catch (err: any) {
+      alert(`行動回数の変更に失敗しました: ${err.message}`);
+    }
+  };
+
   // Advance turn
   const handleNextTurn = async () => {
     if (!combat) return;
@@ -820,7 +835,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   // Undo latest action
   const handleUndo = async () => {
     if (!combat) return;
-    if (!window.confirm('直前の確定結果を取り消して元に戻しますか？')) return;
+    if (!window.confirm('一手戻りますか？（直前の行動の反映、または手番送りを取り消します）')) return;
 
     try {
       const res = await api.undoCombatAction(combat.id);
@@ -1330,8 +1345,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
+              title="直前の行動の反映、または手番送りを取り消します。何度でも戻れます"
             >
-              取り消す
+              ↶ 一手戻る
             </button>
             <button
               onClick={() => setShowJoinDialog(true)}
@@ -1667,7 +1683,41 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   </span>
                   <span style={{ color: activePart.action_used ? 'var(--color-text-muted)' : 'var(--color-ally)' }}>
                     アクション: {activePart.action_used ? '使用済み' : '未使用'}
+                    {actionsAllowedOf(activePart) > 1 && ` (${Number(activePart.state?.actions_taken ?? 0)}/${actionsAllowedOf(activePart)} 回)`}
                   </span>
+                </div>
+                {/* 2 回行動など（Phase 5j）。移動とアクションを使い切ると自動で次の手番へ */}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', fontSize: '0.8rem', flexWrap: 'wrap' }}>
+                  <label style={{ color: 'var(--color-text-muted)' }}>
+                    毎ターンの行動回数:{' '}
+                    <select
+                      data-testid="actions-per-turn"
+                      value={Number(activePart.state?.actions_per_turn ?? 1)}
+                      onChange={(e) => handleSetActions(activePart.id, { actions_per_turn: Number(e.target.value) })}
+                    >
+                      {[1, 2, 3].map((n) => (
+                        <option key={n} value={n}>
+                          {n} 回
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleSetActions(activePart.id, { bonus: 1 })}
+                    style={{ padding: '2px 8px', fontSize: '0.8rem' }}
+                  >
+                    +1 アクション（このターンだけ）
+                  </button>
+                  {Number(activePart.state?.bonus_actions ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleSetActions(activePart.id, { bonus: -1 })}
+                      style={{ padding: '2px 8px', fontSize: '0.8rem' }}
+                    >
+                      −1
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1860,6 +1910,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           </option>
                         ))}
                       </select>
+                      {weaponEntries.length === 0 && (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--color-warning)' }}>
+                          持ち物に武器がありません。PC タブの編集で武器を持たせてください（文字だけの武器は、品目が見つかれば自動で持ち物に移ります）
+                        </span>
+                      )}
                     </div>
                   )}
 

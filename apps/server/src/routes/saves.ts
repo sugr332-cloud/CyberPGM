@@ -827,8 +827,8 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
 
     if (data.scenario_sessions && (data.scenario_sessions as any[]).length > 0) {
       const insertSession = sqlite.prepare(`
-        INSERT INTO scenario_sessions (id, scenario_id, current_scene_id, started_at, ended_at, revealed)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO scenario_sessions (id, scenario_id, current_scene_id, started_at, ended_at, cleared_at, revealed)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
       for (const ss of data.scenario_sessions as any[]) {
         insertSession.run(
@@ -837,6 +837,7 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
           ss.current_scene_id ?? null,
           ss.started_at,
           ss.ended_at ?? null,
+          ss.cleared_at ?? null,
           typeof ss.revealed === 'string' ? ss.revealed : JSON.stringify(ss.revealed || { clue_ids: [], handout_ids: [] }),
         );
       }

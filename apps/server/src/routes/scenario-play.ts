@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, desc, and, isNull, inArray } from 'drizzle-orm';
+import { eq, desc, and, isNull, inArray, ne } from 'drizzle-orm';
 import { db, sqlite } from '../db/client.js';
 import {
   scenarios,
@@ -307,6 +307,57 @@ scenarioPlayRoutes.put('/display/settings', requireGm, async (c) => {
   return c.json({ display: currentStoryScreen });
 });
 
+// いまスマホでつながっている PC を、このシナリオに入れる（クリアするまで他のシナリオでは選べない。Phase 5i）
+function lockConnectedCharacters(scenarioId: string) {
+  const connected = sessionManager.getConnectedCharacterIds();
+  if (connected.length === 0) return;
+  db.update(characters)
+    .set({ scenario_id: scenarioId })
+    .where(and(inArray(characters.id, connected), isNull(characters.scenario_id)))
+    .run();
+}
+
+// GET /api/scenario-sessions/resumable: 中断したまま（クリアしていない）のシナリオと、前回のシーン（Phase 5j）
+scenarioPlayRoutes.get('/scenario-sessions/resumable', requireGm, async (c) => {
+  const rows = db.select().from(scenario_sessions).orderBy(desc(scenario_sessions.started_at)).all();
+  const latestByScenario = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) if (!latestByScenario.has(r.scenario_id)) latestByScenario.set(r.scenario_id, r);
+  const resumable = [...latestByScenario.values()]
+    .filter((r) => r.ended_at && !r.cleared_at)
+    .map((r) => ({
+      session_id: r.id,
+      scenario_id: r.scenario_id,
+      scene_title: r.current_scene_id
+        ? db.select().from(scenes).where(eq(scenes.id, r.current_scene_id)).get()?.title ?? null
+        : null,
+      ended_at: r.ended_at,
+    }));
+  return c.json({ resumable });
+});
+
+// POST /api/scenario-sessions/:id/resume: 中断したシナリオを前回のシーンから再開する（公開済みの手がかり・ログもそのまま。Phase 5j）
+scenarioPlayRoutes.post('/scenario-sessions/:id/resume', requireGm, async (c) => {
+  const sessionId = c.req.param('id')!;
+  const session = db.select().from(scenario_sessions).where(eq(scenario_sessions.id, sessionId)).get();
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  if (session.cleared_at) return c.json({ error: 'クリア済みのシナリオは再開できません' }, 409);
+
+  db.update(scenario_sessions)
+    .set({ ended_at: Date.now() })
+    .where(and(isNull(scenario_sessions.ended_at), ne(scenario_sessions.id, sessionId)))
+    .run();
+  db.update(scenario_sessions).set({ ended_at: null }).where(eq(scenario_sessions.id, sessionId)).run();
+
+  const scene = session.current_scene_id
+    ? db.select().from(scenes).where(eq(scenes.id, session.current_scene_id)).get()
+    : null;
+  logToActiveSession('scene', `進行再開: ${scene ? scene.title : 'シーン未指定'}`, { scene_id: session.current_scene_id });
+  lockConnectedCharacters(session.scenario_id);
+  showSceneOnDisplay(sessionId, scene);
+
+  return c.json({ success: true, sessionId, current_scene_id: session.current_scene_id });
+});
+
 // POST /api/scenario-sessions/start: Start play session
 scenarioPlayRoutes.post('/scenario-sessions/start', requireGm, async (c) => {
   const body = await c.req.json();
@@ -362,15 +413,7 @@ scenarioPlayRoutes.post('/scenario-sessions/start', requireGm, async (c) => {
     scene_id: sceneId,
   });
 
-  // いまスマホでつながっている PC を、このシナリオに入れる（クリアするまで他のシナリオでは選べない。Phase 5i）
-  const connected = sessionManager.getConnectedCharacterIds();
-  if (connected.length > 0) {
-    db.update(characters)
-      .set({ scenario_id })
-      .where(and(inArray(characters.id, connected), isNull(characters.scenario_id)))
-      .run();
-  }
-
+  lockConnectedCharacters(scenario_id);
   showSceneOnDisplay(sessionId, scene);
 
   return c.json({
@@ -462,12 +505,12 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/adhoc-scene', requireGm, async (
 
 // POST /api/scenario-sessions/:id/end: End play session
 // 進行を終える。キャラのシナリオの縛りはそのまま（中断。クリアは /clear）
-export function endScenarioSession(sessionId: string, logText = 'シナリオ進行終了'): number {
+export function endScenarioSession(sessionId: string, logText = 'シナリオ進行終了', cleared = false): number {
   logToActiveSession('scene', logText);
 
   const now = Date.now();
   db.update(scenario_sessions)
-    .set({ ended_at: now })
+    .set({ ended_at: now, cleared_at: cleared ? now : null })
     .where(eq(scenario_sessions.id, sessionId))
     .run();
 

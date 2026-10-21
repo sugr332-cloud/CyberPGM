@@ -1074,4 +1074,88 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       expect(w2.ammo).toBe(3);
     });
   });
+
+  // Phase 5j: 移動とアクションを使い切ったら自動で次の手番へ。取り消しで戻る。2 回行動
+  describe('Phase 5j: turn auto-advance and multiple actions', () => {
+    const H = () => ({ ...authGm, 'Content-Type': 'application/json' });
+    const apply = (combatId: string, actorId: string, action_key: string) =>
+      app.request(`/api/combats/${combatId}/apply`, {
+        method: 'POST',
+        headers: H(),
+        body: JSON.stringify({ action_key, actor_id: actorId, manual_changes: [] }),
+      });
+    const start = async () => {
+      const combat = await createTestCombat();
+      const res = await app.request(`/api/combats/${combat.id}`, { method: 'PATCH', headers: H(), body: JSON.stringify({ action: 'start' }) });
+      return (await res.json()).combat;
+    };
+
+    it('advances to the next turn after move + action, and undo brings the turn back', async () => {
+      const combat = await start();
+      const actor = combat.participants[0];
+      const first = await (await apply(combat.id, actor.id, 'move')).json();
+      expect(first.auto_advanced).toBe(false);
+      const second = await (await apply(combat.id, actor.id, 'other')).json();
+      expect(second.auto_advanced).toBe(true);
+      expect(second.combat.turn_index).toBe(1);
+      expect(second.combat.participants[0].action_used).toBe(false);
+
+      const undo = await (await app.request(`/api/combats/${combat.id}/undo`, { method: 'POST', headers: authGm })).json();
+      expect(undo.combat.turn_index).toBe(0);
+      expect(undo.combat.participants[0].move_used).toBe(true);
+      expect(undo.combat.participants[0].action_used).toBe(false);
+    });
+
+    it('undoes a manual next turn ("一手戻る")', async () => {
+      const combat = await start();
+      await app.request(`/api/combats/${combat.id}`, { method: 'PATCH', headers: H(), body: JSON.stringify({ action: 'next_turn' }) });
+      const undo = await (await app.request(`/api/combats/${combat.id}/undo`, { method: 'POST', headers: authGm })).json();
+      expect(undo.combat.turn_index).toBe(0);
+      expect(undo.combat.round).toBe(1);
+    });
+
+    it('refuses a second action in one turn, unless the GM grants more', async () => {
+      const combat = await start();
+      const actor = combat.participants[0];
+      await apply(combat.id, actor.id, 'other');
+      const again = await apply(combat.id, actor.id, 'other');
+      expect(again.status).toBe(400);
+      expect((await again.json()).error).toContain('アクションは使い切っています');
+
+      // このターンだけ +1 アクション
+      await app.request(`/api/combats/${combat.id}/participants/${actor.id}/actions`, { method: 'POST', headers: H(), body: JSON.stringify({ bonus: 1 }) });
+      const bonus = await apply(combat.id, actor.id, 'other');
+      expect(bonus.status).toBe(200);
+      const after = await (await apply(combat.id, actor.id, 'move')).json();
+      expect(after.auto_advanced).toBe(true);
+      // ターンが終わると +1 は消える
+      const p0 = after.combat.participants[0];
+      expect(p0.state.bonus_actions).toBeUndefined();
+      expect(p0.state.actions_taken).toBeUndefined();
+    });
+
+    it('moves text-only weapons into the inventory so they can be chosen in combat', async () => {
+      db.update(characters).set({ weapons: JSON.stringify(['Heavy Pistol', '謎の銃']), inventory: '[]' }).where(eq(characters.id, pcId1)).run();
+      const combat = await createTestCombat();
+      const p = combat.participants.find((x: any) => x.character_id === pcId1);
+      const w = p.character.inventory.filter((i: any) => i.kind === 'weapon');
+      expect(w.map((i: any) => i.item_id)).toEqual([weaponIdPistol]);
+      expect(w[0].ammo).toBe(8);
+      expect(p.character.weapons).toEqual(['謎の銃']);
+    });
+
+    it('lets a participant act twice every turn (actions_per_turn = 2)', async () => {
+      const combat = await start();
+      const actor = combat.participants[0];
+      await app.request(`/api/combats/${combat.id}/participants/${actor.id}/actions`, { method: 'POST', headers: H(), body: JSON.stringify({ actions_per_turn: 2 }) });
+      const a1 = await (await apply(combat.id, actor.id, 'other')).json();
+      expect(a1.combat.participants[0].action_used).toBe(false);
+      expect(a1.result.changes[0].desc).toContain('1/2 回目');
+      await apply(combat.id, actor.id, 'move');
+      const a2 = await (await apply(combat.id, actor.id, 'other')).json();
+      expect(a2.auto_advanced).toBe(true);
+      // 次のターンでも 2 回のまま
+      expect(a2.combat.participants[0].state.actions_per_turn).toBe(2);
+    });
+  });
 });
