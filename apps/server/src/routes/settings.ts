@@ -31,6 +31,25 @@ settingsRoutes.get('/settings', requireGm, async (c) => {
 });
 
 /**
+ * GET/PUT /api/settings/show-dv: スマホに難易度と成功ラインを見せるか（Phase 5n。既定は見せる）
+ */
+settingsRoutes.get('/settings/show-dv', requireGm, (c) => {
+  const row = db.select().from(app_settings).where(eq(app_settings.key, 'show_dv_to_players')).get();
+  return c.json({ show_dv_to_players: row ? row.value !== 'false' : true });
+});
+
+settingsRoutes.put('/settings/show-dv', requireGm, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  if (typeof body.show_dv_to_players !== 'boolean') return c.json({ error: 'show_dv_to_players は true か false' }, 400);
+  const value = String(body.show_dv_to_players);
+  db.insert(app_settings)
+    .values({ key: 'show_dv_to_players', value })
+    .onConflictDoUpdate({ target: app_settings.key, set: { value } })
+    .run();
+  return c.json({ show_dv_to_players: body.show_dv_to_players });
+});
+
+/**
  * PUT /api/settings: GM updates application settings.
  */
 settingsRoutes.put('/settings', requireGm, async (c) => {

@@ -34,6 +34,7 @@ import { sessionManager } from './session.js';
 import { createDailyBackup } from './config.js';
 import { resolveLanIp, startDualServer } from './net.js';
 import { linkTextWeapons } from './weapon-link.js';
+import { searchRoutes } from './routes/search.js';
 import { startLogFile } from './logfile.js';
 import { audioRoutes, syncAudioFolder, getAudioDir } from './routes/audio.js';
 import { playerShopRoutes } from './routes/player-shop.js';
@@ -69,6 +70,7 @@ app.route('/api', boardsRoutes);
 app.route('/api/scenarios', scenariosRouter);
 app.route('/api', scenarioPlayRoutes);
 app.route('/api', audioRoutes);
+app.route('/api', searchRoutes);
 app.route('/api', playerShopRoutes);
 app.route('/api', playersRoutes);
 

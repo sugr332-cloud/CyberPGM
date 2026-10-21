@@ -26,6 +26,7 @@ import { CharacterEditorView } from '../components/CharacterEditorView.js';
 import { CharacterDetail } from '../components/CharacterDetail.js';
 import { BgmPlayer, BgmState } from '../components/BgmPlayer.js';
 import { getGmBgmOn, onGmBgmChange } from '../gmBgm.js';
+import { GlobalSearch } from '../components/GlobalSearch.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -498,6 +499,13 @@ export const GmPage: React.FC = () => {
 
         {/* Header Right Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '6px' : '12px' }}>
+          {/* 全文検索（Phase 5n）。選んだものの種類のタブに移る */}
+          <GlobalSearch
+            compact={isMobile}
+            onOpen={(hit) =>
+              setActiveTab(hit.kind === 'character' ? 'pc' : hit.kind === 'item' ? 'shop' : 'scenario')
+            }
+          />
           <button
             onClick={handleOpenQr}
             style={{

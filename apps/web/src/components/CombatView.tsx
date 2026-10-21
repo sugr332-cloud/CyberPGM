@@ -109,6 +109,38 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [aimedLocation, setAimedLocation] = useState<'head' | 'held_item' | 'leg'>('head');
   const [heldItemId, setHeldItemId] = useState<string>('');
   
+  // 出目を入れる前の計算式と成功ライン（仕様 §5.0.1。Phase 5n）
+  const [attackLineText, setAttackLineText] = useState<string | null>(null);
+  useEffect(() => {
+    const cur = combat?.participants?.[combat.turn_index];
+    if (!combat || !cur || !['ranged', 'aimed', 'autofire', 'melee', 'brawl'].includes(selectedActionKey ?? '')) {
+      setAttackLineText(null);
+      return;
+    }
+    let alive = true;
+    gmFetch(`/api/combats/${combat.id}/line`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_key: selectedActionKey,
+        actor_id: cur.id,
+        target_id: targetParticipantId ?? undefined,
+        weapon_entry_id: selectedWeaponId ?? undefined,
+        distance_m: distanceM ?? undefined,
+        dodge_mode: dodgeMode,
+      }),
+    })
+      .then((r) => r.json())
+      .then((res) => alive && setAttackLineText(res.line?.text ?? null))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [combat?.id, combat?.turn_index, selectedActionKey, targetParticipantId, selectedWeaponId, distanceM, dodgeMode]);
+
+  // 出目がどのスマホから届いたか（roll_type → 名前。Phase 5n）
+  const [rollFrom, setRollFrom] = useState<Record<string, string>>({});
+
   // Rolls in Guide. 決め打ちの出目は置かない（入れ忘れると計算が「出目を入力してください」で止まる。Phase 5l）
   const [attackFirst, setAttackFirst] = useState<number | null>(null);
   const [attackExtra, setAttackExtra] = useState<number | undefined>(undefined);
@@ -458,6 +490,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
     } else if (wsMessage.type === 'combat:roll') {
       // Player submitted dice roll
       const { roll_type, first, extra, dice } = wsMessage.payload;
+      // どのスマホから届いたかを出目欄の横に出す（Phase 5n）
+      const fromPart = combat?.participants.find((p) => p.character_id === wsMessage.payload.character_id);
+      if (fromPart && roll_type !== 'initiative') setRollFrom((prev) => ({ ...prev, [roll_type]: fromPart.name }));
       if (roll_type === 'attack' && typeof first === 'number') {
         setAttackFirst(first);
         if (typeof extra === 'number') setAttackExtra(extra);
@@ -569,6 +604,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
   // 出目の入力を空に戻す。行動を反映したとき・手番が変わったとき（前の人の出目を使い回さない。Phase 5l）
   const resetRolls = () => {
+    setRollFrom({});
     setAttackFirst(null);
     setAttackExtra(undefined);
     setDefenseFirst(null);
@@ -899,6 +935,16 @@ export const CombatView: React.FC<CombatViewProps> = ({
     } catch (err: any) {
       alert(`取り消しに失敗しました: ${err.message}`);
     }
+  };
+
+  // 出目欄の横の「〇〇のスマホから / 入力待ち」（仕様 §5.0.1。Phase 5n）。PC の出目は本人のスマホから届く。NPC は GM が入れる
+  const rollSourceTag = (rollType: 'attack' | 'defense' | 'damage' | 'death_save') => {
+    const from = rollFrom[rollType];
+    if (from) return <span data-testid={`roll-from-${rollType}`} style={{ fontSize: '0.7rem', color: 'var(--color-ally)' }}>{from}のスマホから</span>;
+    const cur = combat?.participants?.[combat.turn_index];
+    const who = rollType === 'defense' ? combat?.participants.find((p) => p.id === targetParticipantId) : cur;
+    if (who?.character?.kind !== 'pc') return null;
+    return <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{who.name}のスマホ: 入力待ち</span>;
   };
 
   if (loading) {
@@ -2343,11 +2389,17 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
                   {/* Dice Roll Inputs */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {attackLineText && (
+                      <div data-testid="attack-line" style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: 'var(--color-ally)' }}>
+                        {attackLineText}
+                      </div>
+                    )}
                     <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>出目の入力:</span>
                     {/* 死亡セーブの出目（スマホから届けば入る。NPC は GM が入れる。Phase 5l） */}
                     {selectedActionKey === 'death_save' && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>死亡セーブ 1d10:</span>
+                        {rollSourceTag('death_save')}
                         <input
                           data-testid="death-save-input"
                           type="number"
@@ -2363,6 +2415,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{selectedActionKey === 'first_aid' ? '判定 1d10:' : '攻撃 1d10:'}</span>
+                        {rollSourceTag('attack')}
                         <input
                           type="number"
                           min={1}
@@ -2411,6 +2464,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>回避 1d10:</span>
+                            {rollSourceTag('defense')}
                             <input
                               type="number"
                               min={1}
@@ -2459,6 +2513,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>ダメージ出目:</span>
+                        {rollSourceTag('damage')}
                         <input
                           type="text"
                           value={damageDiceStr}

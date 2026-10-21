@@ -51,6 +51,10 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
 
   // Version History Modal
   const [showVersionsModal, setShowVersionsModal] = useState(false);
+  const [shopList, setShopList] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    api.getShops().then((res) => setShopList(res.shops)).catch(() => undefined);
+  }, []);
   const [versionsList, setVersionsList] = useState<Array<{ id: string; version: number; saved_at: number }>>([]);
 
   // Image Picker Modal
@@ -1220,6 +1224,38 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                     boxSizing: 'border-box',
                   }}
                 />
+              </div>
+
+              {/* このシナリオの店（商店タブの店舗と結び付ける。進行中にスマホへ出せる。Phase 5n） */}
+              <div style={{ marginBottom: '8px' }} data-testid="scenario-shops">
+                <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>このシナリオの店（進行中に「スマホに出す」で開ける）</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                  {shopList.length === 0 && <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>店がありません（商店タブで作れます）</span>}
+                  {shopList.map((shop) => {
+                    const ids: string[] = scenarioData.scenario.meta?.shop_ids ?? [];
+                    return (
+                      <label key={shop.id} style={{ display: 'flex', gap: '4px', alignItems: 'center', fontSize: '0.75rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={ids.includes(shop.id)}
+                          onChange={(e) =>
+                            setScenarioData({
+                              ...scenarioData,
+                              scenario: {
+                                ...scenarioData.scenario,
+                                meta: {
+                                  ...scenarioData.scenario.meta,
+                                  shop_ids: e.target.checked ? [...ids, shop.id] : ids.filter((x) => x !== shop.id),
+                                },
+                              },
+                            })
+                          }
+                        />
+                        {shop.name}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
 
               <div style={{ marginBottom: '8px' }}>

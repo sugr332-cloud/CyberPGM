@@ -1316,4 +1316,26 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       expect(move.formula).toContain('瀕死 6');
     });
   });
+
+  // Phase 5n: 出目を入れる前の成功ライン
+  describe('Phase 5n: attack line before the roll', () => {
+    it('shows the success line for a ranged attack at a distance, and bands for the phone', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const res = await (
+        await app.request(`/api/combats/${combat.id}/line`, {
+          method: 'POST',
+          headers: { ...authGm, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action_key: 'ranged', actor_id: viper.id, target_id: ganger.id, weapon_entry_id: 'e1', distance_m: 5 }),
+        })
+      ).json();
+      // REF 8 + 拳銃 6 = 14 vs 難易度 13 → 出目 0 以上 = 「2 以上で成功」
+      expect(res.line.text).toContain('= 14 vs 難易度 13（5m）→ 2 以上で成功');
+
+      const pdev = registerDevice({ role: 'player', label: 'p', characterId: pcId1 });
+      const mine = await (await app.request('/api/combats/current/my-lines?weapon_entry_id=e1', { headers: { Authorization: `Bearer ${pdev.token}` } })).json();
+      expect(mine.lines.ranged.bands[0]).toEqual({ range: '0〜6m', dv: 13, needed: '2 以上で成功' });
+    });
+  });
 });

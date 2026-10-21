@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { eq, desc, and, isNull, inArray, ne } from 'drizzle-orm';
 import { db, sqlite } from '../db/client.js';
 import {
+  app_settings,
   scenarios,
   scenes,
   scene_links,
@@ -856,6 +857,19 @@ function hydrateCheck(ch: typeof story_checks.$inferSelect) {
   };
 }
 
+/** スマホに難易度と成功ラインを見せるか（GM の設定。既定は見せる。仕様 §5.0。Phase 5n） */
+export function showDvToPlayers(): boolean {
+  const row = db.select().from(app_settings).where(eq(app_settings.key, 'show_dv_to_players')).get();
+  return row ? row.value !== 'false' : true;
+}
+
+/** スマホに送る判定。見せない設定のときは難易度と成功ラインを伏せる */
+function checkForPlayer(checkId: string, skillKey: string | null, dv: number | null, formula: string, needed: string | null) {
+  if (showDvToPlayers()) return { check_id: checkId, skill_key: skillKey, dv, formula };
+  const parts = formula.split(' vs ')[0];
+  return { check_id: checkId, skill_key: skillKey, dv: null, formula: `${parts} + 1d10（難易度は GM が決めます）`, hidden_needed: !!needed };
+}
+
 // GET /api/scenario-sessions/:id/checks: List checks
 scenarioPlayRoutes.get('/scenario-sessions/:id/checks', requireGm, async (c) => {
   const sessionId = c.req.param('id')!;
@@ -918,12 +932,7 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks', requireGm, async (c) =>
       const evaluated = evaluateStoryCheck(row, []);
       sessionManager.sendToCharacter(row.actor_character_id, {
         type: 'story:check_assigned',
-        payload: {
-          check_id: row.id,
-          skill_key: row.skill_key,
-          dv: row.dv,
-          formula: evaluated.formula,
-        },
+        payload: checkForPlayer(row.id, row.skill_key, row.dv, evaluated.formula, evaluated.needed),
       });
     }
   }
@@ -963,12 +972,7 @@ scenarioPlayRoutes.patch('/scenario-sessions/:id/checks/:checkId', requireGm, as
     const evaluated = evaluateStoryCheck(updated, []);
     sessionManager.sendToCharacter(updated.actor_character_id, {
       type: 'story:check_assigned',
-      payload: {
-        check_id: updated.id,
-        skill_key: updated.skill_key,
-        dv: updated.dv,
-        formula: evaluated.formula,
-      },
+      payload: checkForPlayer(updated.id, updated.skill_key, updated.dv, evaluated.formula, evaluated.needed),
     });
   }
   sessionManager.broadcastStoryCheckUpdate(existing.scenario_session_id);
@@ -1670,12 +1674,7 @@ export async function handleStoryChoose(payload: {
     const evaluated = evaluateStoryCheck(inserted, []);
     sessionManager.sendToCharacter(payload.characterId, {
       type: 'story:check_assigned',
-      payload: {
-        check_id: checkId,
-        skill_key: skillKey,
-        dv: dv,
-        formula: evaluated.formula,
-      },
+      payload: checkForPlayer(checkId, skillKey, dv, evaluated.formula, evaluated.needed),
     });
   }
 }

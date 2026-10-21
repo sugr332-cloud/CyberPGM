@@ -116,6 +116,32 @@ export const PlayerPage: React.FC = () => {
   // 攻撃する相手と使う武器（Phase 5j）。攻撃のボタンと一緒に GM へ送る
   const [attackTargetId, setAttackTargetId] = useState<string | null>(null);
   const [attackWeaponId, setAttackWeaponId] = useState<string | null>(null);
+  // 選んだ武器の成功ライン（射撃は距離帯ごと。仕様 §5.0.1。Phase 5n）
+  const [myLines, setMyLines] = useState<Record<string, { text: string; bands?: Array<{ range: string; dv: number; needed: string }> } | null>>({});
+
+  useEffect(() => {
+    if (!token || !currentCombat || currentCombat.status !== 'active' || !sheet) return;
+    const me = (currentCombat.participants as Array<{ character_id: string | null; character?: any }>).find((p) => p.character_id === sheet.id);
+    const list = ((me?.character?.inventory as Array<{ entry_id: string; kind?: string }>) ?? []).filter((i) => i.kind === 'weapon');
+    const wid = (list.find((w) => w.entry_id === attackWeaponId) ?? list[0])?.entry_id;
+    fetch(`/api/combats/current/my-lines${wid ? `?weapon_entry_id=${encodeURIComponent(wid)}` : ''}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((res) => setMyLines(res.lines ?? {}))
+      .catch(() => undefined);
+  }, [token, currentCombat?.id, currentCombat?.turn_index, currentCombat?.status, attackWeaponId, sheet?.id, sheet?.hp]);
+
+  const bandsText = (key: string) => {
+    const bands = myLines[key]?.bands;
+    if (!bands || bands.length === 0) return null;
+    return (
+      <div data-testid={`bands-${key}`} style={{ fontSize: '0.65rem', color: 'var(--color-ally)', marginTop: '2px' }}>
+        {bands
+          .slice(0, 4)
+          .map((b) => `〜${b.range.split('〜')[1]} ${b.needed.replace(' 以上で成功', '+').replace(/10 → 追加ロールで (\d+) 以上/, '10→$1+').replace('成功しない', '×')}`)
+          .join(' / ')}
+      </div>
+    );
+  };
 
   // WebSocket message handler
   const handleWsMessage = useCallback((type: string, payload: unknown) => {
@@ -2067,6 +2093,7 @@ export const PlayerPage: React.FC = () => {
                               '射撃武器がありません'
                             )}
                           </div>
+                          {rangedWeapon && bandsText('ranged')}
                         </button>
 
                         <button
@@ -2094,6 +2121,7 @@ export const PlayerPage: React.FC = () => {
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                             {rangedWeapon ? `${attackBaseRanged} − 8（狙う分）= ${attackBaseRanged - 8} + 1d10` : '射撃武器がありません'}
                           </div>
+                          {rangedWeapon && bandsText('aimed')}
                         </button>
 
                         <button
