@@ -10,6 +10,7 @@ import {
 } from '@cyberpgm/shared';
 import { BoardView } from './BoardView.js';
 import { StoryCheckRow, StoryCheckView } from './StoryCheckRow.js';
+import { StagePanel } from './StagePanel.js';
 import { getGmToken, gmFetch } from '../api.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 
@@ -1089,6 +1090,9 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
               )}
             </div>
           </div>
+
+          {/* 舞台（表示ウィンドウの背景・立ち絵・BGM）。GM のメインウィンドウだけ */}
+          <StagePanel key={activeSession.current_scene_id ?? 'none'} characters={characters} />
 
           {/* Section: Encounters of this scenario（盤面がなくても戦闘に入れられる） */}
           {scenarioData && scenarioData.encounters.length > 0 && (

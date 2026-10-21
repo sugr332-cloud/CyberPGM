@@ -112,6 +112,7 @@ export const characters = sqliteTable('characters', {
   name: text('name').notNull(),
   role: text('role').notNull(),
   image_id: text('image_id').references(() => images.id, { onDelete: 'set null' }),
+  portrait_image_id: text('portrait_image_id').references(() => images.id, { onDelete: 'set null' }), // 立ち絵（Phase 5e）
   stats: text('stats').notNull(), // JSON: { int, ref, dex, tech, cool, will, luck, move, body, emp }
   skills: text('skills').notNull().default('{}'), // JSON: { [skillKey: string]: number }
   hp: integer('hp').notNull(),
@@ -362,6 +363,8 @@ export const scenes = sqliteTable('scenes', {
   board_id: text('board_id').references(() => boards.id, { onDelete: 'set null' }),
   sort_index: integer('sort_index').notNull().default(0),
   is_adhoc: integer('is_adhoc', { mode: 'boolean' }).notNull().default(false),
+  stage: text('stage').notNull().default('{}'), // JSON: 立ち絵の配置 { portraits: StagePortrait[] }（Phase 5e）
+  bgm: text('bgm'), // JSON: { audio_id, loop, volume }（Phase 5e）
 });
 
 export const scene_links = sqliteTable('scene_links', {
@@ -794,3 +797,14 @@ export const storyChecksRelations = relations(story_checks, ({ one }) => ({
     references: [characters.id],
   }),
 }));
+
+// 音声ファイル（シーンの BGM。Phase 5e）。ファイルは data/audio/user/ に置き、git に入れない
+export const audio = sqliteTable('audio', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  path: text('path').notNull(),
+  mime: text('mime').notNull(),
+  size: integer('size').notNull(),
+  duration_sec: real('duration_sec'),
+  created_at: integer('created_at').notNull(),
+});

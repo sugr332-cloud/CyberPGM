@@ -2,7 +2,7 @@ import { WSContext } from 'hono/ws';
 import qrcode from 'qrcode';
 import { eq } from 'drizzle-orm';
 import { db } from './db/client.js';
-import { devices, characters } from './db/schema.js';
+import { devices, characters, images } from './db/schema.js';
 import { generateSessionCode } from './config.js';
 import {
   DeviceInfo,
@@ -272,6 +272,32 @@ export class SessionManager {
    * GM-only tokens, hidden enemies, and tokens/objects in fog are omitted.
    * Background image is omitted if visibility is 'gm'.
    */
+  /** プレイヤーにも見せてよい画像の ID だけ返す（GM のみの画像は表示ウィンドウに出さない） */
+  private visibleImageId(id: string | null | undefined): string | null {
+    if (!id) return null;
+    const img = db.select().from(images).where(eq(images.id, id)).get();
+    return img && img.visibility !== 'gm' ? img.id : null;
+  }
+
+  /** 立ち絵: キャラの名前と立ち絵の画像 ID を付ける。立ち絵がない・GM のみの画像なら出さない */
+  private resolvePortraits(portraits: Array<{ character_id: string; x: number; y: number; scale: number; flip: boolean; z: number; show_name: boolean }>) {
+    return portraits
+      .map((p) => {
+        const ch = db.select().from(characters).where(eq(characters.id, p.character_id)).get();
+        const imageId = this.visibleImageId(ch?.portrait_image_id);
+        return ch && imageId ? { ...p, name: ch.name, image_id: imageId } : null;
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null)
+      .sort((a, b) => a.z - b.z);
+  }
+
+  /** 戦闘中の BGM: 戦闘の設定に曲があればそれ、なければストーリーの曲を流し続ける */
+  private combatBgm(combat: { settings?: unknown }) {
+    const settings = (typeof combat.settings === 'string' ? JSON.parse(combat.settings) : combat.settings) as { bgm?: { audio_id: string; loop: boolean; volume: number } } | undefined;
+    if (settings?.bgm?.audio_id) return { ...settings.bgm, playing: true };
+    return this.storyProvider?.()?.bgm ?? null;
+  }
+
   public buildScreenPayload(): Record<string, unknown> {
     const combat = this.combatProvider ? this.combatProvider() : null;
     const isCombatActive = combat && combat.status !== 'ended' && combat.settings?.broadcastToTv !== false;
@@ -466,6 +492,7 @@ export class SessionManager {
         objects: sanitizedBoard?.objects || [],
         tokens: sanitizedBoard?.tokens || [],
         drops: sanitizedBoard?.drops || [],
+        bgm: this.combatBgm(combat),
       };
     }
 
@@ -534,7 +561,9 @@ export class SessionManager {
           objects: sanitizedStoryBoard?.objects || [],
           tokens: sanitizedStoryBoard?.tokens || [],
           drops: sanitizedStoryBoard?.drops || [],
-          background_image_path: storyScreen.background_image_path || null,
+          background_image_id: this.visibleImageId(storyScreen.background_image_id),
+          portraits: this.resolvePortraits(storyScreen.portraits ?? []),
+          bgm: storyScreen.bgm ?? null,
           tv_handout: storyScreen.tv_handout || null,
         };
       }

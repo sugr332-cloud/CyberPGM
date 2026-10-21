@@ -23,6 +23,7 @@ function setupTempDb(): TempEnv {
   const tempSavesDir = path.join(os.tmpdir(), `cyberpgm-test-saves-${Date.now()}-${randomSuffix}`);
   fs.mkdirSync(tempSavesDir, { recursive: true });
   process.env.SAVES_DIR = tempSavesDir;
+  process.env.AUDIO_DIR = path.join(tempSavesDir, 'audio');
 
   // Apply migrations to fresh temp DB
   const { sqlite, db } = createDb(tempDbPath);
@@ -107,4 +108,5 @@ afterAll(() => {
   delete process.env.DB_PATH;
   delete process.env.IMAGES_DIR;
   delete process.env.SAVES_DIR;
+  delete process.env.AUDIO_DIR;
 });

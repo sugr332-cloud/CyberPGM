@@ -85,6 +85,13 @@
       "when": 1792542187649,
       "tag": "0011_slow_supernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792543609505,
+      "tag": "0012_giant_owl",
+      "breakpoints": true
     }
   ]
 }

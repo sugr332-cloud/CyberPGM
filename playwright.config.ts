@@ -21,10 +21,11 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
   },
   webServer: {
     // サーバは globalSetup より先に起動するので、マイグレーションもここで行う
-    command: `DATABASE_URL=${dbPath} DB_PATH=${dbPath} tsx apps/server/src/db/migrate.ts && PORT=${port} DATABASE_URL=${dbPath} IMAGES_DIR=${e2eImagesDir} SAVES_DIR=${e2eSavesDir} tsx apps/server/src/index.ts`,
+    command: `DATABASE_URL=${dbPath} DB_PATH=${dbPath} tsx apps/server/src/db/migrate.ts && PORT=${port} DATABASE_URL=${dbPath} IMAGES_DIR=${e2eImagesDir} SAVES_DIR=${e2eSavesDir} AUDIO_DIR=${e2eSavesDir}/audio tsx apps/server/src/index.ts`,
     url: `http://127.0.0.1:${port}/api/health`,
     reuseExistingServer: false,
     timeout: 10000,

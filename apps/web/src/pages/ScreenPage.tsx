@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { BoardView } from '../components/BoardView.js';
+import { BgmPlayer, BgmState } from '../components/BgmPlayer.js';
 import { Board, BoardObject, BoardToken, BoardDrop, Combat } from '@cyberpgm/shared';
 
 export const ScreenPage: React.FC = () => {
@@ -16,7 +17,9 @@ export const ScreenPage: React.FC = () => {
     objects?: BoardObject[];
     tokens?: BoardToken[];
     drops?: BoardDrop[];
-    background_image_path?: string | null;
+    background_image_id?: string | null;
+    portraits?: Array<{ character_id: string; name: string; image_id: string; x: number; y: number; scale: number; flip: boolean; z: number; show_name: boolean }>;
+    bgm?: BgmState | null;
     tv_handout?: {
       id: string;
       title: string;
@@ -334,26 +337,58 @@ export const ScreenPage: React.FC = () => {
               isScreen={true}
               style={{ width: '100%', height: '100%' }}
             />
-          ) : screenData?.background_image_path ? (
+          ) : screenData?.background_image_id || (screenData?.portraits?.length ?? 0) > 0 ? (
             <div
-              style={{
-                width: '100%',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#000',
-              }}
+              data-testid="screen-stage"
+              style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: '#000', overflow: 'hidden' }}
             >
-              <img
-                src={screenData.background_image_path}
-                alt="Scene Background"
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  objectFit: 'contain',
-                }}
-              />
+              {screenData?.background_image_id && (
+                <img
+                  src={`/api/images/${screenData.background_image_id}`}
+                  alt=""
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              )}
+              {(screenData?.portraits ?? []).map((p, i) => (
+                <div
+                  key={`${p.character_id}-${i}`}
+                  data-testid="screen-portrait"
+                  style={{
+                    position: 'absolute',
+                    left: `${p.x * 100}%`,
+                    top: `${p.y * 100}%`,
+                    height: `${70 * p.scale}%`,
+                    transform: 'translate(-50%, -100%)',
+                    zIndex: p.z,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                  }}
+                >
+                  <img
+                    src={`/api/images/${p.image_id}`}
+                    alt={p.name}
+                    style={{ height: '100%', transform: `scaleX(${p.flip ? -1 : 1})` }}
+                  />
+                  {p.show_name && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        bottom: '4%',
+                        padding: '4px 14px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                        borderRadius: '4px',
+                        fontFamily: 'var(--font-display)',
+                        fontWeight: 700,
+                        fontSize: '1.3rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {p.name}
+                    </span>
+                  )}
+                </div>
+              ))}
             </div>
           ) : (
             <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '48px' }}>
@@ -361,6 +396,8 @@ export const ScreenPage: React.FC = () => {
               <p style={{ fontSize: '0.9rem' }}>GMからの投影をお待ちください</p>
             </div>
           )}
+
+          <BgmPlayer bgm={screenData?.bgm ?? null} />
 
           {/* Floating TV Handout Card */}
           {screenData?.tv_handout && (

@@ -24,7 +24,11 @@ test('Item notes: shop detail shows drafts, GM edits them, and the combat card s
   await page.goto('/gm');
   await page.getByRole('button', { name: '商店' }).first().click();
   await page.getByTestId('item-search-input').fill('Heavy Pistol');
-  await page.locator('[data-testid^="item-card-"]').filter({ hasText: 'Heavy Pistol' }).filter({ hasText: '3d6 · ROF 2' }).first().click();
+  // 検索結果が出そろうのを待ってから押す（入力中は一覧が描き直される）
+  const card = page.locator('[data-testid^="item-card-"]').filter({ hasText: 'Heavy Pistol' }).filter({ hasText: '3d6 · ROF 2' }).first();
+  await expect(card).toBeVisible();
+  await expect(page.getByText(/検索結果: \d+ 件/)).toBeVisible();
+  await card.click({ timeout: 10000 });
 
   const notes = page.getByTestId('item-detail-panel').getByTestId('item-notes');
   await expect(notes.getByText('隠して持てる。')).toBeVisible();

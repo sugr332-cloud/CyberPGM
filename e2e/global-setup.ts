@@ -16,7 +16,7 @@ export default async function globalSetup() {
   for (const t of [
     'story_checks', 'session_log', 'scenario_sessions', 'combat_log', 'combat_participants', 'combats',
     'board_drops', 'board_tokens', 'board_objects', 'boards', 'transactions', 'money_log', 'char_log',
-    'character_submissions', 'devices', 'saves', 'characters',
+    'character_submissions', 'devices', 'saves', 'characters', 'shop_stock', 'shops',
   ]) {
     sqlite.prepare(`DELETE FROM ${t}`).run();
   }

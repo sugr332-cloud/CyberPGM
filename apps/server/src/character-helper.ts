@@ -23,6 +23,7 @@ export function formatCharacterRow(row: typeof characters.$inferSelect, imagePat
     name: row.name,
     role: row.role,
     image_id: row.image_id,
+    portrait_image_id: row.portrait_image_id,
     image_path: imagePath ?? null,
     stats: JSON.parse(row.stats) as CharacterStats,
     skills: JSON.parse(row.skills) as Record<string, number>,

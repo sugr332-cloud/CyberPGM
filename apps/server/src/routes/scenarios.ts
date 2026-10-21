@@ -17,6 +17,8 @@ import { z } from 'zod';
 import {
   generateUlid,
   ScenarioFullSchema,
+  SceneStageSchema,
+  SceneBgmSchema,
   ChoiceOutcomeSchema,
   ChoiceOutcomeKindEnum,
   RandomTableSchema,
@@ -91,6 +93,8 @@ export async function getFullScenario(scenarioId: string): Promise<ScenarioFull 
       ...s,
       npc_ids: JSON.parse(s.npc_ids || '[]'),
       position: JSON.parse(s.position || '{"x":100,"y":100}'),
+      stage: JSON.parse(s.stage || '{}'),
+      bgm: s.bgm ? JSON.parse(s.bgm) : null,
     })),
     links: scLinks,
     choices: scChoices.map((c) => ({
@@ -343,6 +347,8 @@ async function insertScenarioCopy(data: ScenarioFull, title: string): Promise<Sc
         background_image_id: sc.background_image_id || null,
         board_id: sc.board_id || null,
         sort_index: sc.sort_index,
+        stage: JSON.stringify(sc.stage ?? { portraits: [] }),
+        bgm: sc.bgm ? JSON.stringify(sc.bgm) : null,
       })
       .run();
   }
@@ -548,6 +554,8 @@ scenariosRouter.post('/:id/versions/:vid/restore', requireGm, async (c) => {
         background_image_id: sc.background_image_id || null,
         board_id: sc.board_id || null,
         sort_index: sc.sort_index,
+        stage: JSON.stringify(sc.stage ?? { portraits: [] }),
+        bgm: sc.bgm ? JSON.stringify(sc.bgm) : null,
       })
       .run();
   }
@@ -677,6 +685,8 @@ scenariosRouter.post('/:id/scenes', requireGm, async (c) => {
     ...created,
     npc_ids: JSON.parse(created?.npc_ids || '[]'),
     position: JSON.parse(created?.position || '{"x":100,"y":100}'),
+    stage: JSON.parse(created?.stage || '{}'),
+    bgm: created?.bgm ? JSON.parse(created.bgm) : null,
   }, 201);
 });
 
@@ -697,6 +707,19 @@ scenariosRouter.patch('/scenes/:sceneId', requireGm, async (c) => {
   if (body.background_image_id !== undefined) updates.background_image_id = body.background_image_id;
   if (body.board_id !== undefined) updates.board_id = body.board_id;
   if (body.sort_index !== undefined) updates.sort_index = body.sort_index;
+  if (body.stage !== undefined) {
+    const st = SceneStageSchema.safeParse(body.stage);
+    if (!st.success) return c.json({ error: 'Invalid stage', details: st.error.issues }, 400);
+    updates.stage = JSON.stringify(st.data);
+  }
+  if (body.bgm !== undefined) {
+    if (body.bgm === null) updates.bgm = null;
+    else {
+      const bg = SceneBgmSchema.safeParse(body.bgm);
+      if (!bg.success) return c.json({ error: 'Invalid bgm', details: bg.error.issues }, 400);
+      updates.bgm = JSON.stringify(bg.data);
+    }
+  }
 
   db.update(scenes).set(updates).where(eq(scenes.id, sceneId)).run();
   db.update(scenarios).set({ updated_at: Date.now() }).where(eq(scenarios.id, existing.scenario_id)).run();
@@ -706,6 +729,8 @@ scenariosRouter.patch('/scenes/:sceneId', requireGm, async (c) => {
     ...updated,
     npc_ids: JSON.parse(updated?.npc_ids || '[]'),
     position: JSON.parse(updated?.position || '{"x":100,"y":100}'),
+    stage: JSON.parse(updated?.stage || '{}'),
+    bgm: updated?.bgm ? JSON.parse(updated.bgm) : null,
   });
 });
 

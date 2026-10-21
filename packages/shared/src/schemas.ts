@@ -51,6 +51,7 @@ export const CharacterSchema = z.object({
   name: z.string().min(1),
   role: z.string().min(1),
   image_id: z.string().nullable().optional(),
+  portrait_image_id: z.string().nullable().optional(), // 立ち絵（Phase 5e）
   stats: CharacterStatsSchema,
   skills: z.record(z.string(), z.number().int().min(0)),
   hp: z.number().int(),
@@ -77,6 +78,7 @@ export const CharacterCreateInputSchema = CharacterSchema.omit({
 }).partial({
   kind: true,
   image_id: true,
+  portrait_image_id: true,
   skills: true,
   sp_head: true,
   sp_body: true,

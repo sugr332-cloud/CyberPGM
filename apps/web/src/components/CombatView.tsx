@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { api } from '../api.js';
+import { api, gmFetch } from '../api.js';
 import {
   Combat,
   CombatParticipant,
@@ -24,6 +24,7 @@ import {
 } from '@cyberpgm/rules';
 import { BoardView } from './BoardView.js';
 import { ItemNotes } from './ItemNotes.js';
+import { JoinCombatDialog } from './JoinCombatDialog.js';
 
 interface CombatViewProps {
   characters: CharacterSheet[];
@@ -43,6 +44,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [combat, setCombat] = useState<Combat | null>(null);
   // 参加者カードの詳細と、品目の性能・効果・フレーバーの窓（GM のみ。SPEC §5.1、Phase 5c）
   const [expandedParticipantId, setExpandedParticipantId] = useState<string | null>(null);
+  const [showJoinDialog, setShowJoinDialog] = useState(false);
+  const handleLeave = async (participantId: string) => {
+    if (!combat) return;
+    await gmFetch(`/api/combats/${combat.id}/participants/${participantId}/leave`, { method: 'POST' });
+    refreshCombat();
+  };
   const [itemPopup, setItemPopup] = useState<{ name: string; item: any | null } | null>(null);
   const openItemPopup = async (name: string, itemId?: string | null) => {
     if (!itemId) {
@@ -1335,6 +1342,21 @@ export const CombatView: React.FC<CombatViewProps> = ({
               }}
             >
               取り消す
+            </button>
+            <button
+              onClick={() => setShowJoinDialog(true)}
+              style={{
+                backgroundColor: 'var(--color-surface-elevated)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text)',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              参加者を足す
             </button>
             <button
               onClick={handleNextTurn}
@@ -2637,6 +2659,16 @@ export const CombatView: React.FC<CombatViewProps> = ({
         </div>
       </div>
 
+      {showJoinDialog && combat && (
+        <JoinCombatDialog
+          combatId={combat.id}
+          characters={characters}
+          joinedCharacterIds={combat.participants.map((p) => p.character_id).filter((id): id is string => !!id)}
+          onClose={() => setShowJoinDialog(false)}
+          onJoined={refreshCombat}
+        />
+      )}
+
       {itemPopup && (
         <div
           data-testid="item-popup"
@@ -2845,6 +2877,18 @@ export const CombatView: React.FC<CombatViewProps> = ({
             {textWeapons.map((w) => itemRow(`w-${w}`, w, null))}
             {cyberware.length > 0 && <div style={{ color: 'var(--color-text-muted)' }}>サイバーウェア</div>}
             {cyberware.map((cw, idx) => itemRow(`cw-${idx}`, cw.name, cw.item_id))}
+            {!p.out && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm(`${p.name} を退場させますか？（取り消しで戻せます）`)) handleLeave(p.id);
+                }}
+                style={{ alignSelf: 'flex-end', padding: '3px 8px', borderRadius: '3px', border: '1px solid var(--color-danger)', background: 'none', color: 'var(--color-danger)', fontSize: '0.75rem', cursor: 'pointer' }}
+              >
+                退場させる
+              </button>
+            )}
           </div>
         )}
       </div>

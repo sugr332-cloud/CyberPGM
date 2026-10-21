@@ -21,6 +21,7 @@ import { CombatView } from '../components/CombatView.js';
 import { ScenarioMakerView } from '../components/ScenarioMakerView.js';
 import { ScenarioPlayView } from '../components/ScenarioPlayView.js';
 import { ResumeQrPanel } from '../components/ResumeQrPanel.js';
+import { PortraitPicker } from '../components/PortraitPicker.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -95,6 +96,7 @@ export const GmPage: React.FC = () => {
   const [pcFormSpHead, setPcFormSpHead] = useState('7');
   const [pcFormSpBody, setPcFormSpBody] = useState('7');
   const [pcFormEb, setPcFormEb] = useState('1000');
+  const [pcFormPortrait, setPcFormPortrait] = useState<string | null>(null);
 
   const handleOpenAddPc = () => {
     setEditingPc(null);
@@ -104,6 +106,7 @@ export const GmPage: React.FC = () => {
     setPcFormSpHead('7');
     setPcFormSpBody('7');
     setPcFormEb('1000');
+    setPcFormPortrait(null);
     setShowPcModal(true);
   };
 
@@ -115,6 +118,7 @@ export const GmPage: React.FC = () => {
     setPcFormSpHead(String(pc.sp_head));
     setPcFormSpBody(String(pc.sp_body));
     setPcFormEb(String(pc.eb));
+    setPcFormPortrait(pc.portrait_image_id ?? null);
     setShowPcModal(true);
   };
 
@@ -137,6 +141,7 @@ export const GmPage: React.FC = () => {
           sp_head: spHVal,
           sp_body: spBVal,
           eb: ebVal,
+          portrait_image_id: pcFormPortrait,
         });
       } else {
         await api.createCharacter({
@@ -147,6 +152,7 @@ export const GmPage: React.FC = () => {
           sp_head: spHVal,
           sp_body: spBVal,
           eb: ebVal,
+          portrait_image_id: pcFormPortrait,
           stats: { int: 6, ref: 6, dex: 6, tech: 6, cool: 6, will: 6, luck: 5, move: 6, body: 6, emp: 6 },
           skills: { handgun: 4, evasion: 4, perception: 4 },
           humanity: 60,
@@ -1892,6 +1898,11 @@ export const GmPage: React.FC = () => {
               >
                 ✕
               </button>
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>立ち絵（表示ウィンドウに出す絵）</label>
+              <PortraitPicker value={pcFormPortrait} onChange={setPcFormPortrait} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>

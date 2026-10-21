@@ -28,7 +28,8 @@ import {
   CombatChange,
 } from '@cyberpgm/shared';
 import { resolveCombatAction, WEAPON_NAME_ALIASES } from '../services/combat-resolver.js';
-import { woundState } from '@cyberpgm/rules';
+import { woundState, initiativeTotal } from '@cyberpgm/rules';
+import { randomInt } from 'node:crypto';
 
 export const combatRoutes = new Hono();
 
@@ -500,6 +501,128 @@ combatRoutes.post('/combats/:id/participants', requireGm, async (c) => {
   sessionManager.broadcastCombatUpdate(updated);
 
   return c.json({ combat: updated }, 201);
+});
+
+/**
+ * POST /api/combats/:id/join: 戦闘中に参加者を足す（Phase 5e）。
+ * 行動順に差し込み（今の手番の人は変えない）、盤面があれば選んだマスにコマを置く。取り消せる。
+ * body: { character_id, side, count?, rolls?: Array<{ first, extra? }>, positions?: Array<{ x, y }> }
+ *  - rolls: 足す人ごとのイニシアチブの出目（PC は GM かスマホの出目を入れる）。ない人はアプリで振る（NPC の自動ロールと同じ。SPEC §5.1）
+ */
+combatRoutes.post('/combats/:id/join', requireGm, async (c) => {
+  const combatId = c.req.param('id')!;
+  const body = await c.req.json();
+  const cb = db.select().from(combats).where(eq(combats.id, combatId)).get();
+  if (!cb) return c.json({ error: 'Combat not found' }, 404);
+  const baseChar = body.character_id ? db.select().from(characters).where(eq(characters.id, body.character_id)).get() : null;
+  if (!baseChar) return c.json({ error: 'Character not found' }, 404);
+  const side = body.side === 'ally' ? 'ally' : 'enemy';
+  const count = Math.max(1, Math.min(20, Number(body.count) || 1));
+  const rolls: Array<{ first: number; extra?: number } | undefined> = Array.isArray(body.rolls) ? body.rolls : [];
+  const positions: Array<{ x: number; y: number } | undefined> = Array.isArray(body.positions) ? body.positions : [];
+
+  const before = db.select().from(combat_participants).where(eq(combat_participants.combat_id, combatId)).all();
+  const currentActorId = before.slice().sort((a, b) => a.order_index - b.order_index)[cb.turn_index]?.id ?? null;
+  const roll = () => randomInt(1, 11);
+
+  const result = sqlite.transaction(() => {
+    const createdCharIds = addCombatParticipants(combatId, { character_id: baseChar.id, name: baseChar.name, side, count });
+    const after = db.select().from(combat_participants).where(eq(combat_participants.combat_id, combatId)).all();
+    const added = after.filter((p) => !before.some((b) => b.id === p.id));
+    const tokenIds: string[] = [];
+
+    added.forEach((p, i) => {
+      const ch = p.character_id ? db.select().from(characters).where(eq(characters.id, p.character_id)).get() : null;
+      const ref = ch ? (JSON.parse(ch.stats).ref as number) : 0;
+      const given = rolls[i];
+      const first = given?.first ?? roll();
+      let extra = given?.extra;
+      if (!given && (first === 10 || first === 1)) extra = roll();
+      if (given && (first === 10 || first === 1) && extra === undefined) {
+        throw new Error('出目 10 か 1 のときは追加の出目も入れてください');
+      }
+      const total = initiativeTotal(ref, first, extra).total;
+      sqlite
+        .prepare('UPDATE combat_participants SET initiative = ?, initiative_roll = ? WHERE id = ?')
+        .run(total, JSON.stringify({ first, extra, total, auto: !given }), p.id);
+      const pos = positions[i];
+      if (pos && cb.board_id && p.character_id) {
+        const tokenId = generateUlid();
+        sqlite
+          .prepare('INSERT INTO board_tokens (id, board_id, character_id, x, y, gm_only) VALUES (?, ?, ?, ?, ?, 0)')
+          .run(tokenId, cb.board_id, p.character_id, pos.x, pos.y);
+        tokenIds.push(tokenId);
+      }
+    });
+
+    // 行動順を並べ直す（イニシアチブの高い順。同じなら REF、それも同じなら元の順）。今の手番の人を指したままにする
+    const all = db.select().from(combat_participants).where(eq(combat_participants.combat_id, combatId)).all();
+    const refOf = (p: (typeof all)[number]) => {
+      const ch = p.character_id ? db.select().from(characters).where(eq(characters.id, p.character_id)).get() : null;
+      return ch ? (JSON.parse(ch.stats).ref as number) : 0;
+    };
+    const sorted = all.slice().sort((a, b) => b.initiative - a.initiative || refOf(b) - refOf(a) || a.order_index - b.order_index);
+    sorted.forEach((p, idx) => sqlite.prepare('UPDATE combat_participants SET order_index = ? WHERE id = ?').run(idx, p.id));
+    const newTurnIndex = currentActorId ? sorted.findIndex((p) => p.id === currentActorId) : cb.turn_index;
+    sqlite.prepare('UPDATE combats SET turn_index = ? WHERE id = ?').run(Math.max(0, newTurnIndex), combatId);
+
+    const change: CombatChange = {
+      target_id: combatId,
+      target_name: baseChar.name,
+      field: 'participant_join',
+      before: { order: before.map((p) => ({ id: p.id, order_index: p.order_index })), turn_index: cb.turn_index },
+      after: {
+        participant_ids: added.map((p) => p.id),
+        created_character_ids: createdCharIds.filter((id): id is string => !!id && id !== baseChar.id),
+        token_ids: tokenIds,
+      },
+      desc: `途中参加: ${added.map((p) => p.name).join('、')}`,
+    };
+    sqlite
+      .prepare(
+        `INSERT INTO combat_log (id, combat_id, round, actor_id, action_key, input, breakdown, changes, undone, at)
+         VALUES (?, ?, ?, ?, 'join', ?, '{}', ?, 0, ?)`,
+      )
+      .run(generateUlid(), combatId, cb.round, added[0]?.id ?? combatId, JSON.stringify(body), JSON.stringify([change]), Date.now());
+    return added.map((p) => p.id);
+  });
+
+  let addedIds: string[];
+  try {
+    addedIds = result();
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+  const updated = getHydratedCombat(combatId);
+  sessionManager.broadcastCombatUpdate(updated);
+  if (updated?.board_id) sessionManager.broadcastBoardUpdate({ id: updated.board_id });
+  sessionManager.broadcastScreenUpdate();
+  return c.json({ combat: updated, added_participant_ids: addedIds }, 201);
+});
+
+/**
+ * POST /api/combats/:id/participants/:pid/leave: 退場させる（逃げた・離脱した）。グレーにして手番を飛ばす。取り消せる
+ */
+combatRoutes.post('/combats/:id/participants/:pid/leave', requireGm, async (c) => {
+  const combatId = c.req.param('id')!;
+  const pid = c.req.param('pid')!;
+  const cb = db.select().from(combats).where(eq(combats.id, combatId)).get();
+  const part = db.select().from(combat_participants).where(eq(combat_participants.id, pid)).get();
+  if (!cb || !part || part.combat_id !== combatId) return c.json({ error: 'Participant not found' }, 404);
+  const change: CombatChange = { target_id: pid, target_name: part.name, field: 'out', before: !!part.out, after: true, desc: `退場: ${part.name}` };
+  sqlite.transaction(() => {
+    sqlite.prepare('UPDATE combat_participants SET out = 1 WHERE id = ?').run(pid);
+    sqlite
+      .prepare(
+        `INSERT INTO combat_log (id, combat_id, round, actor_id, action_key, input, breakdown, changes, undone, at)
+         VALUES (?, ?, ?, ?, 'leave', '{}', '{}', ?, 0, ?)`,
+      )
+      .run(generateUlid(), combatId, cb.round, pid, JSON.stringify([change]), Date.now());
+  })();
+  const updated = getHydratedCombat(combatId);
+  sessionManager.broadcastCombatUpdate(updated);
+  sessionManager.broadcastScreenUpdate();
+  return c.json({ combat: updated });
 });
 
 /**
@@ -1058,6 +1181,14 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
         sqlite
           .prepare('UPDATE board_objects SET cover_hp = ?, blocks_los = ? WHERE id = ?')
           .run(cov.cover_hp, cov.blocks_los, ch.target_id);
+      } else if (ch.field === 'participant_join') {
+        const b = ch.before as { order: Array<{ id: string; order_index: number }>; turn_index: number };
+        const a = ch.after as { participant_ids: string[]; created_character_ids: string[]; token_ids: string[] };
+        for (const t of a.token_ids) sqlite.prepare('DELETE FROM board_tokens WHERE id = ?').run(t);
+        for (const p of a.participant_ids) sqlite.prepare('DELETE FROM combat_participants WHERE id = ?').run(p);
+        for (const cid of a.created_character_ids) sqlite.prepare('DELETE FROM characters WHERE id = ?').run(cid);
+        for (const o of b.order) sqlite.prepare('UPDATE combat_participants SET order_index = ? WHERE id = ?').run(o.order_index, o.id);
+        sqlite.prepare('UPDATE combats SET turn_index = ? WHERE id = ?').run(b.turn_index, ch.target_id);
       } else if (ch.field === 'board_drop') {
         sqlite.prepare('DELETE FROM board_drops WHERE id = ?').run(ch.target_id);
       } else if (ch.field === 'board_drop_remove') {

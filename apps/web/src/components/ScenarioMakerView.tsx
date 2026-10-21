@@ -12,6 +12,7 @@ import {
   validateRandomTableRanges,
 } from '@cyberpgm/shared';
 import { api } from '../api.js';
+import { SceneBgmField } from './SceneBgmField.js';
 
 interface ScenarioMakerViewProps {
   characters: CharacterSheet[];
@@ -1716,6 +1717,8 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                       {selectedScene.background_image_id ? '背景画像設定済' : '背景画像選択'}
                     </button>
                   </div>
+
+                  <SceneBgmField value={selectedScene.bgm} onChange={(bgm) => handleUpdateActiveSceneField('bgm', bgm)} />
 
                   {/* NPCs selection */}
                   <div style={{ marginBottom: '16px' }}>

@@ -29,7 +29,11 @@ import {
   RevealedData,
   getSkillDef,
   formatSkillName,
+  StagePortrait,
+  SceneStageSchema,
+  SceneBgmSchema,
 } from '@cyberpgm/shared';
+import { z } from 'zod';
 import {
   woundState,
   woundPenalty,
@@ -43,26 +47,59 @@ import { addCombatParticipants } from './combat.js';
 
 export const scenarioPlayRoutes = new Hono();
 
-// In-memory reference for TV story display
-let currentStoryScreen: {
+// 表示ウィンドウ（/screen）のストーリーの状態（Phase 5e）。背景・立ち絵・BGM
+export interface DisplayBgm {
+  audio_id: string;
+  loop: boolean;
+  volume: number;
+  playing: boolean;
+}
+
+export interface StoryScreenState {
   active: boolean;
   scenario_session_id?: string;
+  scene_id?: string | null;
   board_id?: string | null;
-  background_image_path?: string | null;
+  background_image_id?: string | null;
+  portraits: StagePortrait[];
+  bgm: DisplayBgm | null;
+  /** BGM のないシーンに移っても前の曲を流し続ける（GM の設定） */
+  keep_bgm_on_silent_scene: boolean;
   tv_handout?: {
     id: string;
     title: string;
     body: string;
     image_path?: string | null;
   } | null;
-} | null = null;
+}
+
+let currentStoryScreen: StoryScreenState | null = null;
 
 export function getCurrentStoryScreen() {
   return currentStoryScreen;
 }
 
-export function setCurrentStoryScreen(data: typeof currentStoryScreen) {
+export function setCurrentStoryScreen(data: StoryScreenState | null) {
   currentStoryScreen = data;
+}
+
+/** シーンを表示ウィンドウに出す: 背景・保存した立ち絵の配置・BGM（なければ止めるか流し続ける） */
+export function showSceneOnDisplay(sessionId: string, scene: typeof scenes.$inferSelect | null | undefined) {
+  const prev = currentStoryScreen;
+  const sceneBgm = scene?.bgm ? (JSON.parse(scene.bgm) as { audio_id: string; loop: boolean; volume: number }) : null;
+  const keep = prev?.keep_bgm_on_silent_scene ?? false;
+  currentStoryScreen = {
+    active: true,
+    scenario_session_id: sessionId,
+    scene_id: scene?.id ?? null,
+    board_id: scene?.board_id || null,
+    background_image_id: scene?.background_image_id ?? null,
+    portraits: scene ? (JSON.parse(scene.stage || '{}').portraits ?? []) : [],
+    bgm: sceneBgm ? { ...sceneBgm, playing: true } : keep ? (prev?.bgm ?? null) : null,
+    keep_bgm_on_silent_scene: keep,
+    tv_handout: prev?.tv_handout ?? null,
+  };
+  sessionManager.broadcastScreenUpdate();
 }
 
 export function getActiveScenarioSession() {
@@ -218,6 +255,58 @@ scenarioPlayRoutes.get('/scenario-sessions/active', requireGm, async (c) => {
   });
 });
 
+// ==========================================
+// 表示ウィンドウの舞台（背景・立ち絵・BGM。Phase 5e。GM のみ）
+// ==========================================
+
+// GET /api/display: 今の表示ウィンドウの状態
+scenarioPlayRoutes.get('/display', requireGm, (c) => c.json({ display: currentStoryScreen }));
+
+// PUT /api/display/stage: 背景と立ち絵。立ち絵の配置は今のシーンに保存する
+scenarioPlayRoutes.put('/display/stage', requireGm, async (c) => {
+  if (!currentStoryScreen) return c.json({ error: '進行中のシナリオがありません' }, 409);
+  const body = await c.req.json();
+  if (body.background_image_id !== undefined) {
+    currentStoryScreen.background_image_id = body.background_image_id || null;
+  }
+  if (body.portraits !== undefined) {
+    const parsed = SceneStageSchema.safeParse({ portraits: body.portraits });
+    if (!parsed.success) return c.json({ error: 'Invalid portraits', details: parsed.error.issues }, 400);
+    currentStoryScreen.portraits = parsed.data.portraits;
+    if (currentStoryScreen.scene_id) {
+      db.update(scenes).set({ stage: JSON.stringify(parsed.data) }).where(eq(scenes.id, currentStoryScreen.scene_id)).run();
+    }
+  }
+  sessionManager.broadcastScreenUpdate();
+  return c.json({ display: currentStoryScreen });
+});
+
+// PUT /api/display/bgm: その場の曲・再生・停止・音量（シーンの設定は変えない）
+scenarioPlayRoutes.put('/display/bgm', requireGm, async (c) => {
+  if (!currentStoryScreen) return c.json({ error: '進行中のシナリオがありません' }, 409);
+  const body = await c.req.json();
+  if (body.audio_id === null) {
+    currentStoryScreen.bgm = null;
+  } else {
+    const parsed = SceneBgmSchema.extend({ playing: z.boolean().default(true) }).safeParse({
+      ...(currentStoryScreen.bgm ?? {}),
+      ...body,
+    });
+    if (!parsed.success) return c.json({ error: 'Invalid bgm', details: parsed.error.issues }, 400);
+    currentStoryScreen.bgm = parsed.data;
+  }
+  sessionManager.broadcastScreenUpdate();
+  return c.json({ display: currentStoryScreen });
+});
+
+// PUT /api/display/settings: BGM のないシーンで前の曲を流し続けるか
+scenarioPlayRoutes.put('/display/settings', requireGm, async (c) => {
+  if (!currentStoryScreen) return c.json({ error: '進行中のシナリオがありません' }, 409);
+  const body = await c.req.json();
+  if (typeof body.keep_bgm_on_silent_scene === 'boolean') currentStoryScreen.keep_bgm_on_silent_scene = body.keep_bgm_on_silent_scene;
+  return c.json({ display: currentStoryScreen });
+});
+
 // POST /api/scenario-sessions/start: Start play session
 scenarioPlayRoutes.post('/scenario-sessions/start', requireGm, async (c) => {
   const body = await c.req.json();
@@ -273,24 +362,7 @@ scenarioPlayRoutes.post('/scenario-sessions/start', requireGm, async (c) => {
     scene_id: sceneId,
   });
 
-  // Setup screen provider
-  let bgPath: string | null = null;
-  if (scene?.background_image_id) {
-    const img = db.select().from(images).where(eq(images.id, scene.background_image_id)).get();
-    if (img && img.visibility !== 'gm') {
-      bgPath = img.path;
-    }
-  }
-
-  setCurrentStoryScreen({
-    active: true,
-    scenario_session_id: sessionId,
-    board_id: scene?.board_id || null,
-    background_image_path: bgPath,
-    tv_handout: null,
-  });
-
-  sessionManager.broadcastScreenUpdate();
+  showSceneOnDisplay(sessionId, scene);
 
   return c.json({
     success: true,
@@ -322,23 +394,7 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/move-scene', requireGm, async (c
 
   logToActiveSession('scene', `シーン移動: ${targetScene.title}`, { scene_id });
 
-  let bgPath: string | null = null;
-  if (targetScene.background_image_id) {
-    const img = db.select().from(images).where(eq(images.id, targetScene.background_image_id)).get();
-    if (img && img.visibility !== 'gm') {
-      bgPath = img.path;
-    }
-  }
-
-  setCurrentStoryScreen({
-    active: true,
-    scenario_session_id: sessionId,
-    board_id: targetScene.board_id || null,
-    background_image_path: bgPath,
-    tv_handout: currentStoryScreen?.tv_handout || null,
-  });
-
-  sessionManager.broadcastScreenUpdate();
+  showSceneOnDisplay(sessionId, targetScene);
 
   sessionManager.broadcastStoryChoices(null); // 前のシーンの選択肢を下げる
   return c.json({ success: true, current_scene_id: scene_id });
@@ -390,15 +446,7 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/adhoc-scene', requireGm, async (
 
   logToActiveSession('scene', `臨時シーン追加: ${title}`, { scene_id: newSceneId });
 
-  setCurrentStoryScreen({
-    active: true,
-    scenario_session_id: sessionId,
-    board_id: null,
-    background_image_path: null,
-    tv_handout: currentStoryScreen?.tv_handout || null,
-  });
-
-  sessionManager.broadcastScreenUpdate();
+  showSceneOnDisplay(sessionId, db.select().from(scenes).where(eq(scenes.id, newSceneId)).get());
 
   return c.json({ success: true, sceneId: newSceneId, title }, 201);
 });
@@ -603,7 +651,7 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/project-image', requireGm, async
 
   if (target === 'tv' || target === 'all') {
     if (currentStoryScreen) {
-      currentStoryScreen.background_image_path = targetPath;
+      currentStoryScreen.background_image_id = image_id ?? null;
       sessionManager.broadcastScreenUpdate();
     }
   }
