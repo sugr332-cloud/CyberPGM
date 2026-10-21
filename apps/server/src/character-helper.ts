@@ -141,7 +141,7 @@ export function calculateCharacterSheet(char: Character): CharacterSheet {
     pilot_air_vehicle: 'ref',
     pilot_sea_vehicle: 'ref',
     riding: 'ref',
-    play_instrument: 'emp',
+    play_instrument: 'tech', // 〈演奏〉は【技術】（日本語版 p.139）
     dance: 'dex',
     forgery: 'tech',
     paint_draw_sculpt: 'tech',

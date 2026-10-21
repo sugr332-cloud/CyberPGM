@@ -31,8 +31,8 @@ describe('generateSkillCatalog', () => {
     expect(paramedic?.multiplier).toBe(2);
     expect(paramedic?.provisional).toBe(false);
 
-    // 公式の日本語版に出てこない技能は仮の名前のまま
-    expect(catalog.find((s) => s.key === 'riding')?.provisional).toBe(true);
+    expect(catalog.find((s) => s.key === 'riding')?.name).toBe('騎乗');
+    expect(catalog.every((s) => !s.provisional)).toBe(true);
     expect(catalog.every((s) => /[^\x00-\x7f]/.test(s.name))).toBe(true);
   });
 });
