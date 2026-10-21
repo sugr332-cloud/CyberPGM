@@ -108,7 +108,7 @@ export const PlayerPage: React.FC = () => {
 
   // Dice pad state
   const [showDicePad, setShowDicePad] = useState(false);
-  const [padRollType, setPadRollType] = useState<'initiative' | 'attack' | 'defense'>('attack');
+  const [padRollType, setPadRollType] = useState<'initiative' | 'attack' | 'defense' | 'death_save'>('attack');
   const [padFirstRoll, setPadFirstRoll] = useState<number | null>(null);
   const [padExtraRoll, setPadExtraRoll] = useState<number | null>(null);
   const [needsExtraRoll, setNeedsExtraRoll] = useState(false);
@@ -123,6 +123,9 @@ export const PlayerPage: React.FC = () => {
       setSheet(payload as CharacterSheet);
     } else if (type === 'player-shop:update' || type === 'purchase-request:update') {
       setShopRefreshKey((k) => k + 1);
+    } else if (type === 'combat:changed') {
+      // 戦闘の準備・HP・参加者の変化（Phase 5l）
+      api.getCurrentCombat(token).then((res) => setCurrentCombat(res.combat)).catch(() => {});
     } else if (type === 'combat:turn') {
       const p = payload as any;
       setCombatTurnInfo(p);
@@ -696,6 +699,145 @@ export const PlayerPage: React.FC = () => {
   } else if (sheet.woundState === 'seriously') {
     hpBarColor = 'var(--color-warning)';
   }
+
+  // 出目パッド。戦闘準備中（イニシアチブ）と戦闘中の両方で出す
+  const dicePad = showDicePad ? (
+                <div
+                  style={{
+                    backgroundColor: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    marginTop: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                      出目パッド: {chosenActionLabel || padRollType}
+                    </div>
+                    <button
+                      onClick={() => setShowDicePad(false)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--color-text-muted)',
+                        fontSize: '1.1rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  {/* Selected Roll Display */}
+                  <div
+                    style={{
+                      padding: '10px',
+                      backgroundColor: 'var(--color-bg)',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                      fontSize: '1.2rem',
+                      fontWeight: 800,
+                    }}
+                  >
+                    {padFirstRoll !== null ? (
+                      <span>
+                        出目: {padFirstRoll}
+                        {needsExtraRoll && (
+                          <span style={{ color: 'var(--color-warning)', marginLeft: '8px' }}>
+                            {padExtraRoll !== null ? `+ 追加出目 ${padExtraRoll}` : '(追加出目をタップ)'}
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+                        数字をタップして出目を決定
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 10-Key Pad (1 - 10) */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(5, 1fr)',
+                      gap: '8px',
+                    }}
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
+                      const isSelected = (!needsExtraRoll && padFirstRoll === num) || (needsExtraRoll && padExtraRoll === num);
+                      return (
+                        <button
+                          key={num}
+                          onClick={() => {
+                            if (!needsExtraRoll) {
+                              setPadFirstRoll(num);
+                              // 死亡セーブは振り足さない（10 は必ず失敗）
+                              if ((num === 10 || num === 1) && padRollType !== 'death_save') {
+                                setNeedsExtraRoll(true);
+                              } else {
+                                setNeedsExtraRoll(false);
+                                setPadExtraRoll(null);
+                              }
+                            } else {
+                              setPadExtraRoll(num);
+                            }
+                          }}
+                          style={{
+                            height: '52px',
+                            backgroundColor: isSelected ? 'var(--color-ally)' : 'var(--color-surface-elevated)',
+                            color: isSelected ? '#000' : 'var(--color-text)',
+                            border: '1px solid var(--color-border-light)',
+                            borderRadius: '6px',
+                            fontSize: '1.2rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {num}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Submit Roll Button */}
+                  <button
+                    onClick={() => {
+                      if (padFirstRoll === null) return;
+                      sendMessage({
+                        type: 'combat:roll',
+                        payload: {
+                          roll_type: padRollType,
+                          first: padFirstRoll,
+                          extra: padExtraRoll ?? undefined,
+                        },
+                      });
+                      setShowDicePad(false);
+                      setPadFirstRoll(null);
+                      setPadExtraRoll(null);
+                      setNeedsExtraRoll(false);
+                    }}
+                    disabled={padFirstRoll === null || (needsExtraRoll && padExtraRoll === null)}
+                    style={{
+                      padding: '12px',
+                      backgroundColor: 'var(--color-ally)',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontWeight: 800,
+                      fontSize: '1rem',
+                      cursor: padFirstRoll !== null ? 'pointer' : 'not-allowed',
+                      opacity: padFirstRoll !== null ? 1 : 0.5,
+                      marginTop: '6px',
+                    }}
+                  >
+                    GM に出目を送信
+                  </button>
+                </div>
+  ) : null;
 
   return (
     <div
@@ -1714,6 +1856,7 @@ export const PlayerPage: React.FC = () => {
               >
                 イニシアチブの出目を入力
               </button>
+              {dicePad}
             </div>
           ) : (
             /* Active Combat Action Interface */
@@ -1826,7 +1969,7 @@ export const PlayerPage: React.FC = () => {
                         <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>使う武器:</div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                           {myWeapons.length === 0 && (
-                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>武器を持っていません（素手・格闘は「近接攻撃」）</span>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>武器を持っていません（素手なら「格闘（素手）」）</span>
                           )}
                           {myWeapons.map((w) => (
                             <button
@@ -1868,6 +2011,7 @@ export const PlayerPage: React.FC = () => {
                         </button>
 
                         <button
+                          disabled={!rangedWeapon}
                           onClick={() => {
                             setChosenActionLabel('射撃');
                             setPadRollType('attack');
@@ -1889,12 +2033,19 @@ export const PlayerPage: React.FC = () => {
                         >
                           <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>射撃</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                            REF {refVal} + {formatSkillName(rangedSkillKey)} {sk(rangedSkillKey)}
-                            {woundPen !== 0 && ` ${woundPen}`} = {attackBaseRanged} + 1d10
+                            {rangedWeapon ? (
+                              <>
+                                REF {refVal} + {formatSkillName(rangedSkillKey)} {sk(rangedSkillKey)}
+                                {woundPen !== 0 && ` ${woundPen}`} = {attackBaseRanged} + 1d10
+                              </>
+                            ) : (
+                              '射撃武器がありません'
+                            )}
                           </div>
                         </button>
 
                         <button
+                          disabled={!rangedWeapon}
                           onClick={() => {
                             setChosenActionLabel('照準射撃');
                             setPadRollType('attack');
@@ -1916,7 +2067,7 @@ export const PlayerPage: React.FC = () => {
                         >
                           <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>照準射撃</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                            {attackBaseRanged} − 8（狙う分）= {attackBaseRanged - 8} + 1d10
+                            {rangedWeapon ? `${attackBaseRanged} − 8（狙う分）= ${attackBaseRanged - 8} + 1d10` : '射撃武器がありません'}
                           </div>
                         </button>
 
@@ -1951,13 +2102,13 @@ export const PlayerPage: React.FC = () => {
 
                         <button
                           onClick={() => {
-                            setChosenActionLabel('近接攻撃');
+                            setChosenActionLabel(meleeWeapon ? '近接攻撃' : '格闘');
                             setPadRollType('attack');
                             setShowDicePad(true);
                             setPadFirstRoll(null);
                             setPadExtraRoll(null);
                             setNeedsExtraRoll(false);
-                            sendMessage({ type: 'combat:choose', payload: { action_key: 'melee', target_id: attackTargetId ?? undefined, weapon_id: weaponId } });
+                            sendMessage({ type: 'combat:choose', payload: { action_key: meleeWeapon ? 'melee' : 'brawl', target_id: attackTargetId ?? undefined, weapon_id: meleeWeapon ? weaponId : undefined } });
                           }}
                           style={{
                             padding: '12px 10px',
@@ -1969,15 +2120,16 @@ export const PlayerPage: React.FC = () => {
                             cursor: 'pointer',
                           }}
                         >
-                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>近接攻撃</div>
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{meleeWeapon ? '近接攻撃' : '格闘（素手）'}</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                             DEX {dexVal} + {formatSkillName(meleeSkillKey)} {sk(meleeSkillKey)}
                             {woundPen !== 0 && ` ${woundPen}`} = {attackBaseMelee} + 1d10
-                            {meleeWeapon ? '（SP半減）' : '（素手）'}
+                            {meleeWeapon ? '（SP半減）' : ''}
                           </div>
                         </button>
 
                         <button
+                          disabled={!rangedWeapon}
                           onClick={() => {
                             setChosenActionLabel('リロード');
                             sendMessage({ type: 'combat:choose', payload: { action_key: 'reload' } });
@@ -2023,7 +2175,7 @@ export const PlayerPage: React.FC = () => {
                           <button
                             onClick={() => {
                               setChosenActionLabel('死亡セーブ');
-                              setPadRollType('defense');
+                              setPadRollType('death_save'); // GM の死亡セーブ欄に入る（Phase 5l。前は回避の欄に入っていた）
                               setShowDicePad(true);
                               setPadFirstRoll(null);
                               setPadExtraRoll(null);
@@ -2088,142 +2240,7 @@ export const PlayerPage: React.FC = () => {
               })()}
 
               {/* Dice Pad (Single hand optimized) */}
-              {showDicePad && (
-                <div
-                  style={{
-                    backgroundColor: 'var(--color-surface)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px',
-                    marginTop: '8px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                      出目パッド: {chosenActionLabel || padRollType}
-                    </div>
-                    <button
-                      onClick={() => setShowDicePad(false)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--color-text-muted)',
-                        fontSize: '1.1rem',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-
-                  {/* Selected Roll Display */}
-                  <div
-                    style={{
-                      padding: '10px',
-                      backgroundColor: 'var(--color-bg)',
-                      borderRadius: '6px',
-                      textAlign: 'center',
-                      fontSize: '1.2rem',
-                      fontWeight: 800,
-                    }}
-                  >
-                    {padFirstRoll !== null ? (
-                      <span>
-                        出目: {padFirstRoll}
-                        {needsExtraRoll && (
-                          <span style={{ color: 'var(--color-warning)', marginLeft: '8px' }}>
-                            {padExtraRoll !== null ? `+ 追加出目 ${padExtraRoll}` : '(追加出目をタップ)'}
-                          </span>
-                        )}
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
-                        数字をタップして出目を決定
-                      </span>
-                    )}
-                  </div>
-
-                  {/* 10-Key Pad (1 - 10) */}
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(5, 1fr)',
-                      gap: '8px',
-                    }}
-                  >
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
-                      const isSelected = (!needsExtraRoll && padFirstRoll === num) || (needsExtraRoll && padExtraRoll === num);
-                      return (
-                        <button
-                          key={num}
-                          onClick={() => {
-                            if (!needsExtraRoll) {
-                              setPadFirstRoll(num);
-                              if (num === 10 || num === 1) {
-                                setNeedsExtraRoll(true);
-                              } else {
-                                setNeedsExtraRoll(false);
-                                setPadExtraRoll(null);
-                              }
-                            } else {
-                              setPadExtraRoll(num);
-                            }
-                          }}
-                          style={{
-                            height: '52px',
-                            backgroundColor: isSelected ? 'var(--color-ally)' : 'var(--color-surface-elevated)',
-                            color: isSelected ? '#000' : 'var(--color-text)',
-                            border: '1px solid var(--color-border-light)',
-                            borderRadius: '6px',
-                            fontSize: '1.2rem',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {num}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Submit Roll Button */}
-                  <button
-                    onClick={() => {
-                      if (padFirstRoll === null) return;
-                      sendMessage({
-                        type: 'combat:roll',
-                        payload: {
-                          roll_type: padRollType,
-                          first: padFirstRoll,
-                          extra: padExtraRoll ?? undefined,
-                        },
-                      });
-                      setShowDicePad(false);
-                      setPadFirstRoll(null);
-                      setPadExtraRoll(null);
-                      setNeedsExtraRoll(false);
-                    }}
-                    disabled={padFirstRoll === null || (needsExtraRoll && padExtraRoll === null)}
-                    style={{
-                      padding: '12px',
-                      backgroundColor: 'var(--color-ally)',
-                      color: '#000',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontWeight: 800,
-                      fontSize: '1rem',
-                      cursor: padFirstRoll !== null ? 'pointer' : 'not-allowed',
-                      opacity: padFirstRoll !== null ? 1 : 0.5,
-                      marginTop: '6px',
-                    }}
-                  >
-                    GM に出目を送信
-                  </button>
-                </div>
-              )}
+              {dicePad}
             </div>
           )}
           <PlayerActionSkills sheet={sheet} inCombat={!!currentCombat && currentCombat.status !== 'ended'} />

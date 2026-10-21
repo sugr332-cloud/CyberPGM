@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, desc, and, asc } from 'drizzle-orm';
+import { eq, desc, and, asc, isNull } from 'drizzle-orm';
 import { db, sqlite } from '../db/client.js';
 import {
   combats,
@@ -10,6 +10,7 @@ import {
   items,
   weapons,
   rule_constants,
+  scenario_sessions,
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
@@ -289,6 +290,36 @@ combatRoutes.get('/combats/current', async (c) => {
 });
 
 /**
+ * 戦闘の参加者チェックで、最初からチェックを入れておく PC（Phase 5l）。
+ * 進行中のシナリオに入っている PC と、いまスマホでつながっている PC。どれも当てはまらなければ全員（今までどおり）。
+ * 死亡した PC は外す。チェックを外した PC も一覧には残るので、GM が入れ直せる
+ */
+export function pcsInPlay(pcRows: Array<typeof characters.$inferSelect>): Set<string> {
+  const active = db.select().from(scenario_sessions).where(isNull(scenario_sessions.ended_at)).get();
+  const connected = new Set(sessionManager.getConnectedCharacterIds());
+  const alive = pcRows.filter((pc) => !(JSON.parse(pc.status || '[]') as string[]).includes('dead'));
+  const inPlay = alive.filter((pc) => (active && pc.scenario_id === active.scenario_id) || connected.has(pc.id));
+  return new Set((inPlay.length > 0 ? inPlay : alive).map((pc) => pc.id));
+}
+
+/**
+ * スマホから届いたイニシアチブの出目を、準備中の戦闘のその PC の参加者に残す（Phase 5l）
+ */
+export function saveInitiativeRoll(characterId: string, payload: { first?: unknown; extra?: unknown }) {
+  const first = Number(payload.first);
+  if (!Number.isInteger(first) || first < 1 || first > 10) return;
+  const extra = Number(payload.extra);
+  const roll = { first, ...(Number.isInteger(extra) && extra >= 1 && extra <= 10 ? { extra } : {}) };
+  const setup = db.select().from(combats).where(eq(combats.status, 'setup')).orderBy(desc(combats.created_at)).get();
+  if (!setup) return;
+  db.update(combat_participants)
+    .set({ initiative_roll: JSON.stringify(roll) })
+    .where(and(eq(combat_participants.combat_id, setup.id), eq(combat_participants.character_id, characterId)))
+    .run();
+  sessionManager.broadcastCombatUpdate(getHydratedCombat(setup.id));
+}
+
+/**
  * POST /api/combats: Create a new combat (GM only).
  */
 combatRoutes.post('/combats', requireGm, async (c) => {
@@ -326,8 +357,9 @@ combatRoutes.post('/combats', requireGm, async (c) => {
     })
     .run();
 
-  // Automatically add all active PCs as participants in setup
+  // Automatically add all PCs; only those in play start checked (Phase 5l)
   const pcRows = db.select().from(characters).where(eq(characters.kind, 'pc')).all();
+  const inPlay = pcsInPlay(pcRows);
   let order = 0;
   for (const pc of pcRows) {
     db.insert(combat_participants)
@@ -340,7 +372,7 @@ combatRoutes.post('/combats', requireGm, async (c) => {
         initiative: 0,
         initiative_roll: '{}',
         order_index: order++,
-        active: true,
+        active: inPlay.has(pc.id),
         out: false,
         move_used: false,
         action_used: false,
@@ -873,6 +905,10 @@ combatRoutes.patch('/combats/:id', requireGm, async (c) => {
   }
 
   if (body.action === 'start') {
+    // 参加者チェックで外した人は戦闘に入れない（Phase 5l）。あとから「参加者を足す」で入れられる
+    db.delete(combat_participants)
+      .where(and(eq(combat_participants.combat_id, combatId), eq(combat_participants.active, false)))
+      .run();
     updates.status = 'active';
     updates.round = 1;
     updates.turn_index = 0;
@@ -1139,7 +1175,8 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
       characterId: target.character_id,
       title: '被弾通知',
       summary: result.formula,
-      changes: result.changes,
+      // 撃たれた人に関係する変化だけ（相手の弾数・所持品は出さない。Phase 5l）
+      changes: result.changes.filter((ch) => ch.target_id === target.character_id || ch.target_id === target.id),
       is_victim: true,
     });
   }

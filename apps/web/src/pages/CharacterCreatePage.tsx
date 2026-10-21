@@ -111,7 +111,7 @@ export const CharacterCreatePage: React.FC = () => {
         const [methodsRes, notesRes, itemsRes] = await Promise.all([
           api.getCreationMethods(),
           api.getSkillNotes(),
-          api.getItems({ limit: 200 }),
+          api.getItems({ limit: 1000 }), // カタログ全部（200 件だと検索で見つからない品がある。Phase 5l）
         ]);
 
         const activeMethod = methodsRes.methods.find((m) => m.key === methodsRes.active_method) || methodsRes.methods[0] || null;

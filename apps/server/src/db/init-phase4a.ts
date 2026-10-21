@@ -16,6 +16,21 @@ export function initPhase4aData(dbInstance: AppDatabase) {
       .where(eq(rule_constants.key, 'combat_actions'))
       .get();
 
+    // 格闘の説明を差し替える（Phase 5l で計算するようにした。古い「表の確認中」のままの DB だけ）
+    if (existing && existing.value.includes('表の確認中')) {
+      const actionsPath = path.join(root, 'docs/data/combat-actions.ja.json');
+      const parsed = JSON.parse(fs.readFileSync(actionsPath, 'utf-8'));
+      const fresh = ((parsed.actions || parsed) as Array<{ key: string }>).find((a) => a.key === 'brawl');
+      const current = JSON.parse(existing.value) as Array<{ key: string }>;
+      if (fresh) {
+        dbInstance
+          .update(rule_constants)
+          .set({ value: JSON.stringify(current.map((a) => (a.key === 'brawl' ? fresh : a))) })
+          .where(eq(rule_constants.key, 'combat_actions'))
+          .run();
+      }
+    }
+
     if (!existing) {
       const actionsPath = path.join(root, 'docs/data/combat-actions.ja.json');
       if (fs.existsSync(actionsPath)) {

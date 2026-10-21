@@ -64,6 +64,22 @@ export const WEAPON_NAME_ALIASES: Record<string, string> = {
 
 const MOVE_ACTION_KEYS = ['move', 'take_cover'];
 
+// ログ・通知に出す行動の名前（Phase 5l。英語のキーを出さない）
+const ACTION_LABEL: Record<string, string> = {
+  take_cover: '遮蔽に入る',
+  ranged: '射撃',
+  aimed: '照準射撃',
+  autofire: 'オートファイア',
+  suppressive: '制圧射撃',
+  hide: '身を隠す',
+  pickup: '拾う',
+  use_skill: '技能を使う',
+  item_cyberware: 'アイテム・サイバーウェア',
+  first_aid: '応急手当',
+  dodge: '回避',
+  other: 'その他',
+};
+
 /**
  * 1 ターンに使えるアクションの数（Phase 5j）。ふつうは 1。
  * state.actions_per_turn: GM が決めた毎ターンの回数（ボスの 2 回行動など）
@@ -682,7 +698,6 @@ export function resolveCombatAction(
   const unconfirmedKeys = [
     'take_cover',
     'suppressive',
-    'brawl',
     'hide',
     'pickup',
     'use_skill',
@@ -700,7 +715,7 @@ export function resolveCombatAction(
         target_name: actorPart.name,
         field: 'state',
         ...(isMove ? { before: { move_used: actorPart.move_used }, after: { move_used: true } } : useAction(actorPart)),
-        desc: `${actorPart.name} ${isMove ? '移動' : 'アクション'}使用 (${input.action_key})${isMove ? '' : actionCountLabel(actorPart)}`,
+        desc: `${actorPart.name} ${isMove ? '移動' : 'アクション'}使用 (${ACTION_LABEL[input.action_key] ?? input.action_key})${isMove ? '' : actionCountLabel(actorPart)}`,
       },
       ...manualChanges,
     ];
@@ -915,7 +930,7 @@ export function resolveCombatAction(
         target_name: actorPart.name,
         field: 'state',
         ...useAction(actorPart),
-        desc: `${actorPart.name} アクション使用 (${input.action_key})${actionCountLabel(actorPart)}`,
+        desc: `${actorPart.name} アクション使用 (${ACTION_LABEL[input.action_key] ?? input.action_key})${actionCountLabel(actorPart)}`,
       },
     ];
 
@@ -1261,8 +1276,9 @@ export function resolveCombatAction(
     };
   }
 
-  // 7. Melee attack
-  if (input.action_key === 'melee') {
+  // 7. Melee attack（格闘＝素手も同じ計算。Phase 5l）
+  if (input.action_key === 'melee' || input.action_key === 'brawl') {
+    const isBrawl = input.action_key === 'brawl';
     const missing_inputs: string[] = [];
     const actorInventory: InventoryEntry[] = (actorChar.inventory as InventoryEntry[]) || [];
     const invWeapon = input.weapon_entry_id
@@ -1276,7 +1292,12 @@ export function resolveCombatAction(
           )
         : undefined;
     const weaponItemId = invWeapon?.item_id || input.weapon_id;
-    const wData = getWeaponData(weaponItemId || invWeapon?.name);
+    // 格闘は武器なし: 技能は格闘、ダメージは BODY で決まる（4 以下 1d6、5〜6 2d6、7〜10 3d6、11 以上 4d6）、防具は普通に効く
+    const body = actorChar.stats.body;
+    const brawlDice = body <= 4 ? 1 : body <= 6 ? 2 : body <= 10 ? 3 : 4;
+    const wData = isBrawl
+      ? { skill: 'Brawling', damage: `${brawlDice}d6`, ignore_armor_percent: 0 }
+      : getWeaponData(weaponItemId || invWeapon?.name);
     if (!wData) {
       missing_inputs.push('武器を選択してください');
     }
@@ -1353,7 +1374,7 @@ export function resolveCombatAction(
 
     if (missing_inputs.length > 0 || !wData || !targetChar || !targetPart) {
       return {
-        action_key: 'melee',
+        action_key: input.action_key,
         actor_id: actorPart.id,
         actor_name: actorPart.name,
         target_id: targetPart?.id,
@@ -1382,7 +1403,7 @@ export function resolveCombatAction(
     const defTotal = defStat + defSkill + defWoundPen + defD10;
     const isHit = attackTotal > defTotal;
 
-    let formula = `近接攻撃: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''} = ${attackTotal} vs 回避 DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
+    let formula = `${isBrawl ? `格闘 (${wData.damage})` : '近接攻撃'}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''} = ${attackTotal} vs 回避 DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
 
     const changes: CombatChange[] = [
       {
@@ -1390,7 +1411,7 @@ export function resolveCombatAction(
         target_name: actorPart.name,
         field: 'state',
         ...useAction(actorPart),
-        desc: `${actorPart.name} アクション使用 (近接攻撃)${actionCountLabel(actorPart)}`,
+        desc: `${actorPart.name} アクション使用 (${isBrawl ? '格闘' : '近接攻撃'})${actionCountLabel(actorPart)}`,
       },
     ];
 
@@ -1398,7 +1419,7 @@ export function resolveCombatAction(
       if (!input.damage_dice || input.damage_dice.length === 0) {
         missing_inputs.push('ダメージダイスの出目を入力してください');
         return {
-          action_key: 'melee',
+          action_key: input.action_key,
           actor_id: actorPart.id,
           actor_name: actorPart.name,
           target_id: targetPart.id,
@@ -1427,7 +1448,7 @@ export function resolveCombatAction(
         if (input.crit_injury_roll === undefined || input.crit_injury_roll === null) {
           missing_inputs.push('致命傷表 (2d6) の出目を入力してください');
           return {
-            action_key: 'melee',
+            action_key: input.action_key,
             actor_id: actorPart.id,
             actor_name: actorPart.name,
             target_id: targetPart.id,
@@ -1508,7 +1529,7 @@ export function resolveCombatAction(
     }
 
     return {
-      action_key: 'melee',
+      action_key: input.action_key,
       actor_id: actorPart.id,
       actor_name: actorPart.name,
       target_id: targetPart.id,

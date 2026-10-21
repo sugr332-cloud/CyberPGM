@@ -91,6 +91,14 @@ test('Scenario play: publish a choice, player rolls, GM applies, clue reaches th
   await expect(gmPage.getByText('E2E ガンガー #1')).toBeVisible();
   await expect(gmPage.getByText('E2E ガンガー #2')).toBeVisible();
 
+  // スマホ: 再読み込みしなくても「戦闘準備中」が出て、イニシアチブの出目を送れる。GM の欄に入る（Phase 5l）
+  await phone.getByRole('button', { name: '行動' }).click();
+  await expect(phone.getByText('戦闘準備中（参加者チェック）')).toBeVisible();
+  await phone.getByRole('button', { name: 'イニシアチブの出目を入力' }).click();
+  await phone.getByRole('button', { name: '6', exact: true }).click();
+  await phone.getByRole('button', { name: 'GM に出目を送信' }).click();
+  await expect(gmPage.getByTestId('init-input-ヴァイパー')).toHaveValue('6');
+
   await gmContext.close();
   await playerContext.close();
 });
