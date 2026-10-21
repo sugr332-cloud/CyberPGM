@@ -106,6 +106,14 @@ export const import_runs = sqliteTable('import_runs', {
   report: text('report'),
 });
 
+// プレイヤー（人）。パスワードなし。スマホが記録を忘れても、名前を選べば自分のキャラが出る（Phase 5i）
+export const players = sqliteTable('players', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  created_at: integer('created_at').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
 export const characters = sqliteTable('characters', {
   id: text('id').primaryKey(),
   kind: text('kind').notNull().default('pc'),
@@ -128,6 +136,9 @@ export const characters = sqliteTable('characters', {
   crit_injuries: text('crit_injuries').notNull().default('[]'), // JSON
   eb: integer('eb').notNull().default(0),
   notes_gm: text('notes_gm'),
+  player_id: text('player_id').references(() => players.id, { onDelete: 'set null' }), // 持ち主（Phase 5i）
+  // 参加中で未クリアのシナリオ。入っている間は、このシナリオ以外では選べない（Phase 5i）
+  scenario_id: text('scenario_id').references(() => scenarios.id, { onDelete: 'set null' }),
   created_at: integer('created_at').notNull(),
   updated_at: integer('updated_at').notNull(),
 });

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, desc, and, isNull } from 'drizzle-orm';
+import { eq, desc, and, isNull, inArray } from 'drizzle-orm';
 import { db, sqlite } from '../db/client.js';
 import {
   scenarios,
@@ -362,6 +362,15 @@ scenarioPlayRoutes.post('/scenario-sessions/start', requireGm, async (c) => {
     scene_id: sceneId,
   });
 
+  // いまスマホでつながっている PC を、このシナリオに入れる（クリアするまで他のシナリオでは選べない。Phase 5i）
+  const connected = sessionManager.getConnectedCharacterIds();
+  if (connected.length > 0) {
+    db.update(characters)
+      .set({ scenario_id })
+      .where(and(inArray(characters.id, connected), isNull(characters.scenario_id)))
+      .run();
+  }
+
   showSceneOnDisplay(sessionId, scene);
 
   return c.json({
@@ -452,12 +461,9 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/adhoc-scene', requireGm, async (
 });
 
 // POST /api/scenario-sessions/:id/end: End play session
-scenarioPlayRoutes.post('/scenario-sessions/:id/end', requireGm, async (c) => {
-  const sessionId = c.req.param('id')!;
-  const session = db.select().from(scenario_sessions).where(eq(scenario_sessions.id, sessionId)).get();
-  if (!session) {
-    return c.json({ error: 'Session not found' }, 404);
-  }
+// 進行を終える。キャラのシナリオの縛りはそのまま（中断。クリアは /clear）
+export function endScenarioSession(sessionId: string, logText = 'シナリオ進行終了'): number {
+  logToActiveSession('scene', logText);
 
   const now = Date.now();
   db.update(scenario_sessions)
@@ -465,13 +471,22 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/end', requireGm, async (c) => {
     .where(eq(scenario_sessions.id, sessionId))
     .run();
 
-  logToActiveSession('scene', 'シナリオ進行終了');
-
   setCurrentStoryScreen(null);
   sessionManager.broadcastScreenUpdate();
 
   sessionManager.broadcastStoryChoices(null);
-  return c.json({ success: true, ended_at: now });
+  return now;
+}
+
+scenarioPlayRoutes.post('/scenario-sessions/:id/end', requireGm, async (c) => {
+  const sessionId = c.req.param('id')!;
+  const session = db.select().from(scenario_sessions).where(eq(scenario_sessions.id, sessionId)).get();
+  if (!session) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  const ended_at = endScenarioSession(sessionId);
+  return c.json({ success: true, ended_at });
 });
 
 // ==========================================

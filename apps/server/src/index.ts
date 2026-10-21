@@ -35,6 +35,7 @@ import { createDailyBackup } from './config.js';
 import { resolveLanIp, startDualServer } from './net.js';
 import { audioRoutes } from './routes/audio.js';
 import { playerShopRoutes } from './routes/player-shop.js';
+import { playersRoutes } from './routes/players.js';
 
 export const app = new Hono();
 
@@ -67,6 +68,7 @@ app.route('/api/scenarios', scenariosRouter);
 app.route('/api', scenarioPlayRoutes);
 app.route('/api', audioRoutes);
 app.route('/api', playerShopRoutes);
+app.route('/api', playersRoutes);
 
 // Configure session providers
 sessionManager.setCombatProvider(getCurrentCombat);

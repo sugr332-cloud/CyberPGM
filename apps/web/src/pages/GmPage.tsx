@@ -68,6 +68,9 @@ export const GmPage: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   const [characters, setCharacters] = useState<CharacterSheet[]>([]);
+  // キャラの持ち主と、縛られているシナリオの題名（Phase 5i）
+  const [playerList, setPlayerList] = useState<Array<{ id: string; name: string }>>([]);
+  const [scenarioTitles, setScenarioTitles] = useState<Record<string, string>>({});
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [moneyLogs, setMoneyLogs] = useState<MoneyLogEntry[]>([]);
   const [startingFunds, setStartingFunds] = useState<string>('');
@@ -138,6 +141,14 @@ export const GmPage: React.FC = () => {
           })
           .catch(() => {});
       });
+
+    api.getPlayers()
+      .then((res) => setPlayerList(res.players))
+      .catch(() => {});
+
+    api.listScenarios()
+      .then((res) => setScenarioTitles(Object.fromEntries(res.scenarios.map((s) => [s.id, s.title]))))
+      .catch(() => {});
 
     api.getSettings()
       .then((res: { starting_funds: number | null }) => {
@@ -720,7 +731,7 @@ export const GmPage: React.FC = () => {
 
               {/* Starting Funds Setting */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>開始資金:</span>
+                <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>開始資金（シナリオで未設定のとき）:</span>
                 <input
                   type="number"
                   value={startingFunds}
@@ -882,6 +893,59 @@ export const GmPage: React.FC = () => {
                         </button>
                       )}
                     </div>
+
+                    {/* 持ち主と、未クリアのシナリオ（Phase 5i） */}
+                    {pc.kind === 'pc' && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', fontSize: '0.8rem' }}>
+                        <label style={{ color: 'var(--color-text-muted)' }}>
+                          持ち主:{' '}
+                          <select
+                            value={pc.player_id ?? ''}
+                            onChange={async (e) => {
+                              await api.updateCharacter(pc.id, { player_id: e.target.value || null });
+                              refreshAllData();
+                            }}
+                            style={{
+                              backgroundColor: 'var(--color-bg)',
+                              color: 'var(--color-text)',
+                              border: '1px solid var(--color-border)',
+                              borderRadius: '4px',
+                              padding: '2px 4px',
+                            }}
+                          >
+                            <option value="">（なし）</option>
+                            {playerList.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {pc.scenario_id && (
+                          <span style={{ color: 'var(--color-warning)' }}>
+                            「{scenarioTitles[pc.scenario_id] ?? '不明なシナリオ'}」未クリア
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`${pc.name} をこのシナリオから外しますか？ほかのシナリオで選べるようになります。`)) return;
+                                await api.updateCharacter(pc.id, { scenario_id: null });
+                                refreshAllData();
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--color-text-muted)',
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                                marginLeft: '6px',
+                                textDecoration: 'underline',
+                              }}
+                            >
+                              シナリオから外す
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Stats summary: Funds, HP, Humanity */}
                     <div

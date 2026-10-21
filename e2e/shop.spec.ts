@@ -3,6 +3,7 @@ import { createDb } from '../apps/server/src/db/client.js';
 import { devices, items } from '../apps/server/src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import path from 'node:path';
+import { joinAsPlayer } from './join.js';
 
 test('Shop purchase flow: GM purchases Heavy Pistol for Viper, reflected on Player Sheet via me:update and notify', async ({ browser }) => {
   const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
@@ -120,11 +121,7 @@ test('Shop purchase flow: GM purchases Heavy Pistol for Viper, reflected on Play
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
   });
   const playerPage = await playerContext.newPage();
-  await playerPage.goto(`/player?join=${sessionCode}`);
-
-  // Join as Viper
-  await expect(playerPage.getByText('自分のキャラクターを選択:')).toBeVisible();
-  await playerPage.getByRole('button', { name: /ヴァイパー/i }).click();
+  await joinAsPlayer(playerPage, sessionCode, 'ヴァイパー');
 
   // Verify Player Character Sheet
   await expect(playerPage.getByRole('heading', { name: 'ヴァイパー' })).toBeVisible();

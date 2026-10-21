@@ -67,6 +67,8 @@ export const CharacterSchema = z.object({
   crit_injuries: z.array(z.unknown()).default([]),
   eb: z.number().int().default(0),
   notes_gm: z.string().nullable().optional(),
+  player_id: z.string().nullable().optional(), // 持ち主のプレイヤー（Phase 5i）
+  scenario_id: z.string().nullable().optional(), // 参加中で未クリアのシナリオ（Phase 5i）
   created_at: z.number().int(),
   updated_at: z.number().int(),
 });
@@ -95,11 +97,18 @@ export const CharacterUpdateInputSchema = CharacterCreateInputSchema.partial();
 
 export const JoinInputSchema = z.object({
   code: z.string().min(1),
+  player_id: z.string().nullable().optional(), // 指定すると、その人のキャラと持ち主なしのキャラだけを返す（Phase 5i）
 });
 
 export const ClaimInputSchema = z.object({
   code: z.string().min(1),
   character_id: z.string().min(1),
+  player_id: z.string().nullable().optional(), // 持ち主なしのキャラなら、この人のキャラにする（Phase 5i）
+});
+
+export const PlayerCreateInputSchema = z.object({
+  code: z.string().min(1),
+  name: z.string().trim().min(1).max(40),
 });
 
 export const ClaimResolveInputSchema = z.object({
@@ -279,6 +288,11 @@ export const SaveFileSchema = z.object({
   scenario_sessions: z.array(z.unknown()).optional().default([]),
   session_log: z.array(z.unknown()).optional().default([]),
   story_checks: z.array(z.unknown()).optional().default([]),
+  // プレイヤー（人）。Phase 5i より前の保存ファイルにはない
+  players: z
+    .array(z.object({ id: z.string(), name: z.string(), created_at: z.number().int(), updated_at: z.number().int() }))
+    .optional()
+    .default([]),
   // GM が書き換えた品目の効果とフレーバー（Phase 5c。下書きのままのものは入れない）
   item_notes: z
     .array(z.object({ fvtt_id: z.string(), effect_ja: z.string().nullable(), flavor_ja: z.string().nullable() }))

@@ -151,7 +151,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   // End scenario session
   const handleEndSession = async () => {
     if (!activeSession) return;
-    if (!confirm('現在のシナリオ進行を終了しますか？ログは保存されます。')) return;
+    if (!confirm('進行を中断しますか？ログは保存されます。参加キャラはこのシナリオに入ったままで、クリアするまで他のシナリオでは選べません。')) return;
     try {
       await gmFetch(`/api/scenario-sessions/${activeSession.id}/end`, {
         method: 'POST',
@@ -161,6 +161,22 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
       loadInitialData();
     } catch (err: any) {
       setErrorMsg(err.message || '進行終了に失敗しました');
+    }
+  };
+
+  // シナリオをクリアする: 進行を終え、参加キャラの縛りを外す（Phase 5i）
+  const handleClearScenario = async () => {
+    if (!activeSession) return;
+    if (!confirm('シナリオをクリアしますか？進行を終え、参加したキャラは次のシナリオで使えるようになります。')) return;
+    try {
+      const res = await gmFetch(`/api/scenario-sessions/${activeSession.id}/clear`, { method: 'POST' }).then((r) => r.json());
+      if (res.error) throw new Error(res.error);
+      const names = (res.released as Array<{ name: string }>).map((r) => r.name).join('、');
+      setSuccessMsg(names ? `クリアしました（${names}）` : 'クリアしました');
+      setActiveSession(null);
+      loadInitialData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'クリアに失敗しました');
     }
   };
 
@@ -631,6 +647,22 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
           )}
           <button
             type="button"
+            onClick={handleClearScenario}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: 'rgba(126, 226, 168, 0.15)',
+              border: '1px solid var(--color-success)',
+              borderRadius: '4px',
+              color: 'var(--color-success)',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            シナリオクリア
+          </button>
+          <button
+            type="button"
             onClick={handleEndSession}
             style={{
               padding: '6px 12px',
@@ -643,7 +675,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
               cursor: 'pointer',
             }}
           >
-            進行終了
+            中断
           </button>
         </div>
       </div>

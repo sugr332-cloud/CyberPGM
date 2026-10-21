@@ -91,6 +91,15 @@ export class SessionManager {
     }
   }
 
+  /** いまスマホでつながっている PC の ID（シナリオ開始時の縛り用。Phase 5i） */
+  public getConnectedCharacterIds(): string[] {
+    const ids = new Set<string>();
+    for (const client of this.clients) {
+      if (client.role === 'player' && client.characterId) ids.add(client.characterId);
+    }
+    return [...ids];
+  }
+
   public removeClient(ws: WSContext): void {
     for (const client of this.clients) {
       if (client.ws === ws) {

@@ -6,6 +6,7 @@ import { db, sqlite } from '../db/client.js';
 import {
   saves,
   characters,
+  players,
   money_log,
   char_log,
   app_settings,
@@ -122,6 +123,7 @@ export function buildSaveData(name: string): SaveFile {
     savedAt: Date.now(),
     name,
     characters: chars,
+    players: db.select().from(players).all(),
     money_log: moneyLogs,
     char_log: charLogs,
     app_settings: settingsObj,
@@ -333,14 +335,20 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
     sqlite.prepare('DELETE FROM money_log').run();
     sqlite.prepare('DELETE FROM char_log').run();
     sqlite.prepare('DELETE FROM characters').run();
+    sqlite.prepare('DELETE FROM players').run();
+    const insertPlayer = sqlite.prepare('INSERT INTO players (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)');
+    for (const pl of data.players ?? []) {
+      insertPlayer.run(pl.id, pl.name, pl.created_at, pl.updated_at);
+    }
 
     // Insert restored characters
     const insertChar = sqlite.prepare(`
       INSERT INTO characters (
         id, kind, name, role, image_id, stats, skills, hp, hp_max,
         sp_head, sp_body, humanity, emp_max, cyberware, weapons,
-        inventory, status, crit_injuries, eb, notes_gm, created_at, updated_at, portrait_image_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        inventory, status, crit_injuries, eb, notes_gm, created_at, updated_at, portrait_image_id,
+        player_id, scenario_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const ch of data.characters) {
@@ -368,6 +376,8 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
         ch.created_at,
         ch.updated_at,
         (ch as { portrait_image_id?: string | null }).portrait_image_id ?? null,
+        ch.player_id ?? null,
+        null, // scenario_id はシナリオを戻したあとで入れる（下）
       );
     }
 
@@ -830,6 +840,12 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
           typeof ss.revealed === 'string' ? ss.revealed : JSON.stringify(ss.revealed || { clue_ids: [], handout_ids: [] }),
         );
       }
+    }
+
+    // キャラのシナリオの縛り（Phase 5i）。シナリオを入れ直したあとでないと外部キーに引っかかる
+    const setCharScenario = sqlite.prepare('UPDATE characters SET scenario_id = ? WHERE id = ? AND EXISTS (SELECT 1 FROM scenarios WHERE id = ?)');
+    for (const ch of data.characters) {
+      if (ch.scenario_id) setCharScenario.run(ch.scenario_id, ch.id, ch.scenario_id);
     }
 
     if (data.session_log && (data.session_log as any[]).length > 0) {

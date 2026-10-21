@@ -3,6 +3,7 @@ import { createDb } from '../apps/server/src/db/client.js';
 import { characters } from '../apps/server/src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { generateUlid } from '@cyberpgm/shared';
+import { joinAsPlayer } from './join.js';
 
 // Phase 5b §8 E2E: 進行開始 → 選択肢を公開 → スマホで選んで出目 → GM が確定 → 手がかりが「資料」に届き次のシーンへ → エンカウンターから戦闘
 test('Scenario play: publish a choice, player rolls, GM applies, clue reaches the phone, encounter starts combat', async ({ browser, request }) => {
@@ -61,8 +62,7 @@ test('Scenario play: publish a choice, player rolls, GM applies, clue reaches th
   const session = await (await request.get('/api/session', { headers: H })).json();
   const playerContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true });
   const phone = await playerContext.newPage();
-  await phone.goto(`/player?join=${session.code}`);
-  await phone.getByRole('button', { name: /ヴァイパー/ }).click();
+  await joinAsPlayer(phone, session.code, 'ヴァイパー');
   await phone.getByRole('button', { name: '行動' }).click();
   await phone.getByRole('button', { name: /裏口を探す/ }).click();
   await expect(phone.getByText('判定のダイス入力')).toBeVisible();

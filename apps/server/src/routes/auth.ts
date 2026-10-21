@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { characters, devices, images } from '../db/schema.js';
+import { characters, devices, images, players } from '../db/schema.js';
 import {
   registerDevice,
   revokeCharacterDevices,
@@ -14,6 +14,7 @@ import {
   ClaimResolveInputSchema,
 } from '@cyberpgm/shared';
 import { generateUlid } from '@cyberpgm/shared';
+import { activeScenarioId, characterLock } from './players.js';
 
 export const authRoutes = new Hono();
 
@@ -81,7 +82,12 @@ authRoutes.post('/join', async (c) => {
     .where(eq(characters.kind, 'pc'))
     .all();
 
-  const available = allPcs.map((pc) => {
+  // 自分（player_id）のキャラと、持ち主なしのキャラだけにする（Phase 5i）
+  const playerId = parsed.data.player_id ?? null;
+  const visiblePcs = playerId ? allPcs.filter((pc) => pc.player_id === playerId || pc.player_id === null) : allPcs;
+  const activeId = activeScenarioId();
+
+  const available = visiblePcs.map((pc) => {
     let imgPath: string | null = null;
     if (pc.image_id) {
       const img = db.select().from(images).where(eq(images.id, pc.image_id)).get();
@@ -95,6 +101,9 @@ authRoutes.post('/join', async (c) => {
       image_id: pc.image_id,
       image_path: imgPath,
       claimed: claimedIds.has(pc.id),
+      player_id: pc.player_id,
+      scenario_id: pc.scenario_id,
+      ...characterLock(pc.scenario_id, activeId),
     };
   });
 
@@ -132,6 +141,13 @@ authRoutes.post('/claim', async (c) => {
     return c.json({ error: 'This character is not a PC' }, 400);
   }
 
+  // 未クリアのシナリオに入っているキャラは、そのシナリオ以外では選べない（Phase 5i）
+  const activeId = activeScenarioId();
+  const lock = characterLock(char.scenario_id, activeId);
+  if (lock.locked) {
+    return c.json({ error: lock.lock_reason }, 409);
+  }
+
   // Check if character is already claimed by an active device
   const existingDevice = db
     .select()
@@ -141,7 +157,12 @@ authRoutes.post('/claim', async (c) => {
 
   const userAgent = c.req.header('User-Agent') || 'Player Mobile';
 
-  if (existingDevice) {
+  // 持ち主本人なら GM の承認なしで取り直す（別の Wi-Fi でスマホが記録を忘れたとき。Phase 5i）
+  const isOwner = !!char.player_id && parsed.data.player_id === char.player_id;
+
+  if (existingDevice && isOwner) {
+    revokeCharacterDevices(char.id);
+  } else if (existingDevice) {
     // Collision! Request GM permission
     const requestId = generateUlid();
     const allowed = await sessionManager.requestClaim({
@@ -162,6 +183,19 @@ authRoutes.post('/claim', async (c) => {
     revokeCharacterDevices(char.id);
   }
 
+  // 持ち主なしのキャラは、選んだ人のキャラにする。シナリオ進行中なら、そのシナリオに入れる（Phase 5i）
+  const requestedPlayer = parsed.data.player_id
+    ? db.select().from(players).where(eq(players.id, parsed.data.player_id)).get()
+    : undefined;
+  const ownerId = char.player_id ?? requestedPlayer?.id ?? null;
+  const scenarioId = char.scenario_id ?? activeId;
+  if (ownerId !== char.player_id || scenarioId !== char.scenario_id) {
+    db.update(characters)
+      .set({ player_id: ownerId, scenario_id: scenarioId })
+      .where(eq(characters.id, char.id))
+      .run();
+  }
+
   // Register new device
   const { token, deviceId } = registerDevice({
     role: 'player',
@@ -173,6 +207,7 @@ authRoutes.post('/claim', async (c) => {
     token,
     role: 'player',
     character_id: char.id,
+    player_id: ownerId,
     deviceId,
   });
 });

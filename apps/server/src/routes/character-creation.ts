@@ -7,6 +7,8 @@ import {
   characters,
   money_log,
   images,
+  players,
+  scenarios,
 } from '../db/schema.js';
 import { eq, like, desc } from 'drizzle-orm';
 import {
@@ -19,6 +21,7 @@ import {
 import { validateCharacterDraft, hpMaxFromStats } from '@cyberpgm/rules';
 import { requireGm } from '../auth.js';
 import { triggerAutoSave } from './saves.js';
+import { getActiveScenarioSession } from './scenario-play.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -63,7 +66,25 @@ export function getActiveCreationSettings() {
     }
   }
 
-  return { activeKey, activeMethodConfig, startingFunds };
+  // 進行中のシナリオに開始資金があれば、そちらを使う（Phase 5i）
+  let scenarioId: string | null = null;
+  let scenarioTitle: string | null = null;
+  const active = getActiveScenarioSession();
+  if (active) {
+    const sc = db.select().from(scenarios).where(eq(scenarios.id, active.scenario_id)).get();
+    if (sc) {
+      scenarioId = sc.id;
+      scenarioTitle = sc.title;
+      try {
+        const funds = JSON.parse(sc.meta || '{}').starting_funds;
+        if (typeof funds === 'number') startingFunds = funds;
+      } catch {
+        // meta が壊れていれば全体の設定のまま
+      }
+    }
+  }
+
+  return { activeKey, activeMethodConfig, startingFunds, scenarioId, scenarioTitle };
 }
 
 /**
@@ -131,11 +152,12 @@ characterCreationRoutes.get('/creation-methods', async (c) => {
     }
   }
 
-  const { activeKey, startingFunds } = getActiveCreationSettings();
+  const { activeKey, startingFunds, scenarioTitle } = getActiveCreationSettings();
   return c.json({
     methods,
     active_method: activeKey,
     starting_funds: startingFunds,
+    scenario_title: scenarioTitle, // 開始資金がこのシナリオのものなら、その題名（Phase 5i）
   });
 });
 
@@ -282,10 +304,12 @@ characterCreationRoutes.post('/character-submissions', async (c) => {
     }
   }
 
-  const { activeKey, activeMethodConfig, startingFunds } = getActiveCreationSettings();
-  const createdWith = body.created_with || {
-    method: activeKey,
-    starting_funds: startingFunds,
+  const { activeKey, activeMethodConfig, startingFunds, scenarioId } = getActiveCreationSettings();
+  const createdWith = {
+    ...(body.created_with || { method: activeKey, starting_funds: startingFunds }),
+    // 受け付けたキャラの持ち主と、入るシナリオ（Phase 5i）
+    player_id: typeof body.player_id === 'string' ? body.player_id : null,
+    scenario_id: scenarioId,
   };
 
   const validationResults = validateCharacterDraft(
@@ -449,6 +473,16 @@ characterCreationRoutes.post('/character-submissions/:id/accept', requireGm, asy
     static_loss: cw.static_loss ?? 0,
   }));
 
+  // 作った人とシナリオ。消されていたら付けない（Phase 5i）
+  const ownerId =
+    createdWith.player_id && db.select().from(players).where(eq(players.id, createdWith.player_id)).get()
+      ? (createdWith.player_id as string)
+      : null;
+  const scenarioId =
+    createdWith.scenario_id && db.select().from(scenarios).where(eq(scenarios.id, createdWith.scenario_id)).get()
+      ? (createdWith.scenario_id as string)
+      : null;
+
   // Insert character
   db.insert(characters)
     .values({
@@ -472,6 +506,8 @@ characterCreationRoutes.post('/character-submissions/:id/accept', requireGm, asy
       crit_injuries: JSON.stringify([]),
       eb: remainingEb,
       notes_gm: null,
+      player_id: ownerId,
+      scenario_id: scenarioId,
       created_at: now,
       updated_at: now,
     })

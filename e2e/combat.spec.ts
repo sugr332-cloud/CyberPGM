@@ -3,6 +3,7 @@ import { createDb } from '../apps/server/src/db/client.js';
 import { characters } from '../apps/server/src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { generateUlid } from '@cyberpgm/shared';
+import { joinAsPlayer } from './join.js';
 
 test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM Apply, and Undo', async ({ browser }) => {
   const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
@@ -136,9 +137,7 @@ test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM A
   const playerPage = await playerContext.newPage();
 
   // Join as Viper
-  await playerPage.goto(`/player?join=${sessionCode}`);
-  await expect(playerPage.getByText('自分のキャラクターを選択:')).toBeVisible();
-  await playerPage.getByRole('button', { name: /ヴァイパー/i }).click();
+  await joinAsPlayer(playerPage, sessionCode, 'ヴァイパー');
 
   // Switch to Action Tab
   await playerPage.getByRole('button', { name: '行動' }).click();
