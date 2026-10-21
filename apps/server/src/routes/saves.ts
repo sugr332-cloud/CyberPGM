@@ -834,8 +834,8 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
 
     if (data.story_checks && (data.story_checks as any[]).length > 0) {
       const insertCheck = sqlite.prepare(`
-        INSERT INTO story_checks (id, scenario_session_id, scene_id, choice_id, actor_character_id, skill_key, dv, opposed, rolls, result, applied_log_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO story_checks (id, scenario_session_id, scene_id, choice_id, actor_character_id, skill_key, dv, opposed, rolls, result, applied_log_id, action_label)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const sc of data.story_checks as any[]) {
         insertCheck.run(
@@ -850,6 +850,7 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
           typeof sc.rolls === 'string' ? sc.rolls : JSON.stringify(sc.rolls || []),
           sc.result ?? null,
           sc.applied_log_id ?? null,
+          sc.action_label ?? null,
         );
       }
     }

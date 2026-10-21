@@ -19,7 +19,7 @@ import {
   combats,
   combat_participants,
 } from '../db/schema.js';
-import { requireGm } from '../auth.js';
+import { requireGm, requireAuth } from '../auth.js';
 import { sessionManager } from '../session.js';
 import {
   generateUlid,
@@ -39,6 +39,7 @@ import {
   resolveOpposed,
 } from '@cyberpgm/rules';
 import { getHydratedBoard } from './boards.js';
+import { addCombatParticipants } from './combat.js';
 
 export const scenarioPlayRoutes = new Hono();
 
@@ -88,9 +89,9 @@ export function logToActiveSession(
   kind: 'note' | 'scene' | 'check' | 'combat' | 'transaction' | 'money' | 'reveal',
   text: string,
   ref?: Record<string, any>,
-) {
+): string | null {
   const active = getActiveScenarioSession();
-  if (!active) return;
+  if (!active) return null;
 
   const logId = generateUlid();
   const at = Date.now();
@@ -104,10 +105,8 @@ export function logToActiveSession(
       ref: ref ? JSON.stringify(ref) : null,
     })
     .run();
+  return logId;
 }
-
-// In-memory undo snapshots for applied checks
-const checkUndoSnapshots = new Map<string, any>();
 
 // ==========================================
 // 1. Session Lifecycle & Scene Navigation
@@ -545,74 +544,52 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/unreveal', requireGm, async (c) 
   return c.json({ success: true, revealed });
 });
 
-// GET /api/scenario-sessions/:id/revealed: Player endpoint to fetch revealed handouts
-scenarioPlayRoutes.get('/scenario-sessions/:id/revealed', async (c) => {
-  const sessionId = c.req.param('id')!;
-  const session = db.select().from(scenario_sessions).where(eq(scenario_sessions.id, sessionId)).get();
-  if (!session) {
-    return c.json({ error: 'Session not found' }, 404);
-  }
-
-  const revealed: RevealedData = JSON.parse(
-    session.revealed || '{"clue_ids":[],"handout_ids":[]}',
-  );
-
+// 公開済みの手がかり・ハンドアウト（プレイヤーに送る形）。GM のみの画像のパスは入れない
+function buildRevealedPayload(revealed: RevealedData) {
   const cluesList = revealed.clue_ids.length > 0
     ? db.select().from(clues).all().filter((cl) => revealed.clue_ids.includes(cl.id))
     : [];
-
   const handoutsList = revealed.handout_ids.length > 0
     ? db.select().from(handouts).all().filter((h) => revealed.handout_ids.includes(h.id))
     : [];
-
-  return c.json({
-    clues: cluesList,
-    handouts: handoutsList,
+  const imagesMap = new Map<string, string>();
+  for (const img of db.select().from(images).all()) {
+    if (img.visibility !== 'gm') imagesMap.set(img.id, img.path);
+  }
+  const strip = <T extends { image_id: string | null }>(x: T) => ({
+    ...x,
+    image_id: x.image_id && imagesMap.has(x.image_id) ? x.image_id : null,
+    image_path: x.image_id ? imagesMap.get(x.image_id) || null : null,
   });
+  return { clues: cluesList.map(strip), handouts: handoutsList.map(strip) };
+}
+
+// GET /api/scenario-sessions/current/revealed: 進行中のセッションで公開済みのもの（プレイヤーも可）
+scenarioPlayRoutes.get('/scenario-sessions/current/revealed', requireAuth, async (c) => {
+  const active = getActiveScenarioSession();
+  if (!active) return c.json({ clues: [], handouts: [] });
+  return c.json(buildRevealedPayload(active.revealed));
+});
+
+// GET /api/scenario-sessions/:id/revealed
+scenarioPlayRoutes.get('/scenario-sessions/:id/revealed', requireAuth, async (c) => {
+  const session = db.select().from(scenario_sessions).where(eq(scenario_sessions.id, c.req.param('id')!)).get();
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  return c.json(buildRevealedPayload(JSON.parse(session.revealed || '{"clue_ids":[],"handout_ids":[]}')));
 });
 
 function broadcastRevealedHandoutsToPlayers(revealed: RevealedData) {
-  const cluesList = revealed.clue_ids.length > 0
-    ? db.select().from(clues).all().filter((cl) => revealed.clue_ids.includes(cl.id))
-    : [];
-
-  const handoutsList = revealed.handout_ids.length > 0
-    ? db.select().from(handouts).all().filter((h) => revealed.handout_ids.includes(h.id))
-    : [];
-
-  // Enrich with images
-  const allImageIds = [...cluesList.map((c) => c.image_id), ...handoutsList.map((h) => h.image_id)].filter(Boolean) as string[];
-  const imagesMap = new Map<string, string>();
-  if (allImageIds.length > 0) {
-    const imgRows = db.select().from(images).all();
-    for (const img of imgRows) {
-      if (img.visibility !== 'gm') {
-        imagesMap.set(img.id, img.path);
-      }
-    }
-  }
-
-  const payload = {
-    clues: cluesList.map((c) => ({
-      ...c,
-      image_path: c.image_id ? imagesMap.get(c.image_id) || null : null,
-    })),
-    handouts: handoutsList.map((h) => ({
-      ...h,
-      image_path: h.image_id ? imagesMap.get(h.image_id) || null : null,
-    })),
-  };
-
-  sessionManager.broadcastHandouts(payload);
+  sessionManager.broadcastHandouts(buildRevealedPayload(revealed));
 }
 
 // POST /api/scenario-sessions/:id/project-image: Project scene background or art to TV/players
 scenarioPlayRoutes.post('/scenario-sessions/:id/project-image', requireGm, async (c) => {
   const sessionId = c.req.param('id')!;
   const body = await c.req.json();
-  const { image_id, image_path, target } = body; // target: 'tv' | 'players' | 'all'
+  const { image_id, target } = body; // target: 'tv' | 'players' | 'all'
 
-  let targetPath = image_path;
+  // 出す画像は ID で受け取り、visibility を必ず確かめる（パスを直接受け取らない）
+  let targetPath: string | null = null;
   if (image_id) {
     const img = db.select().from(images).where(eq(images.id, image_id)).get();
     if (!img) return c.json({ error: 'Image not found' }, 404);
@@ -724,6 +701,52 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/choices/adhoc', requireGm, async
   }, 201);
 });
 
+// 選択肢の結果を、GM に見せる文に直す（「反映する内容」）
+function describeOutcomes(effects: any[], actorId: string): string[] {
+  const nameOf = (id?: string) => db.select().from(characters).where(eq(characters.id, id || actorId)).get()?.name ?? '—';
+  return effects.map((e) => {
+    switch (e.kind) {
+      case 'next_scene':
+        return `次のシーン: ${db.select().from(scenes).where(eq(scenes.id, e.scene_id)).get()?.title ?? '—'}`;
+      case 'reveal_clue':
+        return `手がかりを公開: ${db.select().from(clues).where(eq(clues.id, e.clue_id)).get()?.title ?? '—'}`;
+      case 'reveal_handout':
+        return `ハンドアウトを公開: ${db.select().from(handouts).where(eq(handouts.id, e.handout_id)).get()?.title ?? '—'}`;
+      case 'hp_change': {
+        const ch = db.select().from(characters).where(eq(characters.id, e.target || actorId)).get();
+        if (!ch) return 'HP の増減: —';
+        const next = Math.max(0, Math.min(ch.hp_max, ch.hp + (Number(e.amount) || 0)));
+        return `${ch.name} HP ${ch.hp} → ${next}`;
+      }
+      case 'add_status':
+        return `${nameOf(e.target)} に状態「${e.status}」`;
+      case 'get_item':
+        return `${nameOf(e.target)} が「${e.item_name}」を${e.qty && e.qty > 1 ? ` ${e.qty} 個` : ''}入手`;
+      case 'memo':
+        return `メモ: ${e.text}`;
+      default:
+        return String(e.kind);
+    }
+  });
+}
+
+function hydrateCheck(ch: typeof story_checks.$inferSelect) {
+  const rolls = JSON.parse(ch.rolls || '[]');
+  const opposed = ch.opposed ? JSON.parse(ch.opposed) : null;
+  const choice = ch.choice_id ? db.select().from(scene_choices).where(eq(scene_choices.id, ch.choice_id)).get() : null;
+  const evaluation = evaluateStoryCheck({ ...ch, opposed }, rolls);
+  const effects = choice ? JSON.parse((evaluation.result === 'failure' ? choice.on_failure : choice.on_success) || '[]') : [];
+  return {
+    ...ch,
+    rolls,
+    opposed,
+    choice_label: choice?.label ?? null,
+    evaluation,
+    // 結果が出るまでは成功時の内容を見せ、出たらその結果の内容を見せる
+    preview: describeOutcomes(effects, ch.actor_character_id),
+  };
+}
+
 // GET /api/scenario-sessions/:id/checks: List checks
 scenarioPlayRoutes.get('/scenario-sessions/:id/checks', requireGm, async (c) => {
   const sessionId = c.req.param('id')!;
@@ -732,11 +755,7 @@ scenarioPlayRoutes.get('/scenario-sessions/:id/checks', requireGm, async (c) => 
     .from(story_checks)
     .where(eq(story_checks.scenario_session_id, sessionId))
     .all()
-    .map((ch) => ({
-      ...ch,
-      rolls: JSON.parse(ch.rolls || '[]'),
-      opposed: ch.opposed ? JSON.parse(ch.opposed) : null,
-    }));
+    .map(hydrateCheck);
 
   return c.json({ checks: rows });
 });
@@ -745,7 +764,7 @@ scenarioPlayRoutes.get('/scenario-sessions/:id/checks', requireGm, async (c) => 
 scenarioPlayRoutes.post('/scenario-sessions/:id/checks', requireGm, async (c) => {
   const sessionId = c.req.param('id')!;
   const body = await c.req.json();
-  const { actor_character_ids, choice_id, skill_key, dv, opposed } = body;
+  const { actor_character_ids, choice_id, skill_key, dv, opposed, action_label } = body;
 
   const session = db.select().from(scenario_sessions).where(eq(scenario_sessions.id, sessionId)).get();
   if (!session) {
@@ -754,6 +773,10 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks', requireGm, async (c) =>
 
   const charIds = Array.isArray(actor_character_ids) ? actor_character_ids : [body.actor_character_id];
   const createdChecks: any[] = [];
+  // 選択肢から作るときは、技能と難易度を選択肢から引き継ぐ（指定があればそちらを優先）
+  const choice = choice_id ? db.select().from(scene_choices).where(eq(scene_choices.id, choice_id)).get() : null;
+  const skillKey = skill_key ?? choice?.skill_key ?? null;
+  const dvValue = dv !== undefined && dv !== null && dv !== '' ? Number(dv) : (choice?.dv ?? null);
 
   for (const charId of charIds) {
     if (!charId) continue;
@@ -765,9 +788,10 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks', requireGm, async (c) =>
         scene_id: session.current_scene_id,
         choice_id: choice_id || null,
         actor_character_id: charId,
-        skill_key: skill_key || null,
-        dv: dv !== undefined ? Number(dv) : null,
+        skill_key: skillKey,
+        dv: dvValue,
         opposed: opposed ? JSON.stringify(opposed) : null,
+        action_label: action_label ?? choice?.label ?? null,
         rolls: '[]',
         result: null,
         applied_log_id: null,
@@ -809,13 +833,19 @@ scenarioPlayRoutes.patch('/scenario-sessions/:id/checks/:checkId', requireGm, as
   if (!existing) {
     return c.json({ error: 'Check not found' }, 404);
   }
+  if (existing.applied_log_id) {
+    return c.json({ error: 'Check has already been applied. Undo first.' }, 409);
+  }
 
   const updates: Record<string, any> = {};
-  if (body.skill_key !== undefined) updates.skill_key = body.skill_key;
-  if (body.dv !== undefined) updates.dv = body.dv !== null ? Number(body.dv) : null;
+  if (body.skill_key !== undefined) updates.skill_key = body.skill_key || null;
+  if (body.dv !== undefined) updates.dv = body.dv !== null && body.dv !== '' ? Number(body.dv) : null;
   if (body.opposed !== undefined) {
     updates.opposed = body.opposed ? JSON.stringify(body.opposed) : null;
   }
+  // 技能・難易度・相手を変えたら、入っている出目で結果を出し直す
+  const merged = { ...existing, ...updates };
+  updates.result = evaluateStoryCheck(merged, JSON.parse(existing.rolls || '[]')).result;
 
   db.update(story_checks).set(updates).where(eq(story_checks.id, checkId)).run();
 
@@ -854,37 +884,40 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks/:checkId/roll', requireGm
     return c.json({ error: 'Check not found' }, 404);
   }
 
-  const evaluated = evaluateStoryCheck(check, rolls);
+  if (check.applied_log_id) {
+    return c.json({ error: 'Check has already been applied. Undo first.' }, 409);
+  }
+  // 対抗判定では、相手の出目も一緒に受け取る
+  if (check.opposed && Array.isArray(body.opposed_rolls)) {
+    const opp = { ...JSON.parse(check.opposed), rolls: body.opposed_rolls };
+    check.opposed = JSON.stringify(opp);
+    db.update(story_checks).set({ opposed: check.opposed }).where(eq(story_checks.id, checkId)).run();
+  }
+  const evaluated = evaluateStoryCheck(check, Array.isArray(rolls) ? rolls : []);
 
   db.update(story_checks)
     .set({
-      rolls: JSON.stringify(rolls),
+      rolls: JSON.stringify(Array.isArray(rolls) ? rolls : []),
       result: evaluated.result,
     })
     .where(eq(story_checks.id, checkId))
     .run();
 
-  // Log to session
-  const char = db.select().from(characters).where(eq(characters.id, check.actor_character_id)).get();
-  logToActiveSession(
-    'check',
-    `判定結果: ${char?.name || 'PC'} [${evaluated.formula}] → ${evaluated.result === 'success' ? '成功' : evaluated.result === 'draw' ? '引き分け' : '失敗'}`,
-    {
+  if (evaluated.result) {
+    const char = db.select().from(characters).where(eq(characters.id, check.actor_character_id)).get();
+    logToActiveSession(
+      'check',
+      `判定結果: ${char?.name || 'PC'} [${evaluated.formula}]`,
+      { check_id: check.id, rolls, result: evaluated.result, total: evaluated.total },
+    );
+    sessionManager.sendStoryResult(check.actor_character_id, {
       check_id: check.id,
+      formula: evaluated.formula,
       rolls,
-      result: evaluated.result,
       total: evaluated.total,
-    },
-  );
-
-  // Send result to specific player
-  sessionManager.sendStoryResult(check.actor_character_id, {
-    check_id: check.id,
-    formula: evaluated.formula,
-    rolls,
-    total: evaluated.total,
-    result: evaluated.result,
-  });
+      result: evaluated.result,
+    });
+  }
 
   sessionManager.broadcastStoryCheckUpdate(check.scenario_session_id);
 
@@ -909,6 +942,9 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks/:checkId/apply', requireG
   }
   if (!check.result) {
     return c.json({ error: 'Check has not been rolled/evaluated' }, 400);
+  }
+  if (check.applied_log_id) {
+    return c.json({ error: 'Check has already been applied' }, 409);
   }
 
   const session = db.select().from(scenario_sessions).where(eq(scenario_sessions.id, sessionId)).get();
@@ -935,6 +971,7 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks/:checkId/apply', requireG
 
   const appliedSummary: string[] = [];
 
+  const applyTx = sqlite.transaction(() => {
   for (const eff of effects) {
     if (eff.kind === 'next_scene' && eff.scene_id) {
       db.update(scenario_sessions)
@@ -977,16 +1014,16 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks/:checkId/apply', requireG
         const newWound = woundState(newHp, char.hp_max);
         let statusList: string[] = JSON.parse(char.status || '[]');
 
-        if (newWound === 'seriously' && !statusList.includes('重傷')) {
-          statusList.push('重傷');
-        } else if (newWound !== 'seriously' && statusList.includes('重傷')) {
-          statusList = statusList.filter((s) => s !== '重傷');
+        if (newWound === 'seriously' && !statusList.includes('seriously')) {
+          statusList.push('seriously');
+        } else if (newWound !== 'seriously' && statusList.includes('seriously')) {
+          statusList = statusList.filter((s) => s !== 'seriously');
         }
 
-        if (newWound === 'mortally' && !statusList.includes('瀕死')) {
-          statusList.push('瀕死');
-        } else if (newWound !== 'mortally' && statusList.includes('瀕死')) {
-          statusList = statusList.filter((s) => s !== '瀕死');
+        if (newWound === 'mortally' && !statusList.includes('mortally')) {
+          statusList.push('mortally');
+        } else if (newWound !== 'mortally' && statusList.includes('mortally')) {
+          statusList = statusList.filter((s) => s !== 'mortally');
         }
 
         db.update(characters)
@@ -1032,15 +1069,18 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks/:checkId/apply', requireG
     }
   }
 
-  const logId = generateUlid();
-  checkUndoSnapshots.set(logId, undoSnapshot);
-
+  // 取り消し用の変更前の値は、反映のログ（session_log.ref.undo）に持たせる（サーバを起動し直しても取り消せる）
+  const logId = logToActiveSession('check', `結果反映: ${appliedSummary.join(' / ') || '変化なし'}`, {
+    check_id: checkId,
+    undo: undoSnapshot,
+  });
   db.update(story_checks)
     .set({ applied_log_id: logId })
     .where(eq(story_checks.id, checkId))
     .run();
-
-  logToActiveSession('check', `結果反映: ${appliedSummary.join(' / ')}`, { check_id: checkId });
+  return logId;
+  });
+  const logId = applyTx();
   sessionManager.updateAllCharacterSheets();
 
   return c.json({
@@ -1060,7 +1100,8 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks/:checkId/undo', requireGm
     return c.json({ error: 'No applied state to undo' }, 400);
   }
 
-  const snapshot = checkUndoSnapshots.get(check.applied_log_id);
+  const appliedLog = db.select().from(session_log).where(eq(session_log.id, check.applied_log_id)).get();
+  const snapshot = appliedLog?.ref ? JSON.parse(appliedLog.ref).undo : null;
   if (!snapshot) {
     return c.json({ error: 'Undo snapshot not found' }, 404);
   }
@@ -1097,10 +1138,10 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks/:checkId/undo', requireGm
       if (char) {
         const wound = woundState(hpc.prevHp, char.hp_max);
         let statusList: string[] = JSON.parse(char.status || '[]');
-        if (wound === 'seriously' && !statusList.includes('重傷')) statusList.push('重傷');
-        if (wound !== 'seriously') statusList = statusList.filter((s) => s !== '重傷');
-        if (wound === 'mortally' && !statusList.includes('瀕死')) statusList.push('瀕死');
-        if (wound !== 'mortally') statusList = statusList.filter((s) => s !== '瀕死');
+        if (wound === 'seriously' && !statusList.includes('seriously')) statusList.push('seriously');
+        if (wound !== 'seriously') statusList = statusList.filter((s) => s !== 'seriously');
+        if (wound === 'mortally' && !statusList.includes('mortally')) statusList.push('mortally');
+        if (wound !== 'mortally') statusList = statusList.filter((s) => s !== 'mortally');
 
         db.update(characters)
           .set({ hp: hpc.prevHp, status: JSON.stringify(statusList) })
@@ -1139,7 +1180,6 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks/:checkId/undo', requireGm
     .where(eq(story_checks.id, checkId))
     .run();
 
-  checkUndoSnapshots.delete(check.applied_log_id);
   logToActiveSession('check', '判定の反映を取り消しました', { check_id: checkId });
   sessionManager.updateAllCharacterSheets();
 
@@ -1311,47 +1351,27 @@ scenarioPlayRoutes.post('/scenarios/encounters/:encounterId/start-combat', requi
       .run();
   }
 
-  // Add encounter participants (replicate mooks with #1, #2, #3...)
+  // エンカウンターの参加者。モブは 4a と同じく 1 体ずつ別のキャラに複製する（HP を別々に持つ）
   for (const ep of participantsConfig) {
     const char = db.select().from(characters).where(eq(characters.id, ep.character_id)).get();
     if (!char) continue;
-
     const count = Math.max(1, ep.count || 1);
-    for (let i = 1; i <= count; i++) {
-      const pName = count > 1 ? `${char.name} #${i}` : char.name;
-      const partId = generateUlid();
+    const createdIds = addCombatParticipants(combatId, {
+      character_id: char.id,
+      name: char.name,
+      side: ep.side || 'enemy',
+      count,
+    });
+    order += createdIds.length;
 
-      db.insert(combat_participants)
-        .values({
-          id: partId,
-          combat_id: combatId,
-          character_id: char.id,
-          side: ep.side || 'enemy',
-          name: pName,
-          initiative: 0,
-          initiative_roll: '{}',
-          order_index: order++,
-          active: true,
-          out: false,
-          move_used: false,
-          action_used: false,
-          state: '{}',
-        })
-        .run();
-
-      // If scene has board and position is specified, place token
-      if (boardId && ep.x !== undefined && ep.y !== undefined) {
+    // シーンに盤面があり、位置が決まっていればコマを置く（2 体目以降は右へずらす）
+    if (boardId && ep.x !== undefined && ep.y !== undefined) {
+      createdIds.forEach((cid, i) => {
+        if (!cid) return;
         db.insert(board_tokens)
-          .values({
-            id: generateUlid(),
-            board_id: boardId,
-            character_id: char.id,
-            x: ep.x + (i - 1),
-            y: ep.y,
-            gm_only: false,
-          })
+          .values({ id: generateUlid(), board_id: boardId!, character_id: cid, x: ep.x + i, y: ep.y, gm_only: false })
           .run();
-      }
+      });
     }
   }
 
@@ -1372,95 +1392,107 @@ scenarioPlayRoutes.post('/scenarios/encounters/:encounterId/start-combat', requi
 // 6. Evaluation Helper for Checks
 // ==========================================
 
-export function evaluateStoryCheck(check: any, rolls: number[]) {
-  const char = db.select().from(characters).where(eq(characters.id, check.actor_character_id)).get();
-  if (!char) {
-    return {
-      success: false,
-      result: 'failure',
-      total: 0,
-      formula: 'キャラ未取得',
-    };
-  }
+interface CheckActorBase {
+  base: number;
+  parts: string;
+}
 
-  const statVal: number = (() => {
-    if (!check.skill_key) return 5;
-    const def = getSkillDef(check.skill_key);
-    if (!def) return 5;
-    const key = def.stat.toLowerCase();
-    return (char as any)[key] ?? 5;
-  })();
+const STAT_LABEL: Record<string, string> = {
+  int: 'INT', ref: 'REF', dex: 'DEX', tech: 'TECH', cool: 'COOL', will: 'WILL', luck: 'LUCK', move: 'MOVE', body: 'BODY', emp: 'EMP',
+};
 
-  const skillLvl: number = (() => {
-    if (!check.skill_key) return 0;
-    const charSkills: any[] = JSON.parse(char.skills || '[]');
-    const s = charSkills.find((sk: any) => sk.key?.toLowerCase() === check.skill_key?.toLowerCase());
-    return s?.level ?? 0;
-  })();
+/** 能力値 + 技能レベル + 負傷の修正。技能がない・キャラがないときは null */
+function checkActorBase(characterId: string | null | undefined, skillKey: string | null | undefined): CheckActorBase | null {
+  if (!characterId || !skillKey) return null;
+  const char = db.select().from(characters).where(eq(characters.id, characterId)).get();
+  const def = getSkillDef(skillKey);
+  if (!char || !def) return null;
+  const stats: Record<string, number> = JSON.parse(char.stats || '{}');
+  const skills: Record<string, number> = JSON.parse(char.skills || '{}');
+  const stat = stats[def.stat];
+  if (typeof stat !== 'number') return null;
+  const level = skills[skillKey] ?? 0; // 取っていない技能はレベル 0（ルールどおり）
+  const pen = woundPenalty(woundState(char.hp, char.hp_max));
+  const base = stat + level + pen;
+  const penText = pen ? ` ${pen}（${pen === -2 ? '重傷' : '瀕死'}）` : '';
+  return { base, parts: `${STAT_LABEL[def.stat] ?? def.stat} ${stat} + ${formatSkillName(skillKey)} ${level}${penText} = ${base}` };
+}
 
-  const hpState = woundState(char.hp, char.hp_max);
-  const wPenalty = woundPenalty(hpState);
-  const base = statVal + skillLvl + wPenalty;
+function rollText(rolls: number[]): string {
+  if (rolls.length === 0) return '';
+  return rolls.length > 1 ? `${rolls[0]}（追加 ${rolls[1]}）` : `${rolls[0]}`;
+}
 
-  const firstRoll = rolls[0] ?? 0;
-  const extraRoll = rolls.length > 1 ? rolls[1] : undefined;
+/** 出目がそろっていないときの不足。10 と 1 は追加の出目が要る */
+function missingRoll(rolls: number[] | undefined, who: string): string | null {
+  if (!rolls || rolls.length === 0 || typeof rolls[0] !== 'number') return `${who}出目を入力してください`;
+  if ((rolls[0] === 10 || rolls[0] === 1) && typeof rolls[1] !== 'number') return `${who}追加の出目を入力してください（出目 ${rolls[0]}）`;
+  return null;
+}
+
+export interface StoryCheckEvaluation {
+  result: 'success' | 'failure' | null;
+  total: number | null;
+  formula: string;
+  needed: string | null;
+  missing_inputs: string[];
+}
+
+/**
+ * 判定ボードの 1 行を評価する（packages/rules の関数だけを使う）。
+ * 値が足りなければ計算せず、何が足りないかを返す（数値を推測で埋めない）。
+ */
+export function evaluateStoryCheck(check: any, rolls: number[]): StoryCheckEvaluation {
+  const missing: string[] = [];
+  const actor = checkActorBase(check.actor_character_id, check.skill_key);
+  if (!check.skill_key) missing.push('技能を選んでください');
+  else if (!actor) missing.push('キャラの能力値か技能のデータがありません');
 
   const opposed = check.opposed ? (typeof check.opposed === 'string' ? JSON.parse(check.opposed) : check.opposed) : null;
 
   if (opposed && opposed.target_character_id) {
-    // Opposed check
-    const targetChar = db.select().from(characters).where(eq(characters.id, opposed.target_character_id)).get();
-    const targetStatVal = 5;
-    const targetSkillLvl = 0;
-    const targetBase = targetStatVal + targetSkillLvl;
-    const targetRoll = opposed.roll ?? 5;
-    const defenderTotal = targetBase + targetRoll;
-
-    const attackerResult = resolveCheck({
-      base,
-      first: firstRoll,
-      extra: extraRoll,
-      target: defenderTotal,
-      mode: 'defend',
-    });
-
-    const winner = resolveOpposed({
-      attackerTotal: attackerResult.total,
-      defenderTotal,
-    });
-
-    const formula = `${formatSkillName(check.skill_key)} 基底 ${base} + 出目 ${firstRoll}${extraRoll ? `(+${extraRoll})` : ''} = ${attackerResult.total} vs 対抗 ${defenderTotal}`;
-
+    const target = checkActorBase(opposed.target_character_id, opposed.skill_key);
+    if (!opposed.skill_key) missing.push('相手の技能を選んでください');
+    else if (!target) missing.push('相手の能力値か技能のデータがありません');
+    const formulaBase = `${actor?.parts ?? '—'} vs 相手 ${target?.parts ?? '—'}`;
+    if (missing.length === 0) {
+      const mine = missingRoll(rolls, '');
+      const theirs = missingRoll(opposed.rolls, '相手の');
+      if (mine) missing.push(mine);
+      if (theirs) missing.push(theirs);
+    }
+    if (missing.length > 0 || !actor || !target) {
+      return { result: null, total: null, formula: `${formulaBase}（相手の合計を超えれば成功。同じ値は受ける側の勝ち）`, needed: null, missing_inputs: missing };
+    }
+    const mine = resolveCheck({ base: actor.base, first: rolls[0], extra: rolls[1], target: 0, mode: 'dv' });
+    const theirs = resolveCheck({ base: target.base, first: opposed.rolls[0], extra: opposed.rolls[1], target: 0, mode: 'dv' });
+    const winner = resolveOpposed({ attackerTotal: mine.total, defenderTotal: theirs.total });
     return {
-      success: winner === 'attacker',
-      result: winner === 'attacker' ? 'success' : winner === 'defender' ? 'failure' : 'draw',
-      total: attackerResult.total,
-      formula,
-    };
-  } else {
-    // Standard DV check
-    const dv = check.dv ?? 13;
-    const needed = neededRoll(base, dv, 'dv');
-    const neededText = formatNeeded(needed);
-
-    const checkRes = resolveCheck({
-      base,
-      first: firstRoll,
-      extra: extraRoll,
-      target: dv,
-      mode: 'dv',
-    });
-
-    const skillName = check.skill_key ? formatSkillName(check.skill_key) : '判定';
-    const formula = `${skillName} 基底 ${base} + 出目 ${firstRoll}${extraRoll ? `(+${extraRoll})` : ''} = ${checkRes.total} vs 難易度 ${dv} (${neededText})`;
-
-    return {
-      success: checkRes.success,
-      result: checkRes.success ? 'success' : 'failure',
-      total: checkRes.total,
-      formula,
+      result: winner === 'attacker' ? 'success' : 'failure',
+      total: mine.total,
+      formula: `${actor.parts} + 出目 ${rollText(rolls)} = ${mine.total} vs 相手 ${target.base} + 出目 ${rollText(opposed.rolls)} = ${theirs.total}`,
+      needed: null,
+      missing_inputs: [],
     };
   }
+
+  if (check.dv === null || check.dv === undefined) missing.push('難易度を決めてください');
+  if (missing.length > 0 || !actor) {
+    return { result: null, total: null, formula: actor ? `${actor.parts} vs 難易度 —` : '—', needed: null, missing_inputs: missing };
+  }
+  const needed = formatNeeded(neededRoll(actor.base, check.dv, 'dv'));
+  const rollMissing = missingRoll(rolls, '');
+  if (rollMissing) {
+    return { result: null, total: null, formula: `${actor.parts} vs 難易度 ${check.dv} → ${needed}`, needed, missing_inputs: [rollMissing] };
+  }
+  const res = resolveCheck({ base: actor.base, first: rolls[0], extra: rolls[1], target: check.dv, mode: 'dv' });
+  return {
+    result: res.success ? 'success' : 'failure',
+    total: res.total,
+    formula: `${actor.parts} + 出目 ${rollText(rolls)} = ${res.total} vs 難易度 ${check.dv} → ${res.success ? '成功' : '失敗'}`,
+    needed,
+    missing_inputs: [],
+  };
 }
 
 // ==========================================
@@ -1480,12 +1512,14 @@ export async function handleStoryChoose(payload: {
   let skillKey: string | null = null;
   let dv: number | null = null;
 
+  let actionLabel: string | null = payload.action_label || payload.free_text || null;
   if (payload.choice_id) {
     const ch = db.select().from(scene_choices).where(eq(scene_choices.id, payload.choice_id)).get();
-    if (ch) {
-      skillKey = ch.skill_key || null;
-      dv = ch.dv ?? null;
-    }
+    // 今のシーンの選択肢だけ選べる
+    if (!ch || ch.scene_id !== active.current_scene_id) return;
+    skillKey = ch.skill_key || null;
+    dv = ch.dv ?? null;
+    actionLabel = ch.label;
   }
 
   const checkId = generateUlid();
@@ -1502,11 +1536,12 @@ export async function handleStoryChoose(payload: {
       rolls: '[]',
       result: null,
       applied_log_id: null,
+      action_label: actionLabel,
     })
     .run();
 
   const char = db.select().from(characters).where(eq(characters.id, payload.characterId)).get();
-  const actionName = payload.action_label || payload.free_text || '行動選択';
+  const actionName = actionLabel || '行動選択';
   logToActiveSession('check', `${char?.name || 'プレイヤー'} が選択: ${actionName}`, {
     check_id: checkId,
     choice_id: payload.choice_id,
@@ -1549,33 +1584,34 @@ export async function handleStoryRoll(
     return;
   }
 
-  const evaluated = evaluateStoryCheck(check, payload.rolls);
+  if (check.applied_log_id) {
+    ws?.send(JSON.stringify({ type: 'error', error: 'Check has already been applied' }));
+    return;
+  }
+  const rolls = Array.isArray(payload.rolls) ? payload.rolls : [];
+  const evaluated = evaluateStoryCheck(check, rolls);
 
   db.update(story_checks)
-    .set({
-      rolls: JSON.stringify(payload.rolls),
-      result: evaluated.result,
-    })
+    .set({ rolls: JSON.stringify(rolls), result: evaluated.result })
     .where(eq(story_checks.id, payload.check_id))
     .run();
 
-  const char = db.select().from(characters).where(eq(characters.id, payload.characterId)).get();
-  logToActiveSession(
-    'check',
-    `プレイヤー出目送信: ${char?.name || 'PC'} [${evaluated.formula}] → ${evaluated.result === 'success' ? '成功' : evaluated.result === 'draw' ? '引き分け' : '失敗'}`,
-    {
+  if (evaluated.result) {
+    const char = db.select().from(characters).where(eq(characters.id, payload.characterId)).get();
+    logToActiveSession('check', `プレイヤー出目送信: ${char?.name || 'PC'} [${evaluated.formula}]`, {
       check_id: check.id,
-      rolls: payload.rolls,
+      rolls,
       result: evaluated.result,
-    },
-  );
+    });
+  }
 
   sessionManager.sendStoryResult(payload.characterId, {
     check_id: check.id,
     formula: evaluated.formula,
-    rolls: payload.rolls,
+    rolls,
     total: evaluated.total,
     result: evaluated.result,
+    missing_inputs: evaluated.missing_inputs,
   });
 
   sessionManager.broadcastStoryCheckUpdate(check.scenario_session_id);

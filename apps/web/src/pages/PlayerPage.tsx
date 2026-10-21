@@ -62,6 +62,7 @@ export const PlayerPage: React.FC = () => {
   const [storyFirstRoll, setStoryFirstRoll] = useState<number | null>(null);
   const [storyExtraRoll, setStoryExtraRoll] = useState<number | null>(null);
   const [storyNeedsExtra, setStoryNeedsExtra] = useState(false);
+  const [storyMissing, setStoryMissing] = useState<string | null>(null);
   const [storyResultNotification, setStoryResultNotification] = useState<{
     check_id: string;
     formula: string;
@@ -150,8 +151,15 @@ export const PlayerPage: React.FC = () => {
       setStoryExtraRoll(null);
       setStoryNeedsExtra(false);
     } else if (type === 'story:result') {
-      setStoryResultNotification(payload as any);
-      setActiveStoryCheck(null);
+      const res = payload as any;
+      if (res?.result) {
+        setStoryResultNotification(res);
+        setActiveStoryCheck(null);
+        setStoryMissing(null);
+      } else {
+        // まだ結果が出ない（追加の出目・GM の難易度待ち）。出目パッドを開いたままにする
+        setStoryMissing((res?.missing_inputs ?? []).join(' / ') || 'GM の確認待ち');
+      }
     }
   }, [sheet?.id, token]);
 
@@ -181,18 +189,11 @@ export const PlayerPage: React.FC = () => {
       })
       .catch(() => {});
 
-    // Fetch active session and revealed handouts
-    fetch('/api/scenario-sessions/active')
+    // 公開済みの手がかり・ハンドアウトを取り直す（再接続のとき）
+    fetch('/api/scenario-sessions/current/revealed', { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
-      .then((res) => {
-        if (res?.session) {
-          fetch(`/api/scenario-sessions/${res.session.id}/revealed`)
-            .then((r) => r.json())
-            .then((rev) => {
-              if (rev) setRevealedData(rev);
-            })
-            .catch(() => {});
-        }
+      .then((rev) => {
+        if (rev && !rev.error) setRevealedData(rev);
       })
       .catch(() => {});
   }, [token]);
@@ -1262,6 +1263,9 @@ export const PlayerPage: React.FC = () => {
                   <div style={{ fontSize: '0.85rem', color: 'var(--color-text)', lineHeight: 1.5 }}>
                     {activeStoryCheck.formula || `判定 vs 難易度 ${activeStoryCheck.dv ?? '—'}`}
                   </div>
+                  {storyMissing && (
+                    <div style={{ fontSize: '0.8rem', color: 'var(--color-warning)' }}>{storyMissing}</div>
+                  )}
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
@@ -1373,7 +1377,7 @@ export const PlayerPage: React.FC = () => {
                         color: storyResultNotification.result === 'success' ? 'var(--color-success)' : 'var(--color-accent)',
                       }}
                     >
-                      {storyResultNotification.result === 'success' ? '判定成功' : storyResultNotification.result === 'draw' ? '引き分け' : '判定失敗'}
+                      {storyResultNotification.result === 'success' ? '判定成功' : '判定失敗'}
                     </span>
                     <button
                       type="button"

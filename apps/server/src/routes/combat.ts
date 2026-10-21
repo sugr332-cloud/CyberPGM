@@ -346,22 +346,21 @@ combatRoutes.post('/combats', requireGm, async (c) => {
   return c.json({ combat: created }, 201);
 });
 
+export interface AddParticipantsInput {
+  character_id?: string | null;
+  name: string;
+  side: 'ally' | 'enemy' | 'neutral';
+  count: number;
+}
+
 /**
- * POST /api/combats/:id/participants: Add participant (GM only).
+ * Adds participants to a combat. Mooks (or count > 1) are duplicated into their own
+ * character rows so each copy tracks HP/SP/ammo independently.
+ * Returns the character_id of each added participant (null for custom ones).
  */
-combatRoutes.post('/combats/:id/participants', requireGm, async (c) => {
-  const combatId = c.req.param('id');
-  if (!combatId) return c.json({ error: 'Missing combat ID' }, 400);
-  const body = await c.req.json();
-  const parsed = AddParticipantInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: 'Invalid input', details: parsed.error.issues }, 400);
-  }
-
-  const cb = db.select().from(combats).where(eq(combats.id, combatId)).get();
-  if (!cb) return c.json({ error: 'Combat not found' }, 404);
-
-  const { character_id, name, side, count } = parsed.data;
+export function addCombatParticipants(combatId: string, input: AddParticipantsInput): Array<string | null> {
+  const created: Array<string | null> = [];
+  const { character_id, name, side, count } = input;
   const currentCount = db
     .select()
     .from(combat_participants)
@@ -370,7 +369,7 @@ combatRoutes.post('/combats/:id/participants', requireGm, async (c) => {
 
   if (character_id) {
     const baseChar = db.select().from(characters).where(eq(characters.id, character_id)).get();
-    if (!baseChar) return c.json({ error: 'Character not found' }, 404);
+    if (!baseChar) return created;
 
     if (count > 1 || baseChar.kind === 'mook') {
       // Replicate mooks: "Name #1", "Name #2", ...
@@ -407,6 +406,7 @@ combatRoutes.post('/combats/:id/participants', requireGm, async (c) => {
           })
           .run();
 
+        created.push(newCharId);
         db.insert(combat_participants)
           .values({
             id: generateUlid(),
@@ -427,6 +427,7 @@ combatRoutes.post('/combats/:id/participants', requireGm, async (c) => {
       }
     } else {
       // Single PC or NPC addition
+      created.push(character_id);
       db.insert(combat_participants)
         .values({
           id: generateUlid(),
@@ -448,6 +449,7 @@ combatRoutes.post('/combats/:id/participants', requireGm, async (c) => {
   } else {
     // Custom participant without character row
     for (let i = 1; i <= count; i++) {
+      created.push(null);
       const partName = count > 1 ? `${name} #${i}` : name;
       db.insert(combat_participants)
         .values({
@@ -468,6 +470,30 @@ combatRoutes.post('/combats/:id/participants', requireGm, async (c) => {
         .run();
     }
   }
+
+  return created;
+}
+
+/**
+ * POST /api/combats/:id/participants: Add participant (GM only).
+ */
+combatRoutes.post('/combats/:id/participants', requireGm, async (c) => {
+  const combatId = c.req.param('id');
+  if (!combatId) return c.json({ error: 'Missing combat ID' }, 400);
+  const body = await c.req.json();
+  const parsed = AddParticipantInputSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid input', details: parsed.error.issues }, 400);
+  }
+
+  const cb = db.select().from(combats).where(eq(combats.id, combatId)).get();
+  if (!cb) return c.json({ error: 'Combat not found' }, 404);
+
+  if (parsed.data.character_id) {
+    const baseChar = db.select().from(characters).where(eq(characters.id, parsed.data.character_id)).get();
+    if (!baseChar) return c.json({ error: 'Character not found' }, 404);
+  }
+  addCombatParticipants(combatId, parsed.data);
 
   const updated = getHydratedCombat(combatId);
   sessionManager.broadcastCombatUpdate(updated);

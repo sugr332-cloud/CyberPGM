@@ -41,6 +41,14 @@ export function setGmToken(token: string): void {
   localStorage.setItem('cpgm_gm_token', token);
 }
 
+/** GM のトークンを付けて fetch する（GM だけの API 用） */
+export function gmFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  const token = getGmToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  return fetch(input, { ...init, headers });
+}
+
 export function removeGmToken(): void {
   localStorage.removeItem('cpgm_gm_token');
 }

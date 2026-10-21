@@ -71,6 +71,13 @@
       "when": 1792537455862,
       "tag": "0009_little_makkari",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1792541009530,
+      "tag": "0010_bored_blue_marvel",
+      "breakpoints": true
     }
   ]
 }

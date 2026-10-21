@@ -50,7 +50,7 @@ describe('Phase 3a: Shop & Commerce System', () => {
       headers: { Authorization: `Bearer ${gmToken}` },
     });
     const sessionData = await sessionRes.json();
-    const joinCode = sessionData.sessionCode;
+    const joinCode = sessionData.code;
 
     const claimRes = await app.request('/api/auth/claim', {
       method: 'POST',

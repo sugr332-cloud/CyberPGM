@@ -15,7 +15,8 @@ import {
   formatSkillName,
 } from '@cyberpgm/shared';
 import { BoardView } from './BoardView.js';
-import { api } from '../api.js';
+import { StoryCheckRow, StoryCheckView } from './StoryCheckRow.js';
+import { api, gmFetch } from '../api.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 
 interface ScenarioPlayViewProps {
@@ -41,7 +42,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Checks and logs
-  const [checks, setChecks] = useState<StoryCheck[]>([]);
+  const [checks, setChecks] = useState<StoryCheckView[]>([]);
   const [logs, setLogs] = useState<SessionLogEntry[]>([]);
   const [noteInput, setNoteInput] = useState('');
 
@@ -83,8 +84,8 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
     setLoading(true);
     try {
       const [sessionRes, scenariosRes] = await Promise.all([
-        fetch('/api/scenario-sessions/active').then((r) => r.json()),
-        fetch('/api/scenarios').then((r) => r.json()),
+        gmFetch('/api/scenario-sessions/active').then((r) => r.json()),
+        gmFetch('/api/scenarios').then((r) => r.json()),
       ]);
 
       setAllScenarios(scenariosRes || []);
@@ -95,7 +96,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
       if (sessionRes?.session) {
         setActiveSession(sessionRes.session);
         // Load scenario full details
-        const fullRes = await fetch(`/api/scenarios/${sessionRes.session.scenario_id}`).then((r) => r.json());
+        const fullRes = await gmFetch(`/api/scenarios/${sessionRes.session.scenario_id}`).then((r) => r.json());
         setScenarioData(fullRes);
         await Promise.all([
           fetchChecks(sessionRes.session.id),
@@ -118,7 +119,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
 
   const fetchChecks = async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/scenario-sessions/${sessionId}/checks`).then((r) => r.json());
+      const res = await gmFetch(`/api/scenario-sessions/${sessionId}/checks`).then((r) => r.json());
       setChecks(res.checks || []);
     } catch {
       // ignore
@@ -127,7 +128,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
 
   const fetchLogs = async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/scenario-sessions/${sessionId}/logs`).then((r) => r.json());
+      const res = await gmFetch(`/api/scenario-sessions/${sessionId}/logs`).then((r) => r.json());
       setLogs(res.logs || []);
     } catch {
       // ignore
@@ -139,7 +140,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
     if (!selectedScenarioId) return;
     setErrorMsg(null);
     try {
-      const res = await fetch('/api/scenario-sessions/start', {
+      const res = await gmFetch('/api/scenario-sessions/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario_id: selectedScenarioId }),
@@ -158,7 +159,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
     if (!activeSession) return;
     if (!confirm('現在のシナリオ進行を終了しますか？ログは保存されます。')) return;
     try {
-      await fetch(`/api/scenario-sessions/${activeSession.id}/end`, {
+      await gmFetch(`/api/scenario-sessions/${activeSession.id}/end`, {
         method: 'POST',
       });
       setSuccessMsg('シナリオ進行を終了しました');
@@ -173,7 +174,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const handleMoveScene = async (sceneId: string) => {
     if (!activeSession) return;
     try {
-      await fetch(`/api/scenario-sessions/${activeSession.id}/move-scene`, {
+      await gmFetch(`/api/scenario-sessions/${activeSession.id}/move-scene`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scene_id: sceneId }),
@@ -192,7 +193,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const handleCreateAdhocScene = async () => {
     if (!activeSession || !adhocSceneTitle.trim()) return;
     try {
-      const res = await fetch(`/api/scenario-sessions/${activeSession.id}/adhoc-scene`, {
+      const res = await gmFetch(`/api/scenario-sessions/${activeSession.id}/adhoc-scene`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: adhocSceneTitle.trim() }),
@@ -211,7 +212,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   // Fog update on board
   const handleUpdateBoardFog = async (boardId: string, fog: { x: number; y: number }[]) => {
     try {
-      await fetch(`/api/boards/${boardId}/fog`, {
+      await gmFetch(`/api/boards/${boardId}/fog`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fog }),
@@ -226,7 +227,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
     if (!activeSession) return;
     setErrorMsg(null);
     try {
-      const res = await fetch(`/api/scenario-sessions/${activeSession.id}/project-image`, {
+      const res = await gmFetch(`/api/scenario-sessions/${activeSession.id}/project-image`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image_id: imageId, image_path: imagePath, target }),
@@ -245,7 +246,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const handlePublishChoices = async (sceneId: string, choiceIds?: string[]) => {
     if (!activeSession) return;
     try {
-      await fetch(`/api/scenario-sessions/${activeSession.id}/choices/publish`, {
+      await gmFetch(`/api/scenario-sessions/${activeSession.id}/choices/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scene_id: sceneId, choice_ids: choiceIds }),
@@ -260,7 +261,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const handleAddAdhocChoice = async () => {
     if (!activeSession || !adhocChoiceLabel.trim()) return;
     try {
-      const res = await fetch(`/api/scenario-sessions/${activeSession.id}/choices/adhoc`, {
+      const res = await gmFetch(`/api/scenario-sessions/${activeSession.id}/choices/adhoc`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -287,7 +288,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
     setErrorMsg(null);
     try {
       const endpoint = currentRevealed ? 'unreveal' : 'reveal';
-      const res = await fetch(`/api/scenario-sessions/${activeSession.id}/${endpoint}`, {
+      const res = await gmFetch(`/api/scenario-sessions/${activeSession.id}/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind, itemId, show_on_tv: showOnTv }),
@@ -309,7 +310,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const handleCreateCheck = async (charId: string, skillKey: string, dv: number, choiceId?: string) => {
     if (!activeSession) return;
     try {
-      await fetch(`/api/scenario-sessions/${activeSession.id}/checks`, {
+      await gmFetch(`/api/scenario-sessions/${activeSession.id}/checks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -334,7 +335,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
       return;
     }
     try {
-      await fetch(`/api/scenario-sessions/${activeSession.id}/checks`, {
+      await gmFetch(`/api/scenario-sessions/${activeSession.id}/checks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -352,16 +353,17 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   };
 
   // Evaluate roll on check
-  const handleRollCheck = async (checkId: string, rolls: number[]) => {
+  const handleRollCheck = async (checkId: string, rolls: number[], opposedRolls?: number[]) => {
     if (!activeSession) return;
     try {
-      const res = await fetch(`/api/scenario-sessions/${activeSession.id}/checks/${checkId}/roll`, {
+      const res = await gmFetch(`/api/scenario-sessions/${activeSession.id}/checks/${checkId}/roll`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rolls }),
+        body: JSON.stringify({ rolls, opposed_rolls: opposedRolls }),
       }).then((r) => r.json());
 
       if (res.error) throw new Error(res.error);
+      if (res.missing_inputs?.length) setErrorMsg(res.missing_inputs.join(' / '));
       fetchChecks(activeSession.id);
       fetchLogs(activeSession.id);
     } catch (err: any) {
@@ -369,11 +371,27 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
     }
   };
 
+  // Change skill / difficulty / opposed target of a check row
+  const handlePatchCheck = async (checkId: string, body: Record<string, unknown>) => {
+    if (!activeSession) return;
+    try {
+      const res = await gmFetch(`/api/scenario-sessions/${activeSession.id}/checks/${checkId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then((r) => r.json());
+      if (res.error) throw new Error(res.error);
+      fetchChecks(activeSession.id);
+    } catch (err: any) {
+      setErrorMsg(err.message || '判定の変更に失敗しました');
+    }
+  };
+
   // Apply consequences
   const handleApplyCheck = async (checkId: string) => {
     if (!activeSession) return;
     try {
-      const res = await fetch(`/api/scenario-sessions/${activeSession.id}/checks/${checkId}/apply`, {
+      const res = await gmFetch(`/api/scenario-sessions/${activeSession.id}/checks/${checkId}/apply`, {
         method: 'POST',
       }).then((r) => r.json());
 
@@ -389,7 +407,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const handleUndoCheck = async (checkId: string) => {
     if (!activeSession) return;
     try {
-      const res = await fetch(`/api/scenario-sessions/${activeSession.id}/checks/${checkId}/undo`, {
+      const res = await gmFetch(`/api/scenario-sessions/${activeSession.id}/checks/${checkId}/undo`, {
         method: 'POST',
       }).then((r) => r.json());
 
@@ -405,7 +423,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const handleAddNote = async () => {
     if (!activeSession || !noteInput.trim()) return;
     try {
-      await fetch(`/api/scenario-sessions/${activeSession.id}/logs/note`, {
+      await gmFetch(`/api/scenario-sessions/${activeSession.id}/logs/note`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: noteInput.trim() }),
@@ -422,7 +440,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
     if (!activeSession) return;
     if (!confirm('このエンカウントで戦闘を開始しますか？参加者が自動配置されます。')) return;
     try {
-      const res = await fetch(`/api/scenarios/encounters/${encounterId}/start-combat`, {
+      const res = await gmFetch(`/api/scenarios/encounters/${encounterId}/start-combat`, {
         method: 'POST',
       }).then((r) => r.json());
 
@@ -444,7 +462,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
 
   useEffect(() => {
     if (currentScene?.board_id) {
-      fetch(`/api/boards/${currentScene.board_id}`)
+      gmFetch(`/api/boards/${currentScene.board_id}`)
         .then((r) => r.json())
         .then((b) => setActiveBoard(b))
         .catch(() => setActiveBoard(null));
@@ -1060,134 +1078,17 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {checks.map((chk) => {
-                const char = characters.find((c) => c.id === chk.actor_character_id);
-                const rollInput = manualRollMap[chk.id] ?? '';
-
-                return (
-                  <div
-                    key={chk.id}
-                    style={{
-                      padding: '8px',
-                      backgroundColor: 'var(--color-surface-elevated)',
-                      border: '1px solid var(--color-border-light)',
-                      borderRadius: '6px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{char?.name || 'PC'}</span>
-                      {chk.result && (
-                        <span
-                          style={{
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            padding: '2px 6px',
-                            borderRadius: '3px',
-                            backgroundColor: chk.result === 'success' ? 'rgba(46, 204, 113, 0.2)' : 'rgba(235, 75, 75, 0.2)',
-                            color: chk.result === 'success' ? 'var(--color-success)' : 'var(--color-accent)',
-                          }}
-                        >
-                          {chk.result === 'success' ? '成功' : chk.result === 'draw' ? '引き分け' : '失敗'}
-                        </span>
-                      )}
-                    </div>
-
-                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-                      {chk.skill_key ? formatSkillName(chk.skill_key) : '汎用'} vs DV {chk.dv ?? '—'}
-                    </div>
-
-                    {/* Rolls & Results */}
-                    {chk.result ? (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                          出目: [{chk.rolls.join(', ')}]
-                        </span>
-                        {chk.applied_log_id ? (
-                          <button
-                            type="button"
-                            onClick={() => handleUndoCheck(chk.id)}
-                            style={{
-                              padding: '2px 8px',
-                              backgroundColor: 'rgba(235, 75, 75, 0.2)',
-                              border: '1px solid var(--color-accent)',
-                              borderRadius: '3px',
-                              fontSize: '0.75rem',
-                              color: 'var(--color-accent)',
-                              cursor: 'pointer',
-                              fontWeight: 600,
-                            }}
-                          >
-                            取り消す
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleApplyCheck(chk.id)}
-                            style={{
-                              padding: '2px 8px',
-                              backgroundColor: 'var(--color-ally)',
-                              border: 'none',
-                              borderRadius: '3px',
-                              fontSize: '0.75rem',
-                              color: '#000',
-                              cursor: 'pointer',
-                              fontWeight: 700,
-                            }}
-                          >
-                            確定して反映
-                          </button>
-                        )}
-                      </div>
-                    ) : (
-                      /* Dice entry */
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <input
-                          type="number"
-                          placeholder="1d10"
-                          value={rollInput}
-                          onChange={(e) =>
-                            setManualRollMap({ ...manualRollMap, [chk.id]: e.target.value })
-                          }
-                          style={{
-                            width: '60px',
-                            padding: '4px 6px',
-                            backgroundColor: 'var(--color-bg)',
-                            border: '1px solid var(--color-border-light)',
-                            borderRadius: '3px',
-                            color: 'var(--color-text)',
-                            fontSize: '0.85rem',
-                            textAlign: 'center',
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const val = parseInt(rollInput, 10);
-                            if (!isNaN(val)) {
-                              handleRollCheck(chk.id, [val]);
-                            }
-                          }}
-                          style={{
-                            padding: '4px 8px',
-                            backgroundColor: 'var(--color-ally)',
-                            border: 'none',
-                            borderRadius: '3px',
-                            fontSize: '0.75rem',
-                            color: '#000',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          判定
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {checks.map((chk) => (
+                <StoryCheckRow
+                  key={chk.id}
+                  check={chk}
+                  characters={characters}
+                  onPatch={(body) => handlePatchCheck(chk.id, body)}
+                  onRoll={(rolls, opposedRolls) => handleRollCheck(chk.id, rolls, opposedRolls)}
+                  onApply={() => handleApplyCheck(chk.id)}
+                  onUndo={() => handleUndoCheck(chk.id)}
+                />
+              ))}
               {checks.length === 0 && (
                 <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
                   判定待ちはありません

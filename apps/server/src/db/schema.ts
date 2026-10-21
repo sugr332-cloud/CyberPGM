@@ -465,8 +465,9 @@ export const story_checks = sqliteTable('story_checks', {
   dv: integer('dv'),
   opposed: text('opposed'), // JSON: { target_character_id: string, skill_key?: string, roll?: number, rolls?: number[] }
   rolls: text('rolls').notNull().default('[]'), // JSON number[]
-  result: text('result'), // 'success' | 'failure' | 'draw'
+  result: text('result'), // 'success' | 'failure'（出目がそろうまでは null）
   applied_log_id: text('applied_log_id'),
+  action_label: text('action_label'), // プレイヤーが選んだ行動（選択肢の名前・一般的な行動・自由記述）
 });
 
 // Relations
