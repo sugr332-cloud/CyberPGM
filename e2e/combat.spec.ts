@@ -145,6 +145,10 @@ test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM A
   // If it's Viper's turn, choose Ranged and submit roll
   const rangedBtn = playerPage.getByRole('button', { name: /^射撃/i });
   if (await rangedBtn.isVisible()) {
+    // 攻撃する相手と武器を選んでから射撃（Phase 5j）
+    await playerPage.getByTestId('attack-target').filter({ hasText: 'ガンガー #1' }).click();
+    await playerPage.getByTestId('attack-weapon').first().click();
+    await playerPage.screenshot({ path: 'docs/agy/reports/img/phase5j-player-attack-picker-390.png' });
     await rangedBtn.click();
     // Use Dice Pad: tap 7
     await playerPage.getByRole('button', { name: '7', exact: true }).click();
@@ -239,7 +243,7 @@ test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM A
   gmPage.on('dialog', async (dialog) => {
     await dialog.accept();
   });
-  await gmPage.getByRole('button', { name: '取り消す' }).click();
+  await gmPage.getByRole('button', { name: '一手戻る' }).click();
 
   // Verify HP restored in DB
   await expect(async () => {

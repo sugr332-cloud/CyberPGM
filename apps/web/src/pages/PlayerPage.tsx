@@ -111,6 +111,9 @@ export const PlayerPage: React.FC = () => {
   const [padExtraRoll, setPadExtraRoll] = useState<number | null>(null);
   const [needsExtraRoll, setNeedsExtraRoll] = useState(false);
   const [chosenActionLabel, setChosenActionLabel] = useState<string>('');
+  // 攻撃する相手と使う武器（Phase 5j）。攻撃のボタンと一緒に GM へ送る
+  const [attackTargetId, setAttackTargetId] = useState<string | null>(null);
+  const [attackWeaponId, setAttackWeaponId] = useState<string | null>(null);
 
   // WebSocket message handler
   const handleWsMessage = useCallback((type: string, payload: unknown) => {
@@ -439,7 +442,7 @@ export const PlayerPage: React.FC = () => {
           </form>
         ) : !playerId ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <p style={{ fontSize: '0.95rem', fontWeight: 600 }}>あなたは？</p>
+            <p style={{ fontSize: '0.95rem', fontWeight: 600 }}>あなたは？（プレイヤーのハンドルネーム）</p>
             {playerList.map((p) => (
               <button
                 key={p.id}
@@ -472,7 +475,9 @@ export const PlayerPage: React.FC = () => {
               }}
             >
               <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                {playerList.length > 0 ? 'はじめての人は名前を登録' : '名前を登録（次からはこの名前を選ぶだけ）'}
+                {playerList.length > 0
+                  ? 'はじめての人はハンドルネームを登録（キャラ名とは別）'
+                  : 'ハンドルネームを登録（キャラ名とは別。次からはこの名前を選ぶだけ）'}
               </label>
               <input
                 type="text"
@@ -944,6 +949,8 @@ export const PlayerPage: React.FC = () => {
               </h1>
               <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
                 {sheet.role}
+                {/* 持ち主のハンドルネーム。人違いに気づけるように（Phase 5j） */}
+                {playerList.find((p) => p.id === sheet.player_id) && ` ・ プレイヤー: ${playerList.find((p) => p.id === sheet.player_id)!.name}`}
               </span>
               {/* ほかの持ちキャラに替える（Phase 5i） */}
               <button
@@ -1729,6 +1736,27 @@ export const PlayerPage: React.FC = () => {
                 const woundPen = sheet.woundPenalty;
 
                 const attackBaseHandgun = refVal + handgunSkill + woundPen;
+
+                // 攻撃する相手（倒れていないほかの参加者。敵が先）と、自分の武器（Phase 5j）
+                type Part = { id: string; name: string; side: string; out: boolean; active: boolean; character_id: string | null; character?: any };
+                const parts = currentCombat.participants as Part[];
+                const me = parts.find((p) => p.character_id === sheet.id);
+                const targets = parts
+                  .filter((p) => p.id !== me?.id && !p.out && p.active)
+                  .sort((a, b) => (a.side === b.side ? 0 : a.side === 'enemy' ? -1 : 1));
+                const myWeapons = ((me?.character?.inventory as Array<{ entry_id: string; name: string; kind?: string; ammo?: number | null }>) ?? []).filter(
+                  (i) => i.kind === 'weapon',
+                );
+                const chip = (selected: boolean, color: string): React.CSSProperties => ({
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  border: `1px solid ${selected ? color : 'var(--color-border-light)'}`,
+                  backgroundColor: selected ? color : 'var(--color-surface)',
+                  color: selected ? '#000' : 'var(--color-text)',
+                  fontWeight: selected ? 800 : 500,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                });
                 const attackBaseMelee = dexVal + meleeSkill + woundPen;
                 const dodgeBase = dexVal + evasionSkill + woundPen;
 
@@ -1737,6 +1765,44 @@ export const PlayerPage: React.FC = () => {
                     <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
                       {isMyTurn ? '行動を選択:' : '手番外の行動:'}
                     </div>
+
+                    {isMyTurn && (
+                      <div data-testid="attack-picker" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>攻撃する相手:</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {targets.length === 0 && <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>相手がいません</span>}
+                          {targets.map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              data-testid="attack-target"
+                              onClick={() => setAttackTargetId(t.id === attackTargetId ? null : t.id)}
+                              style={chip(t.id === attackTargetId, t.side === 'enemy' ? 'var(--color-enemy)' : 'var(--color-ally)')}
+                            >
+                              {t.name}
+                            </button>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>使う武器:</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {myWeapons.length === 0 && (
+                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>武器を持っていません（素手・格闘は「近接攻撃」）</span>
+                          )}
+                          {myWeapons.map((w) => (
+                            <button
+                              key={w.entry_id}
+                              type="button"
+                              data-testid="attack-weapon"
+                              onClick={() => setAttackWeaponId(w.entry_id === attackWeaponId ? null : w.entry_id)}
+                              style={chip(w.entry_id === attackWeaponId, 'var(--color-ally)')}
+                            >
+                              {w.name}
+                              {typeof w.ammo === 'number' && ` (残弾 ${w.ammo})`}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {isMyTurn && (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
@@ -1769,7 +1835,7 @@ export const PlayerPage: React.FC = () => {
                             setPadFirstRoll(null);
                             setPadExtraRoll(null);
                             setNeedsExtraRoll(false);
-                            sendMessage({ type: 'combat:choose', payload: { action_key: 'ranged' } });
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'ranged', target_id: attackTargetId ?? undefined, weapon_id: attackWeaponId ?? undefined } });
                           }}
                           style={{
                             padding: '12px 10px',
@@ -1795,7 +1861,7 @@ export const PlayerPage: React.FC = () => {
                             setPadFirstRoll(null);
                             setPadExtraRoll(null);
                             setNeedsExtraRoll(false);
-                            sendMessage({ type: 'combat:choose', payload: { action_key: 'aimed' } });
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'aimed', target_id: attackTargetId ?? undefined, weapon_id: attackWeaponId ?? undefined } });
                           }}
                           style={{
                             padding: '12px 10px',
@@ -1821,7 +1887,7 @@ export const PlayerPage: React.FC = () => {
                             setPadFirstRoll(null);
                             setPadExtraRoll(null);
                             setNeedsExtraRoll(false);
-                            sendMessage({ type: 'combat:choose', payload: { action_key: 'autofire' } });
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'autofire', target_id: attackTargetId ?? undefined, weapon_id: attackWeaponId ?? undefined } });
                           }}
                           style={{
                             padding: '12px 10px',
@@ -1847,7 +1913,7 @@ export const PlayerPage: React.FC = () => {
                             setPadFirstRoll(null);
                             setPadExtraRoll(null);
                             setNeedsExtraRoll(false);
-                            sendMessage({ type: 'combat:choose', payload: { action_key: 'melee' } });
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'melee', target_id: attackTargetId ?? undefined, weapon_id: attackWeaponId ?? undefined } });
                           }}
                           style={{
                             padding: '12px 10px',

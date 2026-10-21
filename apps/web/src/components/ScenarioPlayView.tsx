@@ -31,6 +31,8 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const [activeSession, setActiveSession] = useState<ScenarioSession | null>(null);
   const [allScenarios, setAllScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>('');
+  // 中断したまま（クリアしていない）シナリオの、前回のシーン（Phase 5j）
+  const [resumable, setResumable] = useState<Array<{ session_id: string; scenario_id: string; scene_title: string | null }>>([]);
   const [scenarioData, setScenarioData] = useState<ScenarioFull | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -76,10 +78,12 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const loadInitialData = useCallback(async () => {
     setLoading(true);
     try {
-      const [sessionRes, scenariosRes] = await Promise.all([
+      const [sessionRes, scenariosRes, resumableRes] = await Promise.all([
         gmFetch('/api/scenario-sessions/active').then((r) => r.json()),
         gmFetch('/api/scenarios').then((r) => r.json()),
+        gmFetch('/api/scenario-sessions/resumable').then((r) => r.json()),
       ]);
+      setResumable(resumableRes?.resumable ?? []);
 
       const scenarioList: Scenario[] = scenariosRes?.scenarios ?? [];
       setAllScenarios(scenarioList);
@@ -148,6 +152,19 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
     }
   };
 
+  // 中断したシナリオを前回のシーンから再開する（Phase 5j）
+  const handleResumeSession = async (sessionId: string) => {
+    setErrorMsg(null);
+    try {
+      const res = await gmFetch(`/api/scenario-sessions/${sessionId}/resume`, { method: 'POST' }).then((r) => r.json());
+      if (res.error) throw new Error(res.error);
+      setSuccessMsg('前回のシーンから再開しました');
+      loadInitialData();
+    } catch (err: any) {
+      setErrorMsg(err.message || '再開に失敗しました');
+    }
+  };
+
   // End scenario session
   const handleEndSession = async () => {
     if (!activeSession) return;
@@ -156,7 +173,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
       await gmFetch(`/api/scenario-sessions/${activeSession.id}/end`, {
         method: 'POST',
       });
-      setSuccessMsg('シナリオ進行を終了しました');
+      setSuccessMsg('シナリオ進行を中断しました。次は「続きから再開」で今のシーンから始められます');
       setActiveSession(null);
       loadInitialData();
     } catch (err: any) {
@@ -575,14 +592,45 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
               </select>
             </div>
 
+            {(() => {
+              const resume = resumable.find((r) => r.scenario_id === selectedScenarioId);
+              if (!resume) return null;
+              return (
+                <button
+                  type="button"
+                  onClick={() => handleResumeSession(resume.session_id)}
+                  style={{
+                    padding: '14px',
+                    backgroundColor: 'var(--color-ally)',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: 700,
+                    fontSize: '1.05rem',
+                    cursor: 'pointer',
+                    marginTop: '8px',
+                  }}
+                >
+                  続きから再開（前回: {resume.scene_title ?? 'シーン未指定'}）
+                </button>
+              );
+            })()}
+
             <button
               type="button"
-              onClick={handleStartSession}
+              onClick={() => {
+                if (
+                  resumable.some((r) => r.scenario_id === selectedScenarioId) &&
+                  !confirm('中断中の進行があります。最初のシーンから始め直しますか？（参加キャラの縛りはそのままです）')
+                )
+                  return;
+                handleStartSession();
+              }}
               style={{
                 padding: '14px',
-                backgroundColor: 'var(--color-ally)',
-                color: '#000',
-                border: 'none',
+                ...(resumable.some((r) => r.scenario_id === selectedScenarioId)
+                  ? { backgroundColor: 'transparent', color: 'var(--color-text)', border: '1px solid var(--color-border-light)' }
+                  : { backgroundColor: 'var(--color-ally)', color: '#000', border: 'none' }),
                 borderRadius: '6px',
                 fontWeight: 700,
                 fontSize: '1.05rem',
@@ -590,7 +638,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                 marginTop: '8px',
               }}
             >
-              進行を開始する
+              {resumable.some((r) => r.scenario_id === selectedScenarioId) ? '最初から始める' : '進行を開始する'}
             </button>
           </div>
         )}

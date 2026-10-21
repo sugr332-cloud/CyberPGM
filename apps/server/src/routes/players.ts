@@ -98,7 +98,7 @@ playersRoutes.post('/scenario-sessions/:id/clear', requireGm, async (c) => {
     .where(eq(characters.scenario_id, active.scenario_id))
     .returning({ id: characters.id, name: characters.name })
     .all();
-  endScenarioSession(active.id, `シナリオクリア: ${released.map((r) => r.name).join('、') || '参加キャラなし'}`);
+  endScenarioSession(active.id, `シナリオクリア: ${released.map((r) => r.name).join('、') || '参加キャラなし'}`, true);
   for (const r of released) sessionManager.updateCharacterSheet(r.id);
   triggerAutoSave('シナリオクリア');
   return c.json({ success: true, released });

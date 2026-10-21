@@ -506,7 +506,14 @@ export const api = {
     }, getGmToken()),
 
   applyCombatAction: (combatId: string, data: any) =>
-    request<{ result: any; combat: any }>(`/api/combats/${combatId}/apply`, {
+    request<{ result: any; combat: any; auto_advanced?: boolean }>(`/api/combats/${combatId}/apply`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
+  // 1 ターンのアクション回数（Phase 5j）: actions_per_turn = 毎ターン、bonus = このターンだけ ±1
+  setCombatActions: (combatId: string, participantId: string, data: { actions_per_turn?: number; bonus?: 1 | -1 }) =>
+    request<{ combat: any }>(`/api/combats/${combatId}/participants/${participantId}/actions`, {
       method: 'POST',
       body: JSON.stringify(data),
     }, getGmToken()),
