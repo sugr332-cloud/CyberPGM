@@ -240,6 +240,20 @@ describe('Saves & Load operations (phase 2 §6 & §9)', () => {
     expect(texts).not.toContain('保存後のメモ');
   });
 
+  it('writes save files to SAVES_DIR during tests, not to data/saves', async () => {
+    const res = await app.request('/api/saves', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gmToken}` },
+      body: JSON.stringify({ name: '保存先の確認' }),
+    });
+    const { save } = await res.json();
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    expect(process.env.SAVES_DIR).toBeTruthy();
+    expect(fs.existsSync(path.join(process.env.SAVES_DIR!, save.file))).toBe(true);
+    expect(fs.existsSync(path.join(process.cwd(), 'data', 'saves', save.file))).toBe(false);
+  });
+
   it('rejects corrupted or schema-invalid files during import', async () => {
     // 1. Invalid JSON
     const badJsonRes = await app.request('/api/saves/import', {

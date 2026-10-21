@@ -49,8 +49,8 @@ import { formatCharacterRow } from '../character-helper.js';
 export const savesRoutes = new Hono();
 
 export function getSavesDir(): string {
-  const root = getProjectRoot();
-  const dir = path.join(root, 'data', 'saves');
+  // テストと E2E は SAVES_DIR で一時フォルダを使う（本番の data/saves に書かない）
+  const dir = process.env.SAVES_DIR ? path.resolve(process.env.SAVES_DIR) : path.join(getProjectRoot(), 'data', 'saves');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }

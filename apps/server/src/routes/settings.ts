@@ -68,6 +68,13 @@ settingsRoutes.get('/session', requireGm, async (c) => {
   return c.json(info);
 });
 
+// GET /api/session/pc-qr: PC ごとの再開用 QR（今のセッションコード入り。保存ファイルには入れない。Phase 5d）
+settingsRoutes.get('/session/pc-qr', requireGm, async (c) => {
+  const host = c.req.header('Host') || '127.0.0.1:8787';
+  const proto = c.req.header('X-Forwarded-Proto') || 'http';
+  return c.json({ pcs: await sessionManager.getPcResumeCodes(`${proto}://${host}`) });
+});
+
 /**
  * DELETE /api/devices/:id: GM unlinks / revokes a device.
  */

@@ -778,6 +778,26 @@ export class SessionManager {
   }
 
   /**
+   * PC ごとの再開用の URL と QR（?join=<今のコード>&pc=<キャラ ID>）。
+   */
+  public async getPcResumeCodes(hostUrl: string) {
+    const pcs = db.select().from(characters).where(eq(characters.kind, 'pc')).all();
+    return Promise.all(
+      pcs.map(async (pc) => {
+        const url = `${hostUrl}/player?join=${this.sessionCode}&pc=${pc.id}`;
+        return {
+          id: pc.id,
+          name: pc.name,
+          role: pc.role,
+          image_id: pc.image_id,
+          url,
+          qrSvg: await qrcode.toString(url, { type: 'svg', margin: 1 }),
+        };
+      }),
+    );
+  }
+
+  /**
    * Generates session info with QR SVG.
    */
   public async getSessionInfo(hostUrl: string): Promise<SessionInfo> {

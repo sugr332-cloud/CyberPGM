@@ -20,6 +20,7 @@ import { CharacterReceptionView } from '../components/CharacterReceptionView.js'
 import { CombatView } from '../components/CombatView.js';
 import { ScenarioMakerView } from '../components/ScenarioMakerView.js';
 import { ScenarioPlayView } from '../components/ScenarioPlayView.js';
+import { ResumeQrPanel } from '../components/ResumeQrPanel.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -373,13 +374,16 @@ export const GmPage: React.FC = () => {
     }
   };
 
+  // 再開用 QR（Phase 5d）: 読み込みのあと全員分、PC タブからは 1 人分
+  const [resumeQr, setResumeQr] = useState<{ title: string; pcId?: string } | null>(null);
+
   const handleLoadSave = async (id: string, name: string) => {
     if (!confirm(`セーブ「${name}」を読み込みますか？\n（現在の状態は自動保存に残ります）`)) return;
     try {
       await api.loadSave(id);
-      alert(`セーブ「${name}」を読み込みました。`);
       refreshAllData();
       setShowSaveModal(false);
+      setResumeQr({ title: `セーブ「${name}」を読み込みました` });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(`読み込みに失敗しました: ${msg}`);
@@ -945,6 +949,22 @@ export const GmPage: React.FC = () => {
                       >
                         編集
                       </button>
+                      {pc.kind === 'pc' && (
+                        <button
+                          onClick={() => setResumeQr({ title: `${pc.name} の再開用 QR`, pcId: pc.id })}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--color-text-muted)',
+                            fontSize: '0.8rem',
+                            cursor: 'pointer',
+                            marginLeft: '8px',
+                            textDecoration: 'underline',
+                          }}
+                        >
+                          このキャラの QR
+                        </button>
+                      )}
                     </div>
 
                     {/* Stats summary: Funds, HP, Humanity */}
@@ -1459,6 +1479,7 @@ export const GmPage: React.FC = () => {
                   saveList.map((sv) => (
                     <div
                       key={sv.id}
+                      data-testid={`save-row-${sv.id}`}
                       style={{
                         backgroundColor: 'var(--color-surface-elevated)',
                         border: '1px solid var(--color-border-light)',
@@ -2059,6 +2080,8 @@ export const GmPage: React.FC = () => {
           })}
         </nav>
       )}
+
+      {resumeQr && <ResumeQrPanel title={resumeQr.title} onlyPcId={resumeQr.pcId} onClose={() => setResumeQr(null)} />}
 
       <Footer />
     </div>
