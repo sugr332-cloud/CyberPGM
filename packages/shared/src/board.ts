@@ -8,6 +8,11 @@ export interface BoardGrid {
   cell_px: number;
   cols: number;
   rows: number;
+  // 背景マップの位置と大きさ（px。Phase 5n）。マスの大きさ（cell_px）を変えると、地図に対してグリッドが拡大・縮小する
+  bg_x?: number;
+  bg_y?: number;
+  bg_w?: number;
+  bg_h?: number;
 }
 
 export const BoardGridSchema = z.object({
@@ -18,6 +23,10 @@ export const BoardGridSchema = z.object({
   cell_px: z.number().default(40),
   cols: z.number().int().positive().default(20),
   rows: z.number().int().positive().default(15),
+  bg_x: z.number().optional(),
+  bg_y: z.number().optional(),
+  bg_w: z.number().positive().optional(),
+  bg_h: z.number().positive().optional(),
 });
 
 export type BoardObjectKind = 'wall' | 'crate' | 'container' | 'vehicle' | 'other';

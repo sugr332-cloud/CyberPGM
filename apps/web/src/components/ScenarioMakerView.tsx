@@ -13,6 +13,7 @@ import {
 } from '@cyberpgm/shared';
 import { api } from '../api.js';
 import { SceneBgmField } from './SceneBgmField.js';
+import { SceneBoardField } from './SceneBoardField.js';
 
 interface ScenarioMakerViewProps {
   characters: CharacterSheet[];
@@ -1752,6 +1753,13 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                   </div>
 
                   <SceneBgmField value={selectedScene.bgm} onChange={(bgm) => handleUpdateActiveSceneField('bgm', bgm)} />
+
+                  <SceneBoardField
+                    key={selectedScene.id}
+                    sceneTitle={selectedScene.title}
+                    boardId={selectedScene.board_id}
+                    onChange={(id) => handleUpdateActiveSceneField('board_id', id)}
+                  />
 
                   {/* NPCs selection */}
                   <div style={{ marginBottom: '16px' }}>

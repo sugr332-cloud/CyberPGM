@@ -1595,6 +1595,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 : null
             }
             isGm={true}
+            onUpdateBoard={async (patch) => {
+              await api.updateBoard(boardData.board.id, patch);
+              refreshBoard(boardData.board.id);
+            }}
             onUpdateObject={handleUpdateObject}
             onDeleteObject={handleDeleteObject}
             onCreateObject={handleCreateObject}

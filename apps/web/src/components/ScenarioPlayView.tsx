@@ -491,7 +491,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
     if (currentScene?.board_id) {
       gmFetch(`/api/boards/${currentScene.board_id}`)
         .then((r) => r.json())
-        .then((b) => setActiveBoard(b))
+        .then((b) => setActiveBoard(b.board ?? null)) // { board } で返る（前は中身を取り出しておらず、盤面が空に見えていた。Phase 5n）
         .catch(() => setActiveBoard(null));
     } else {
       setActiveBoard(null);
@@ -989,6 +989,15 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                       tokens={activeBoard.tokens || []}
                       isGm={true}
                       onUpdateFog={(newFog) => handleUpdateBoardFog(activeBoard.id, newFog)}
+                      onUpdateBoard={async (patch) => {
+                        await gmFetch(`/api/boards/${activeBoard.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(patch),
+                        });
+                        const b = await gmFetch(`/api/boards/${activeBoard.id}`).then((r) => r.json());
+                        setActiveBoard(b.board ?? null);
+                      }}
                       style={{ height: '360px' }}
                     />
                   </div>

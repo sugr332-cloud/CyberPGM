@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useCallback } from 'react';
 import {
   Board,
+  BoardGrid,
   BoardObject,
   BoardToken,
   BoardDrop,
@@ -8,6 +9,8 @@ import {
   CombatParticipant,
 } from '@cyberpgm/shared';
 import { woundState, LosStatus } from '@cyberpgm/rules';
+import { BoardSettingsPanel } from './BoardSettingsPanel.js';
+import { getGmToken } from '../api.js';
 
 export interface BoardViewProps {
   board: Board;
@@ -37,6 +40,8 @@ export interface BoardViewProps {
   onSelectDrop?: (drop: BoardDrop) => void;
   onSelectParticipant?: (participantId: string) => void;
   onUpdateFog?: (fog: { x: number; y: number }[]) => void;
+  // 盤面の設定（背景マップ・マスの大きさ・マス数。Phase 5n）。渡すと GM に「盤面の設定」を出す
+  onUpdateBoard?: (patch: { background_image_id?: string | null; grid?: Partial<BoardGrid> }) => void;
   style?: React.CSSProperties;
   className?: string;
 }
@@ -63,9 +68,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
   onSelectDrop,
   onSelectParticipant,
   onUpdateFog,
+  onUpdateBoard,
   style,
   className = '',
 }) => {
+  const [showSettings, setShowSettings] = useState(false);
   const grid = useMemo(() => {
     return (
       board.grid || {
@@ -279,8 +286,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
   const selectedObject = objects.find((o) => o.id === selectedObjectId);
 
   // Background image URL: if visibility is GM and this is TV screen, server will have nullified it.
+  // GM だけの画像も GM 画面では見えるように、GM はトークンをつける（v は更新したときの読み直し用）
   const bgImageUrl = board.background_image_id
-    ? `/api/images/${board.background_image_id}?t=${board.updated_at || Date.now()}`
+    ? `/api/images/${board.background_image_id}?v=${board.updated_at || Date.now()}${isGm && !isScreen ? `&t=${getGmToken() ?? ''}` : ''}`
     : null;
 
   return (
@@ -328,6 +336,24 @@ export const BoardView: React.FC<BoardViewProps> = ({
               />
               <span>グリッド表示</span>
             </label>
+            {isGm && onUpdateBoard && (
+              <button
+                type="button"
+                data-testid="board-settings-toggle"
+                onClick={() => setShowSettings((v) => !v)}
+                style={{
+                  padding: '4px 8px',
+                  backgroundColor: showSettings ? 'var(--color-ally)' : 'var(--color-surface-elevated)',
+                  color: showSettings ? '#000' : 'var(--color-text)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                }}
+              >
+                盤面の設定
+              </button>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
@@ -536,6 +562,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
         </div>
       )}
 
+      {/* 盤面の設定（Phase 5n） */}
+      {!isScreen && isGm && onUpdateBoard && showSettings && <BoardSettingsPanel board={board} grid={grid} onUpdateBoard={onUpdateBoard} />}
+
       {/* Selected Object Controls Bar (GM only, outside combat) */}
       {isGm && combat?.status !== 'active' && selectedObject && (
         <div className="w-full flex items-center justify-between px-3 py-1.5 bg-amber-950/40 border-b border-amber-800/60 text-xs text-amber-200">
@@ -671,10 +700,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
           {bgImageUrl && (
             <image
               href={bgImageUrl}
-              x="0"
-              y="0"
-              width={boardWidth}
-              height={boardHeight}
+              x={grid.bg_w ? (grid.bg_x ?? 0) : 0}
+              y={grid.bg_w ? (grid.bg_y ?? 0) : 0}
+              width={grid.bg_w ?? boardWidth}
+              height={grid.bg_h ?? boardHeight}
               preserveAspectRatio="none"
             />
           )}
