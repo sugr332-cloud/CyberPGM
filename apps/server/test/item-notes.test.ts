@@ -14,6 +14,8 @@ describe('Item effect and flavor notes (Phase 5c)', () => {
 
   beforeAll(async () => {
     runDemoSeed();
+    // 品目はテスト用の DB（E2E の DB）から写されるので、前の編集を消してから下書きを入れる
+    db.update(items).set({ effect_ja: null, flavor_ja: null, effect_is_draft: false, flavor_is_draft: false }).run();
     initPhase5cData(db);
     gm = (await (await app.request('/api/auth/gm-token', { method: 'POST' })).json()).token;
     heavyPistolId = db.select().from(items).where(eq(items.name_en, 'Heavy Pistol')).get()!.id;

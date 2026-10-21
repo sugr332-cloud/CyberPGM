@@ -8,6 +8,7 @@ import { createDb, closeDb } from './apps/server/src/db/client.js';
 interface TempEnv {
   tempDbPath: string;
   tempImagesDir: string;
+  tempSavesDir: string;
 }
 
 function setupTempDb(): TempEnv {
@@ -18,6 +19,10 @@ function setupTempDb(): TempEnv {
   const tempImagesDir = path.join(os.tmpdir(), `cyberpgm-test-images-${Date.now()}-${randomSuffix}`);
   fs.mkdirSync(path.join(tempImagesDir, 'user'), { recursive: true });
   process.env.IMAGES_DIR = tempImagesDir;
+
+  const tempSavesDir = path.join(os.tmpdir(), `cyberpgm-test-saves-${Date.now()}-${randomSuffix}`);
+  fs.mkdirSync(tempSavesDir, { recursive: true });
+  process.env.SAVES_DIR = tempSavesDir;
 
   // Apply migrations to fresh temp DB
   const { sqlite, db } = createDb(tempDbPath);
@@ -56,7 +61,7 @@ function setupTempDb(): TempEnv {
   }
 
   sqlite.close();
-  return { tempDbPath, tempImagesDir };
+  return { tempDbPath, tempImagesDir, tempSavesDir };
 }
 
 let activeEnv: TempEnv | null = setupTempDb();
@@ -84,6 +89,10 @@ afterAll(() => {
       }
     }
 
+    if (activeEnv.tempSavesDir && fs.existsSync(activeEnv.tempSavesDir)) {
+      fs.rmSync(activeEnv.tempSavesDir, { recursive: true, force: true });
+    }
+
     if (activeEnv.tempImagesDir && fs.existsSync(activeEnv.tempImagesDir)) {
       try {
         fs.rmSync(activeEnv.tempImagesDir, { recursive: true, force: true });
@@ -97,4 +106,5 @@ afterAll(() => {
 
   delete process.env.DB_PATH;
   delete process.env.IMAGES_DIR;
+  delete process.env.SAVES_DIR;
 });

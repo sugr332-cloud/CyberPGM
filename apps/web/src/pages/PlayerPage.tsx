@@ -228,6 +228,31 @@ export const PlayerPage: React.FC = () => {
     }
   }, [searchParams, token]);
 
+  // キャラごとの再開 QR（?join=<コード>&pc=<キャラ ID>）: キャラ選びを飛ばしてそのキャラで参加する（Phase 5d）
+  const resumeTried = React.useRef(false);
+  useEffect(() => {
+    const urlCode = searchParams.get('join');
+    const pcId = searchParams.get('pc');
+    if (!urlCode || !pcId || resumeTried.current) return;
+    if (token && sheet?.id === pcId) return;
+    resumeTried.current = true;
+    setJoinCode(urlCode);
+    setClaimWaitMessage('参加をリクエスト中…（別端末が参加中の場合はGMの承認待ち）');
+    api
+      .claimCharacter(urlCode, pcId)
+      .then((res) => {
+        setPlayerToken(res.token);
+        setToken(res.token);
+        setClaimWaitMessage('');
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        setClaimWaitMessage('');
+        setJoinError(`この QR のキャラでは参加できませんでした（${msg}）。下の一覧からキャラを選んでください。`);
+        api.joinSession(urlCode).then((res: { characters: Array<{ id: string; name: string; role: string; claimed: boolean }> }) => setAvailableChars(res.characters)).catch(() => {});
+      });
+  }, [searchParams, token, sheet?.id]);
+
   // Handle Character Claim
   const handleClaim = async (charId: string) => {
     setJoinError('');

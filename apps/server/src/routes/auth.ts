@@ -127,6 +127,10 @@ authRoutes.post('/claim', async (c) => {
   if (!char) {
     return c.json({ error: 'Character not found' }, 404);
   }
+  // スマホで使えるのは PC だけ（NPC・モブは GM が動かす）
+  if (char.kind !== 'pc') {
+    return c.json({ error: 'This character is not a PC' }, 400);
+  }
 
   // Check if character is already claimed by an active device
   const existingDevice = db

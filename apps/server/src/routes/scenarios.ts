@@ -292,159 +292,7 @@ scenariosRouter.post('/:id/duplicate', requireGm, async (c) => {
   const id = c.req.param('id')!;
   const full = await getFullScenario(id);
   if (!full) return c.json({ error: 'Scenario not found' }, 404);
-
-  const newScenarioId = generateUlid();
-  const now = Date.now();
-
-  // Create mapping of old scene IDs to new scene IDs
-  const sceneIdMap = new Map<string, string>();
-  for (const sc of full.scenes) {
-    sceneIdMap.set(sc.id, generateUlid());
-  }
-
-  // Insert duplicated scenario
-  db.insert(scenarios)
-    .values({
-      id: newScenarioId,
-      title: `${full.scenario.title} (コピー)`,
-      summary: full.scenario.summary,
-      meta: JSON.stringify(full.scenario.meta),
-      version: 1,
-      created_at: now,
-      updated_at: now,
-    })
-    .run();
-
-  // Insert scenes
-  for (const sc of full.scenes) {
-    const newSceneId = sceneIdMap.get(sc.id)!;
-    db.insert(scenes)
-      .values({
-        id: newSceneId,
-        scenario_id: newScenarioId,
-        title: sc.title,
-        read_aloud: sc.read_aloud,
-        gm_notes: sc.gm_notes,
-        location: sc.location,
-        npc_ids: JSON.stringify(sc.npc_ids),
-        position: JSON.stringify(sc.position),
-        background_image_id: sc.background_image_id || null,
-        board_id: sc.board_id || null,
-        sort_index: sc.sort_index,
-      })
-      .run();
-  }
-
-  // Insert links
-  for (const l of full.links) {
-    const fromId = sceneIdMap.get(l.from_scene_id);
-    const toId = sceneIdMap.get(l.to_scene_id);
-    if (fromId && toId) {
-      db.insert(scene_links)
-        .values({
-          id: generateUlid(),
-          scenario_id: newScenarioId,
-          from_scene_id: fromId,
-          to_scene_id: toId,
-          condition: l.condition,
-        })
-        .run();
-    }
-  }
-
-  // Insert choices (re-mapping next_scene outcome)
-  for (const ch of full.choices) {
-    const newSceneId = sceneIdMap.get(ch.scene_id);
-    if (!newSceneId) continue;
-
-    const remappedSuccess = ch.on_success.map((o) => {
-      if (o.kind === 'next_scene' && o.scene_id && sceneIdMap.has(o.scene_id)) {
-        return { ...o, scene_id: sceneIdMap.get(o.scene_id) };
-      }
-      return o;
-    });
-    const remappedFailure = ch.on_failure.map((o) => {
-      if (o.kind === 'next_scene' && o.scene_id && sceneIdMap.has(o.scene_id)) {
-        return { ...o, scene_id: sceneIdMap.get(o.scene_id) };
-      }
-      return o;
-    });
-
-    db.insert(scene_choices)
-      .values({
-        id: generateUlid(),
-        scene_id: newSceneId,
-        label: ch.label,
-        skill_key: ch.skill_key || null,
-        dv: ch.dv ?? null,
-        who: ch.who,
-        on_success: JSON.stringify(remappedSuccess),
-        on_failure: JSON.stringify(remappedFailure),
-        sort_index: ch.sort_index,
-      })
-      .run();
-  }
-
-  // Insert clues
-  for (const cl of full.clues) {
-    db.insert(clues)
-      .values({
-        id: generateUlid(),
-        scenario_id: newScenarioId,
-        scene_id: cl.scene_id ? sceneIdMap.get(cl.scene_id) || null : null,
-        title: cl.title,
-        body: cl.body,
-        image_id: cl.image_id || null,
-      })
-      .run();
-  }
-
-  // Insert handouts
-  for (const ho of full.handouts) {
-    db.insert(handouts)
-      .values({
-        id: generateUlid(),
-        scenario_id: newScenarioId,
-        scene_id: ho.scene_id ? sceneIdMap.get(ho.scene_id) || null : null,
-        title: ho.title,
-        body: ho.body,
-        image_id: ho.image_id || null,
-      })
-      .run();
-  }
-
-  // Insert encounters
-  for (const enc of full.encounters) {
-    db.insert(encounters)
-      .values({
-        id: generateUlid(),
-        scenario_id: newScenarioId,
-        scene_id: enc.scene_id ? sceneIdMap.get(enc.scene_id) || null : null,
-        title: enc.title,
-        participants: JSON.stringify(enc.participants),
-        notes: enc.notes,
-      })
-      .run();
-  }
-
-  // Insert random tables
-  for (const rt of full.random_tables) {
-    db.insert(random_tables)
-      .values({
-        id: generateUlid(),
-        scenario_id: newScenarioId,
-        title: rt.title,
-        dice: rt.dice,
-        rows: JSON.stringify(rt.rows),
-      })
-      .run();
-  }
-
-  // Create initial version snapshot
-  await createScenarioVersionSnapshot(newScenarioId, 1);
-
-  const duplicatedFull = await getFullScenario(newScenarioId);
-  return c.json(duplicatedFull, 201);
+  return c.json(await insertScenarioCopy(full, `${full.scenario.title} (コピー)`), 201);
 });
 
 // GET /api/scenarios/:id/export - Export full scenario JSON
@@ -455,15 +303,11 @@ scenariosRouter.get('/:id/export', requireGm, async (c) => {
   return c.json(full);
 });
 
-// POST /api/scenarios/import - Import scenario from JSON (re-keying IDs)
-scenariosRouter.post('/import', requireGm, async (c) => {
-  const body = await c.req.json();
-  const parsed = ScenarioFullSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: 'Invalid scenario import format', details: parsed.error.issues }, 400);
-  }
-
-  const data = parsed.data;
+/**
+ * シナリオ一式を新しい ID で入れる（取り込みと複製で共通）。シーン・手がかり・ハンドアウトの ID を振り直し、
+ * 分岐と選択肢の結果の参照も付け替える。
+ */
+async function insertScenarioCopy(data: ScenarioFull, title: string): Promise<ScenarioFull | null> {
   const newScenarioId = generateUlid();
   const now = Date.now();
 
@@ -475,7 +319,7 @@ scenariosRouter.post('/import', requireGm, async (c) => {
   db.insert(scenarios)
     .values({
       id: newScenarioId,
-      title: data.scenario.title,
+      title,
       summary: data.scenario.summary,
       meta: JSON.stringify(data.scenario.meta),
       version: 1,
@@ -519,22 +363,19 @@ scenariosRouter.post('/import', requireGm, async (c) => {
     }
   }
 
+  // 手がかり・ハンドアウトにも新しい ID を振り、選択肢の結果の参照を付け替える（Phase 5d）
+  const clueIdMap = new Map<string, string>(data.clues.map((cl) => [cl.id, generateUlid()]));
+  const handoutIdMap = new Map<string, string>(data.handouts.map((ho) => [ho.id, generateUlid()]));
+  const remapOutcome = (o: (typeof data.choices)[number]['on_success'][number]) => {
+    if (o.kind === 'next_scene' && o.scene_id && sceneIdMap.has(o.scene_id)) return { ...o, scene_id: sceneIdMap.get(o.scene_id) };
+    if (o.kind === 'reveal_clue' && o.clue_id && clueIdMap.has(o.clue_id)) return { ...o, clue_id: clueIdMap.get(o.clue_id) };
+    if (o.kind === 'reveal_handout' && o.handout_id && handoutIdMap.has(o.handout_id)) return { ...o, handout_id: handoutIdMap.get(o.handout_id) };
+    return o;
+  };
+
   for (const ch of data.choices) {
     const newSceneId = sceneIdMap.get(ch.scene_id);
     if (!newSceneId) continue;
-
-    const remappedSuccess = ch.on_success.map((o) => {
-      if (o.kind === 'next_scene' && o.scene_id && sceneIdMap.has(o.scene_id)) {
-        return { ...o, scene_id: sceneIdMap.get(o.scene_id) };
-      }
-      return o;
-    });
-    const remappedFailure = ch.on_failure.map((o) => {
-      if (o.kind === 'next_scene' && o.scene_id && sceneIdMap.has(o.scene_id)) {
-        return { ...o, scene_id: sceneIdMap.get(o.scene_id) };
-      }
-      return o;
-    });
 
     db.insert(scene_choices)
       .values({
@@ -544,8 +385,8 @@ scenariosRouter.post('/import', requireGm, async (c) => {
         skill_key: ch.skill_key || null,
         dv: ch.dv ?? null,
         who: ch.who,
-        on_success: JSON.stringify(remappedSuccess),
-        on_failure: JSON.stringify(remappedFailure),
+        on_success: JSON.stringify(ch.on_success.map(remapOutcome)),
+        on_failure: JSON.stringify(ch.on_failure.map(remapOutcome)),
         sort_index: ch.sort_index,
       })
       .run();
@@ -554,7 +395,7 @@ scenariosRouter.post('/import', requireGm, async (c) => {
   for (const cl of data.clues) {
     db.insert(clues)
       .values({
-        id: generateUlid(),
+        id: clueIdMap.get(cl.id)!,
         scenario_id: newScenarioId,
         scene_id: cl.scene_id ? sceneIdMap.get(cl.scene_id) || null : null,
         title: cl.title,
@@ -567,7 +408,7 @@ scenariosRouter.post('/import', requireGm, async (c) => {
   for (const ho of data.handouts) {
     db.insert(handouts)
       .values({
-        id: generateUlid(),
+        id: handoutIdMap.get(ho.id)!,
         scenario_id: newScenarioId,
         scene_id: ho.scene_id ? sceneIdMap.get(ho.scene_id) || null : null,
         title: ho.title,
@@ -604,8 +445,17 @@ scenariosRouter.post('/import', requireGm, async (c) => {
 
   await createScenarioVersionSnapshot(newScenarioId, 1);
 
-  const importedFull = await getFullScenario(newScenarioId);
-  return c.json(importedFull, 201);
+  return getFullScenario(newScenarioId);
+}
+
+// POST /api/scenarios/import - Import scenario from JSON (re-keying IDs)
+scenariosRouter.post('/import', requireGm, async (c) => {
+  const body = await c.req.json();
+  const parsed = ScenarioFullSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid scenario import format', details: parsed.error.issues }, 400);
+  }
+  return c.json(await insertScenarioCopy(parsed.data, parsed.data.scenario.title), 201);
 });
 
 // ==========================================
