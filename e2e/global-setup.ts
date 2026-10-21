@@ -16,4 +16,10 @@ export default async function globalSetup() {
     fs.rmSync(e2eImagesDir, { recursive: true, force: true });
   }
   fs.mkdirSync(e2eImagesDir, { recursive: true });
+
+  // FVTT のアイコン（読み取りだけ）は一時フォルダに写す。アップロードは一時フォルダに入り、data/images には書かない
+  const fvttIcons = path.resolve(process.cwd(), 'data/images/fvtt');
+  if (fs.existsSync(fvttIcons)) {
+    fs.cpSync(fvttIcons, path.join(e2eImagesDir, 'fvtt'), { recursive: true });
+  }
 }

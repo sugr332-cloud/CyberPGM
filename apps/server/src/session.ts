@@ -19,6 +19,13 @@ export interface ConnectedClient {
   characterId?: string | null;
 }
 
+export interface PublishedStory {
+  scenario_session_id: string;
+  scene_id: string;
+  choices: Array<{ id: string; label: string; skill_key: string | null; who?: string | null }>;
+  generalActions: Array<{ key: string; label: string }>;
+}
+
 export interface ClaimRequest {
   requestId: string;
   characterId: string;
@@ -35,6 +42,7 @@ export class SessionManager {
   private combatProvider: (() => any) | null = null;
   private boardProvider: ((id: string) => any) | null = null;
   private storyProvider: (() => any) | null = null;
+  private publishedStory: PublishedStory | null = null;
 
   constructor() {
     this.sessionCode = generateSessionCode();
@@ -64,6 +72,9 @@ export class SessionManager {
   public addClient(client: ConnectedClient): void {
     this.clients.add(client);
     this.broadcastPresence();
+    if (client.role === 'player' && client.characterId && this.publishedStory) {
+      this.safeSend(client, { type: 'story:choices', payload: this.storyChoicesFor(client.characterId) });
+    }
   }
 
   public removeClient(ws: WSContext): void {
@@ -473,18 +484,25 @@ export class SessionManager {
               fogSet.add(`${f.x},${f.y}`);
             }
 
+            // 戦闘外: PC は味方、それ以外は敵として描く。敵は名前と負傷状態だけ（HP の数値は送らない）
+            const charOf = (id: string | null | undefined) =>
+              id ? db.select().from(characters).where(eq(characters.id, id)).get() : undefined;
             const filteredTokens = (b.tokens || [])
               .filter((t: any) => {
                 if (t.gm_only) return false;
                 if (fogSet.has(`${t.x},${t.y}`)) return false;
+                const ch = charOf(t.character_id);
+                if (ch && ch.kind !== 'pc' && JSON.parse(ch.status || '[]').includes('隠れている')) return false;
                 return true;
               })
-              .map((t: any) => ({
-                ...t,
-                wound_state: null,
-                hp: null,
-                hp_max: null,
-              }));
+              .map((t: any) => {
+                const ch = charOf(t.character_id);
+                if (!ch) return { ...t, name: '—', side: null, wound_state: null, hp: null, hp_max: null };
+                const wound = ch.hp <= 0 ? 'dead' : woundState(ch.hp, ch.hp_max);
+                return ch.kind === 'pc'
+                  ? { ...t, name: ch.name, side: 'ally', wound_state: wound, hp: ch.hp, hp_max: ch.hp_max }
+                  : { ...t, name: ch.name, side: 'enemy', wound_state: wound, hp: null, hp_max: null };
+              });
 
             const filteredObjects = (b.objects || []).filter((o: any) => {
               const w = o.w || 1;
@@ -697,23 +715,47 @@ export class SessionManager {
   }
 
   /**
-   * Broadcasts choices to player clients.
+   * 公開中の選択肢を送る。GM には全部、プレイヤーには「誰が選べるか」に合うものだけを、
+   * 名前と技能だけにして送る（成功・失敗の結果は GM だけが知る）。再接続したプレイヤーにも送り直す。
    */
-  public broadcastStoryChoices(payload: object): void {
-    const msg = JSON.stringify({
-      type: 'story:choices',
-      payload,
-    });
+  public broadcastStoryChoices(payload: PublishedStory | null): void {
+    this.publishedStory = payload;
     for (const client of this.clients) {
-      if (client.role === 'player' || client.role === 'gm') {
-        try {
-          client.ws.send(msg);
-        } catch {
-          // ignore
-        }
+      if (client.role === 'gm') {
+        this.safeSend(client, { type: 'story:choices', payload });
+      } else if (client.role === 'player' && client.characterId) {
+        this.safeSend(client, { type: 'story:choices', payload: this.storyChoicesFor(client.characterId) });
       }
     }
   }
+
+  private storyChoicesFor(characterId: string) {
+    if (!this.publishedStory) return null;
+    const ch = db.select().from(characters).where(eq(characters.id, characterId)).get();
+    const allowed = (who: string | null | undefined) => {
+      const w = (who ?? '').trim();
+      if (!w || w === '全員') return true;
+      const names = w.split(/[、,\s]+/).filter(Boolean);
+      return !!ch && (names.includes(ch.id) || names.includes(ch.name) || names.includes(ch.role));
+    };
+    return {
+      scenario_session_id: this.publishedStory.scenario_session_id,
+      scene_id: this.publishedStory.scene_id,
+      choices: this.publishedStory.choices
+        .filter((c) => allowed(c.who))
+        .map((c) => ({ id: c.id, label: c.label, skill_key: c.skill_key })),
+      generalActions: this.publishedStory.generalActions,
+    };
+  }
+
+  private safeSend(client: ConnectedClient, message: object): void {
+    try {
+      client.ws.send(JSON.stringify(message));
+    } catch {
+      // ignore
+    }
+  }
+
 
   /**
    * Broadcasts story check update to GM clients.

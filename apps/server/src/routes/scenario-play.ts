@@ -340,6 +340,7 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/move-scene', requireGm, async (c
 
   sessionManager.broadcastScreenUpdate();
 
+  sessionManager.broadcastStoryChoices(null); // 前のシーンの選択肢を下げる
   return c.json({ success: true, current_scene_id: scene_id });
 });
 
@@ -421,6 +422,7 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/end', requireGm, async (c) => {
   setCurrentStoryScreen(null);
   sessionManager.broadcastScreenUpdate();
 
+  sessionManager.broadcastStoryChoices(null);
   return c.json({ success: true, ended_at: now });
 });
 
@@ -980,6 +982,7 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks/:checkId/apply', requireG
         .run();
       const targetSc = db.select().from(scenes).where(eq(scenes.id, eff.scene_id)).get();
       appliedSummary.push(`シーン移動: ${targetSc?.title || eff.scene_id}`);
+      sessionManager.broadcastStoryChoices(null);
       logToActiveSession('scene', `シーン移動: ${targetSc?.title || eff.scene_id}`, { scene_id: eff.scene_id });
     } else if (eff.kind === 'reveal_clue' && eff.clue_id) {
       const revealed: RevealedData = JSON.parse(session.revealed || '{"clue_ids":[],"handout_ids":[]}');

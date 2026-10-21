@@ -3,20 +3,14 @@ import {
   CharacterSheet,
   Scenario,
   ScenarioFull,
-  Scene,
-  SceneChoice,
-  Clue,
-  Handout,
-  Encounter,
   ScenarioSession,
   SessionLogEntry,
-  StoryCheck,
   SKILL_CATALOG,
   formatSkillName,
 } from '@cyberpgm/shared';
 import { BoardView } from './BoardView.js';
 import { StoryCheckRow, StoryCheckView } from './StoryCheckRow.js';
-import { api, gmFetch } from '../api.js';
+import { getGmToken, gmFetch } from '../api.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 
 interface ScenarioPlayViewProps {
@@ -52,23 +46,21 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const [showAdhocChoiceModal, setShowAdhocChoiceModal] = useState(false);
   const [adhocChoiceLabel, setAdhocChoiceLabel] = useState('');
   const [adhocChoiceSkill, setAdhocChoiceSkill] = useState('');
-  const [adhocChoiceDv, setAdhocChoiceDv] = useState<number>(13);
-  const [adhocChoiceWho, setAdhocChoiceWho] = useState('全員');
-
-  // Manual roll inputs: checkId -> dice roll input
-  const [manualRollMap, setManualRollMap] = useState<Record<string, string>>({});
+  const [adhocChoiceDv, setAdhocChoiceDv] = useState<number | null>(null);
+  const [adhocChoiceWho] = useState('全員');
 
   // Group check setup modal
   const [showGroupCheckModal, setShowGroupCheckModal] = useState(false);
-  const [groupCheckSkill, setGroupCheckSkill] = useState('perception');
-  const [groupCheckDv, setGroupCheckDv] = useState<number>(13);
+  const [groupCheckSkill, setGroupCheckSkill] = useState('');
+  const [groupCheckDv, setGroupCheckDv] = useState<number | null>(null);
 
   // Projections
-  const [tvProjectedImage, setTvProjectedImage] = useState<string | null>(null);
-  const [playerProjectedImage, setPlayerProjectedImage] = useState<string | null>(null);
+  const [, setTvProjectedImage] = useState<string | null>(null);
+  const [, setPlayerProjectedImage] = useState<string | null>(null);
 
   // WebSocket for real-time check updates & player choices
   useWebSocket({
+    token: getGmToken(),
     onMessage: (type, payload: any) => {
       if (type === 'story:check_update') {
         if (activeSession && payload?.scenario_session_id === activeSession.id) {
@@ -88,9 +80,10 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
         gmFetch('/api/scenarios').then((r) => r.json()),
       ]);
 
-      setAllScenarios(scenariosRes || []);
-      if (scenariosRes && scenariosRes.length > 0) {
-        setSelectedScenarioId(scenariosRes[0].id);
+      const scenarioList: Scenario[] = scenariosRes?.scenarios ?? [];
+      setAllScenarios(scenarioList);
+      if (scenarioList.length > 0) {
+        setSelectedScenarioId(scenarioList[0].id);
       }
 
       if (sessionRes?.session) {
@@ -236,7 +229,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
       if (res.error) throw new Error(res.error);
       if (target === 'tv' || target === 'all') setTvProjectedImage(res.image_path);
       if (target === 'players' || target === 'all') setPlayerProjectedImage(res.image_path);
-      setSuccessMsg(target === 'tv' ? 'TVに投影しました' : target === 'players' ? 'プレイヤ画面に表示しました' : '投影しました');
+      setSuccessMsg(target === 'tv' ? 'TVに投影しました' : target === 'players' ? 'プレイヤー画面に表示しました' : '投影しました');
     } catch (err: any) {
       setErrorMsg(err.message || '投影に失敗しました');
     }
@@ -251,7 +244,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scene_id: sceneId, choice_ids: choiceIds }),
       });
-      setSuccessMsg('プレイヤ画面に選択肢を公開しました');
+      setSuccessMsg('プレイヤー画面に選択肢を公開しました');
     } catch (err: any) {
       setErrorMsg(err.message || '選択肢の公開に失敗しました');
     }
@@ -438,7 +431,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   // Start encounter combat transition
   const handleStartCombatFromEncounter = async (encounterId: string) => {
     if (!activeSession) return;
-    if (!confirm('このエンカウントで戦闘を開始しますか？参加者が自動配置されます。')) return;
+    if (!confirm('このエンカウンターで戦闘を開始しますか？参加者が自動配置されます。')) return;
     try {
       const res = await gmFetch(`/api/scenarios/encounters/${encounterId}/start-combat`, {
         method: 'POST',
@@ -862,7 +855,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                         cursor: 'pointer',
                       }}
                     >
-                      プレイヤに出す
+                      プレイヤーに出す
                     </button>
                   </div>
                 )}
@@ -890,7 +883,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                         if (sceneEncounter) {
                           handleStartCombatFromEncounter(sceneEncounter.id);
                         } else {
-                          alert('このシーンに設定されたエンカウントがありません');
+                          alert('このシーンに設定されたエンカウンターがありません');
                         }
                       }}
                       style={{
@@ -966,7 +959,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                     fontWeight: 600,
                   }}
                 >
-                  プレイヤに公開
+                  プレイヤーに公開
                 </button>
                 <button
                   type="button"
@@ -1012,7 +1005,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                     {ch.skill_key && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '0.75rem', color: 'var(--color-ally)' }}>
-                          {formatSkillName(ch.skill_key)} vs DV {ch.dv ?? '—'}
+                          {formatSkillName(ch.skill_key)} vs 難易度 {ch.dv ?? '—'}
                         </span>
                         <button
                           type="button"
@@ -1096,6 +1089,55 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
               )}
             </div>
           </div>
+
+          {/* Section: Encounters of this scenario（盤面がなくても戦闘に入れられる） */}
+          {scenarioData && scenarioData.encounters.length > 0 && (
+            <div
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                padding: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>エンカウンター</span>
+              {scenarioData.encounters
+                .slice()
+                .sort((a, b) => Number(b.scene_id === currentScene?.id) - Number(a.scene_id === currentScene?.id))
+                .map((enc) => (
+                  <div key={enc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '0.8rem' }}>
+                      {enc.title}
+                      <span style={{ color: 'var(--color-text-muted)', marginLeft: '6px' }}>
+                        {enc.participants
+                          .map((p) => `${characters.find((c) => c.id === p.character_id)?.name ?? '—'}${p.count > 1 ? ` ×${p.count}` : ''}`)
+                          .join('、')}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleStartCombatFromEncounter(enc.id)}
+                      style={{
+                        padding: '3px 8px',
+                        backgroundColor: 'rgba(242, 140, 56, 0.2)',
+                        border: '1px solid var(--color-enemy)',
+                        borderRadius: '4px',
+                        fontSize: '0.75rem',
+                        color: 'var(--color-enemy)',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      戦闘に入れる
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
 
           {/* Section C: Clues & Handouts */}
           <div
@@ -1458,13 +1500,14 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
             </div>
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
-                難易度 (DV):
+                難易度:
               </label>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <input
                   type="number"
-                  value={adhocChoiceDv}
-                  onChange={(e) => setAdhocChoiceDv(parseInt(e.target.value, 10) || 13)}
+                  value={adhocChoiceDv ?? ''}
+                  placeholder="空欄なら GM が後で決める"
+                  onChange={(e) => setAdhocChoiceDv(e.target.value === '' ? null : parseInt(e.target.value, 10))}
                   style={{
                     width: '80px',
                     padding: '6px',
@@ -1564,7 +1607,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
             <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>全員判定の作成</h3>
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
-                スキル:
+                技能:
               </label>
               <select
                 value={groupCheckSkill}
@@ -1579,6 +1622,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                   fontSize: '0.9rem',
                 }}
               >
+                <option value="">技能を選ぶ</option>
                 {Object.keys(SKILL_CATALOG).map((key) => (
                   <option key={key} value={key}>
                     {formatSkillName(key)}
@@ -1588,12 +1632,12 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
             </div>
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
-                難易度 (DV):
+                難易度:
               </label>
               <input
                 type="number"
-                value={groupCheckDv}
-                onChange={(e) => setGroupCheckDv(parseInt(e.target.value, 10) || 13)}
+                value={groupCheckDv ?? ''}
+                onChange={(e) => setGroupCheckDv(e.target.value === '' ? null : parseInt(e.target.value, 10))}
                 style={{
                   width: '100%',
                   padding: '8px',

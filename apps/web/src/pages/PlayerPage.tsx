@@ -143,8 +143,9 @@ export const PlayerPage: React.FC = () => {
       setProjectedDisplay(payload as any);
     } else if (type === 'story:choices') {
       const p = payload as any;
-      if (p.choices) setPublishedStoryChoices(p.choices);
-      if (p.generalActions) setGeneralStoryActions(p.generalActions);
+      // null は「公開中の選択肢を下げた」（シーンが変わった・進行を終えた）
+      setPublishedStoryChoices(p?.choices ?? []);
+      if (p?.generalActions) setGeneralStoryActions(p.generalActions);
     } else if (type === 'story:check_assigned') {
       setActiveStoryCheck(payload as any);
       setStoryFirstRoll(null);
