@@ -32,13 +32,12 @@ export interface SkillCatalogEntry {
 }
 
 /**
- * 技能の日本語名。公式の日本語版（無料配布の VA-11 HALL-A・シングルショットパック・カラオケナイト・
- * テイルズ・オブ・ザ・レッド＋・ガンマス）のキャラクターシートで使われている名前に合わせた。
- * OFFICIAL_UNCONFIRMED はそれらに出てこない技能で、コアルールブックで確かめるまでの仮の名前
+ * 技能の日本語名。日本語版コアルールブック（p.131〜142 の技能リスト）の表記に合わせた
  */
 const NAMES_JA: Record<string, string> = {
   accounting: '経理',
   acting: '演技',
+  archery: '弓術',
   air_vehicle_tech: '航空ヴィークル技術',
   animal_handling: '動物使い',
   athletics: '運動',
@@ -50,6 +49,7 @@ const NAMES_JA: Record<string, string> = {
   business: 'ビジネス',
   composition: '文筆',
   conceal_reveal_object: '隠蔽／発見',
+  contortionist: '柔軟',
   concentration: '精神集中',
   conversation: '会話術',
   criminology: '犯罪捜査',
@@ -57,6 +57,7 @@ const NAMES_JA: Record<string, string> = {
   cybertech: 'サイバー技術',
   dance: '舞踊',
   deduction: '推理',
+  demolitions: '爆発物',
   drive_land_vehicle: '陸上ヴィークル運転',
   education: '教養',
   electronics_security_tech: '電子／保安技術',
@@ -73,8 +74,9 @@ const NAMES_JA: Record<string, string> = {
   language_streetslang: '言語：ストリートスラング',
   library_search: 'ライブラリ検索',
   lip_reading: '読唇術',
-  local_expert_your_home: '土地鑑：自分の居住地',
+  local_expert_your_home: '土地鑑：（自分の居住地）',
   melee_weapon: '近接武器',
+  paint_draw_sculpt: '絵画／彫刻',
   paramedic: '救急医療',
   perception: '知覚',
   personal_grooming: '美容',
@@ -85,6 +87,7 @@ const NAMES_JA: Record<string, string> = {
   pilot_air_vehicle: '航空ヴィークル操縦',
   pilot_sea_vehicle: '海洋ヴィークル操縦',
   resist_torture_drugs: '拷問／薬物抵抗',
+  riding: '騎乗',
   sea_vehicle_tech: '海洋ヴィークル技術',
   shoulder_arms: 'ライフル',
   stealth: '隠密',
@@ -95,14 +98,6 @@ const NAMES_JA: Record<string, string> = {
   wardrobe___style: 'ファッション',
   weaponstech: '武器技術',
   wilderness_survival: '野外生存術',
-};
-
-const OFFICIAL_UNCONFIRMED: Record<string, string> = {
-  archery: '弓術',
-  contortionist: '軟体',
-  demolitions: '爆破',
-  paint_draw_sculpt: '絵画／彫刻',
-  riding: '乗馬',
 };
 
 function parseArgs() {
@@ -142,7 +137,7 @@ export function generateSkillCatalog(fvttRepoPath: string): SkillCatalogEntry[] 
 
     const key = file.replace(/^skill\./, '').replace(/\.yaml$/, '');
     const englishName = doc.name ?? key;
-    const name = NAMES_JA[key] ?? OFFICIAL_UNCONFIRMED[key] ?? englishName;
+    const name = NAMES_JA[key] ?? englishName;
     const stat = doc.system?.stat ?? 'int';
     const category = doc.system?.category ?? 'general';
     const basic = Boolean(doc.system?.basic);

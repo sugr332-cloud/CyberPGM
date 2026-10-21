@@ -2,16 +2,17 @@ import { SKILL_CATALOG, type SkillCatalogEntry } from './skills-data.js';
 
 export * from './skills-data.js';
 
+// 技能の系統（日本語版コアルールブック p.131〜141 の表記）
 export const SKILL_CATEGORIES: Record<string, string> = {
-  awarenessSkills: '認識',
-  bodySkills: '身体',
-  controlSkills: '操縦',
-  educationSkills: '教育',
-  fightingSkills: '戦闘',
-  performanceSkills: '演技',
-  rangedweaponSkills: '射撃',
-  socialSkills: '社会',
-  techniqueSkills: '技術',
+  awarenessSkills: '感知系',
+  bodySkills: '動作系',
+  controlSkills: '操作系',
+  educationSkills: '学術系',
+  fightingSkills: '近接戦闘系',
+  performanceSkills: '芸能系',
+  rangedweaponSkills: '遠隔戦闘系',
+  socialSkills: '社交系',
+  techniqueSkills: '技術系',
 };
 
 export function formatSkillCategory(category: string): string {
@@ -77,6 +78,10 @@ export function skillNameToKey(nameOrKey?: string | null): string {
     '電子工学/セキュリティ': 'electronics_security_tech',
     サイバーテック: 'cybertech',
     舞踏: 'dance',
+    軟体: 'contortionist',
+    爆破: 'demolitions',
+    乗馬: 'riding',
+    '土地鑑：自分の居住地': 'local_expert_your_home',
   };
   if (JA_SKILL_MAP[trimmed]) {
     return JA_SKILL_MAP[trimmed];

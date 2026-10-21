@@ -101,7 +101,7 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 137
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "athletics": {
     "key": "athletics",
@@ -275,7 +275,7 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
   },
   "contortionist": {
     "key": "contortionist",
-    "name": "軟体",
+    "name": "柔軟",
     "name_en": "Contortionist",
     "stat": "dex",
     "category": "bodySkills",
@@ -288,7 +288,7 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 131
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "conversation": {
     "key": "conversation",
@@ -394,7 +394,7 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
   },
   "demolitions": {
     "key": "demolitions",
-    "name": "爆破",
+    "name": "爆発物",
     "name_en": "Demolitions",
     "stat": "tech",
     "category": "techniqueSkills",
@@ -407,7 +407,7 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 140
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "drive_land_vehicle": {
     "key": "drive_land_vehicle",
@@ -683,7 +683,7 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
   },
   "local_expert_your_home": {
     "key": "local_expert_your_home",
-    "name": "土地鑑：自分の居住地",
+    "name": "土地鑑：（自分の居住地）",
     "name_en": "Local Expert (Your Home)",
     "stat": "int",
     "category": "educationSkills",
@@ -730,7 +730,7 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 141
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "paramedic": {
     "key": "paramedic",
@@ -904,7 +904,7 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
   },
   "riding": {
     "key": "riding",
-    "name": "乗馬",
+    "name": "騎乗",
     "name_en": "Riding",
     "stat": "ref",
     "category": "controlSkills",
@@ -917,7 +917,7 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 133
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "sea_vehicle_tech": {
     "key": "sea_vehicle_tech",
