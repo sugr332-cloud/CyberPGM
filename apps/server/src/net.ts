@@ -39,26 +39,41 @@ export interface ResolveLanIpResult {
   message?: string;
 }
 
+// 仮想アダプタ（WSL・Hyper-V・VirtualBox・Docker など）。スマホからは届かないので最後に回す
+const VIRTUAL_IFACE = /vethernet|wsl|hyper-v|virtualbox|vbox|vmware|vmnet|docker|^br-|virbr|^veth|tailscale|zerotier|^utun|loopback/i;
+// 無線のアダプタ。ノート PC を出先の Wi-Fi につないだときはこれを選ぶ（Phase 5h）
+const WIRELESS_IFACE = /wi-?fi|wlan|^wl|wireless|ワイヤレス/i;
+
+function ifaceRank(name: string): number {
+  if (VIRTUAL_IFACE.test(name)) return 2;
+  if (WIRELESS_IFACE.test(name)) return 0;
+  return 1;
+}
+
 /**
  * Finds all private IPv4 addresses from network interfaces.
+ * Wireless adapters come first and virtual adapters last, so [0] is the address phones can reach.
  */
 export function findPrivateIPv4List(
   customInterfaces?: NodeJS.Dict<os.NetworkInterfaceInfo[]>,
 ): string[] {
   const ifaces = customInterfaces ?? os.networkInterfaces();
-  const ips = new Set<string>();
+  const found: { ip: string; rank: number }[] = [];
 
   for (const name of Object.keys(ifaces)) {
     const list = ifaces[name];
     if (!list) continue;
     for (const info of list) {
       if (info.family === 'IPv4' && !info.internal && isPrivateIPv4(info.address)) {
-        ips.add(info.address);
+        if (!found.some((f) => f.ip === info.address)) {
+          found.push({ ip: info.address, rank: ifaceRank(name) });
+        }
       }
     }
   }
 
-  return Array.from(ips);
+  // Array.prototype.sort is stable, so the OS order is kept within the same rank
+  return found.sort((a, b) => a.rank - b.rank).map((f) => f.ip);
 }
 
 /**

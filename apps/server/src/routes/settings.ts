@@ -62,7 +62,7 @@ settingsRoutes.get('/session', requireGm, async (c) => {
   // Determine base URL from Host header or server config
   const host = c.req.header('Host') || '127.0.0.1:8787';
   const proto = c.req.header('X-Forwarded-Proto') || 'http';
-  const hostUrl = `${proto}://${host}`;
+  const hostUrl = sessionManager.getJoinBaseUrl(`${proto}://${host}`);
 
   const info = await sessionManager.getSessionInfo(hostUrl);
   return c.json(info);
@@ -72,7 +72,7 @@ settingsRoutes.get('/session', requireGm, async (c) => {
 settingsRoutes.get('/session/pc-qr', requireGm, async (c) => {
   const host = c.req.header('Host') || '127.0.0.1:8787';
   const proto = c.req.header('X-Forwarded-Proto') || 'http';
-  return c.json({ pcs: await sessionManager.getPcResumeCodes(`${proto}://${host}`) });
+  return c.json({ pcs: await sessionManager.getPcResumeCodes(sessionManager.getJoinBaseUrl(`${proto}://${host}`)) });
 });
 
 /**

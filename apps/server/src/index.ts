@@ -272,10 +272,11 @@ export async function startServer(): Promise<void> {
     injectWebSocket(srv);
   }
 
+  sessionManager.setLanBaseUrl(dualServer.lanUrl);
+
   const sessionCode = sessionManager.getSessionCode();
   const gmUrl = `http://127.0.0.1:${port}/gm`;
-  const playerHost = lanResult.selectedIp ? lanResult.selectedIp : '127.0.0.1';
-  const playerUrl = `http://${playerHost}:${port}/player?join=${sessionCode}`;
+  const playerUrl = `${dualServer.lanUrl ?? dualServer.localUrl}/player?join=${sessionCode}`;
 
   console.log('\n============================================================');
   console.log('              CYBERPUNK RED - CYBERPGM SESSION              ');
@@ -292,6 +293,16 @@ export async function startServer(): Promise<void> {
     console.warn('Could not generate terminal QR code:', err);
   }
 
+  if (!dualServer.lanUrl) {
+    console.log('  [!] Not listening on any LAN address. Phones cannot join until the PC is on a Wi-Fi/LAN.');
+    console.log('      Connect to the Wi-Fi first, then restart CyberPGM.\n');
+  } else {
+    console.log('  If phones cannot open the URL:');
+    console.log('    - Phones must be on the same Wi-Fi as this PC.');
+    console.log('    - Public Wi-Fi (cafes, hotels) often blocks device-to-device traffic. Use a hotspot instead.');
+    console.log(`    - Windows: allow TCP ${port} in the firewall (see README).`);
+    console.log('    - If the Wi-Fi changed after startup, restart CyberPGM.\n');
+  }
   console.log('============================================================\n');
 }
 
