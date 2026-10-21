@@ -4,6 +4,7 @@ import {
   CharacterSheet,
   CharLogEntry,
   WsNotifyPayload,
+  formatSkillName,
 } from '@cyberpgm/shared';
 import {
   api,
@@ -1754,12 +1755,9 @@ export const PlayerPage: React.FC = () => {
 
                 const refVal = sheet.stats.ref;
                 const dexVal = sheet.stats.dex;
-                const handgunSkill = sheet.skills['Handgun'] ?? sheet.skills['ハンドガン'] ?? 0;
-                const meleeSkill = sheet.skills['Melee Weapon'] ?? sheet.skills['近接武器'] ?? 0;
-                const evasionSkill = sheet.skills['Evasion'] ?? sheet.skills['回避'] ?? 0;
+                // 技能はキー（'handgun' など）で持っている。基準値は選んだ武器の技能で出す（Phase 5k）
+                const sk = (key: string) => sheet.skills[key] ?? 0;
                 const woundPen = sheet.woundPenalty;
-
-                const attackBaseHandgun = refVal + handgunSkill + woundPen;
 
                 // 攻撃する相手（倒れていないほかの参加者。敵が先）と、自分の武器（Phase 5j）
                 type Part = { id: string; name: string; side: string; out: boolean; active: boolean; character_id: string | null; character?: any };
@@ -1768,9 +1766,28 @@ export const PlayerPage: React.FC = () => {
                 const targets = parts
                   .filter((p) => p.id !== me?.id && !p.out && p.active)
                   .sort((a, b) => (a.side === b.side ? 0 : a.side === 'enemy' ? -1 : 1));
-                const myWeapons = ((me?.character?.inventory as Array<{ entry_id: string; name: string; kind?: string; ammo?: number | null }>) ?? []).filter(
-                  (i) => i.kind === 'weapon',
-                );
+                type WeaponEntry = {
+                  entry_id: string;
+                  name: string;
+                  kind?: string;
+                  ammo?: number | null;
+                  skill_key?: string;
+                  is_ranged?: boolean;
+                  autofire?: number | null;
+                };
+                const myWeapons = ((me?.character?.inventory as WeaponEntry[]) ?? []).filter((i) => i.kind === 'weapon');
+                // 選んでいなければ最初の武器を使う
+                const weapon = myWeapons.find((w) => w.entry_id === attackWeaponId) ?? myWeapons[0];
+                const weaponId = weapon?.entry_id;
+                const rangedWeapon = weapon && weapon.is_ranged !== false ? weapon : undefined;
+                const meleeWeapon = weapon && weapon.is_ranged === false ? weapon : undefined;
+                const rangedSkillKey = rangedWeapon?.skill_key || 'handgun';
+                const attackBaseRanged = refVal + sk(rangedSkillKey) + woundPen;
+                const canAutofire = Boolean(rangedWeapon?.autofire);
+                const attackBaseAutofire = refVal + sk('autofire') + woundPen;
+                // 近接武器がなければ素手（格闘）
+                const meleeSkillKey = meleeWeapon?.skill_key || 'brawling';
+                const attackBaseMelee = dexVal + sk(meleeSkillKey) + woundPen;
                 const chip = (selected: boolean, color: string): React.CSSProperties => ({
                   padding: '8px 12px',
                   borderRadius: '4px',
@@ -1781,8 +1798,7 @@ export const PlayerPage: React.FC = () => {
                   fontSize: '0.85rem',
                   cursor: 'pointer',
                 });
-                const attackBaseMelee = dexVal + meleeSkill + woundPen;
-                const dodgeBase = dexVal + evasionSkill + woundPen;
+                const dodgeBase = dexVal + sk('evasion') + woundPen;
 
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1817,8 +1833,8 @@ export const PlayerPage: React.FC = () => {
                               key={w.entry_id}
                               type="button"
                               data-testid="attack-weapon"
-                              onClick={() => setAttackWeaponId(w.entry_id === attackWeaponId ? null : w.entry_id)}
-                              style={chip(w.entry_id === attackWeaponId, 'var(--color-ally)')}
+                              onClick={() => setAttackWeaponId(w.entry_id)}
+                              style={chip(w.entry_id === weaponId, 'var(--color-ally)')}
                             >
                               {w.name}
                               {typeof w.ammo === 'number' && ` (残弾 ${w.ammo})`}
@@ -1859,7 +1875,7 @@ export const PlayerPage: React.FC = () => {
                             setPadFirstRoll(null);
                             setPadExtraRoll(null);
                             setNeedsExtraRoll(false);
-                            sendMessage({ type: 'combat:choose', payload: { action_key: 'ranged', target_id: attackTargetId ?? undefined, weapon_id: attackWeaponId ?? undefined } });
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'ranged', target_id: attackTargetId ?? undefined, weapon_id: weaponId } });
                           }}
                           style={{
                             padding: '12px 10px',
@@ -1873,7 +1889,8 @@ export const PlayerPage: React.FC = () => {
                         >
                           <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>射撃</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                            基準値 {attackBaseHandgun} + 1d10
+                            REF {refVal} + {formatSkillName(rangedSkillKey)} {sk(rangedSkillKey)}
+                            {woundPen !== 0 && ` ${woundPen}`} = {attackBaseRanged} + 1d10
                           </div>
                         </button>
 
@@ -1885,7 +1902,7 @@ export const PlayerPage: React.FC = () => {
                             setPadFirstRoll(null);
                             setPadExtraRoll(null);
                             setNeedsExtraRoll(false);
-                            sendMessage({ type: 'combat:choose', payload: { action_key: 'aimed', target_id: attackTargetId ?? undefined, weapon_id: attackWeaponId ?? undefined } });
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'aimed', target_id: attackTargetId ?? undefined, weapon_id: weaponId } });
                           }}
                           style={{
                             padding: '12px 10px',
@@ -1899,11 +1916,12 @@ export const PlayerPage: React.FC = () => {
                         >
                           <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>照準射撃</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                            基準値 {attackBaseHandgun - 8} + 1d10
+                            {attackBaseRanged} − 8（狙う分）= {attackBaseRanged - 8} + 1d10
                           </div>
                         </button>
 
                         <button
+                          disabled={!canAutofire}
                           onClick={() => {
                             setChosenActionLabel('オートファイア');
                             setPadRollType('attack');
@@ -1911,7 +1929,7 @@ export const PlayerPage: React.FC = () => {
                             setPadFirstRoll(null);
                             setPadExtraRoll(null);
                             setNeedsExtraRoll(false);
-                            sendMessage({ type: 'combat:choose', payload: { action_key: 'autofire', target_id: attackTargetId ?? undefined, weapon_id: attackWeaponId ?? undefined } });
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'autofire', target_id: attackTargetId ?? undefined, weapon_id: weaponId } });
                           }}
                           style={{
                             padding: '12px 10px',
@@ -1925,7 +1943,9 @@ export const PlayerPage: React.FC = () => {
                         >
                           <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>オートファイア</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                            基準値 {attackBaseHandgun} + 1d10
+                            {canAutofire
+                              ? `REF ${refVal} + オートファイア ${sk('autofire')}${woundPen !== 0 ? ` ${woundPen}` : ''} = ${attackBaseAutofire} + 1d10`
+                              : 'この武器ではできません'}
                           </div>
                         </button>
 
@@ -1937,7 +1957,7 @@ export const PlayerPage: React.FC = () => {
                             setPadFirstRoll(null);
                             setPadExtraRoll(null);
                             setNeedsExtraRoll(false);
-                            sendMessage({ type: 'combat:choose', payload: { action_key: 'melee', target_id: attackTargetId ?? undefined, weapon_id: attackWeaponId ?? undefined } });
+                            sendMessage({ type: 'combat:choose', payload: { action_key: 'melee', target_id: attackTargetId ?? undefined, weapon_id: weaponId } });
                           }}
                           style={{
                             padding: '12px 10px',
@@ -1951,7 +1971,9 @@ export const PlayerPage: React.FC = () => {
                         >
                           <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>近接攻撃</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                            基準値 {attackBaseMelee} + 1d10 (SP半減)
+                            DEX {dexVal} + {formatSkillName(meleeSkillKey)} {sk(meleeSkillKey)}
+                            {woundPen !== 0 && ` ${woundPen}`} = {attackBaseMelee} + 1d10
+                            {meleeWeapon ? '（SP半減）' : '（素手）'}
                           </div>
                         </button>
 
