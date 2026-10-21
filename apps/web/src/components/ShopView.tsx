@@ -140,7 +140,10 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
   }, [selectedShopId, loadStock]);
 
   // Load Catalog Items
+  // 検索の入力中は要求が重なるので、最後に出した要求の結果だけを使う（古い結果で上書きしない）
+  const latestItemsRequest = useRef(0);
   const loadItems = useCallback(async () => {
+    const requestNo = ++latestItemsRequest.current;
     setLoading(true);
     try {
       const params: Record<string, string | number | boolean | undefined> = {
@@ -156,6 +159,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
       };
 
       const res = await api.getItems(params);
+      if (requestNo !== latestItemsRequest.current) return;
       let list = res.items;
 
       // If a shop is selected, only show items in shop stock

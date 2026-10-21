@@ -241,6 +241,7 @@ export interface Character {
   name: string;
   role: string;
   image_id?: string | null;
+  portrait_image_id?: string | null;
   image_path?: string | null;
   stats: CharacterStats;
   skills: Record<string, number>;

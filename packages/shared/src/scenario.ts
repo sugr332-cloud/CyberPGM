@@ -39,6 +39,31 @@ export const SceneChoiceSchema = z.object({
 });
 export type SceneChoice = z.infer<typeof SceneChoiceSchema>;
 
+// 表示ウィンドウの立ち絵（Phase 5e）。x, y は表示ウィンドウの幅・高さに対する割合（0〜1、立ち絵の足もとの中心）
+export const StagePortraitSchema = z.object({
+  character_id: z.string(),
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  scale: z.number().positive().max(4).default(1),
+  flip: z.boolean().default(false),
+  z: z.number().int().default(0),
+  show_name: z.boolean().default(true),
+});
+export type StagePortrait = z.infer<typeof StagePortraitSchema>;
+
+export const SceneStageSchema = z.object({
+  portraits: z.array(StagePortraitSchema).default([]),
+});
+export type SceneStage = z.infer<typeof SceneStageSchema>;
+
+// シーンの BGM（Phase 5e）
+export const SceneBgmSchema = z.object({
+  audio_id: z.string(),
+  loop: z.boolean().default(true),
+  volume: z.number().int().min(0).max(100),
+});
+export type SceneBgm = z.infer<typeof SceneBgmSchema>;
+
 export const SceneSchema = z.object({
   id: z.string(),
   scenario_id: z.string(),
@@ -52,6 +77,8 @@ export const SceneSchema = z.object({
   board_id: z.string().nullable().optional(),
   sort_index: z.number().int().default(0),
   is_adhoc: z.boolean().default(false),
+  stage: SceneStageSchema.default({ portraits: [] }),
+  bgm: SceneBgmSchema.nullable().optional(),
 });
 export type Scene = z.infer<typeof SceneSchema>;
 

@@ -33,6 +33,7 @@ import { verifyToken, authMiddleware } from './auth.js';
 import { sessionManager } from './session.js';
 import { createDailyBackup } from './config.js';
 import { resolveLanIp, startDualServer } from './net.js';
+import { audioRoutes } from './routes/audio.js';
 
 export const app = new Hono();
 
@@ -63,6 +64,7 @@ app.route('/api', combatRoutes);
 app.route('/api', boardsRoutes);
 app.route('/api/scenarios', scenariosRouter);
 app.route('/api', scenarioPlayRoutes);
+app.route('/api', audioRoutes);
 
 // Configure session providers
 sessionManager.setCombatProvider(getCurrentCombat);

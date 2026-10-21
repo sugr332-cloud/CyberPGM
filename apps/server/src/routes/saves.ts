@@ -339,8 +339,8 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
       INSERT INTO characters (
         id, kind, name, role, image_id, stats, skills, hp, hp_max,
         sp_head, sp_body, humanity, emp_max, cyberware, weapons,
-        inventory, status, crit_injuries, eb, notes_gm, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        inventory, status, crit_injuries, eb, notes_gm, created_at, updated_at, portrait_image_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const ch of data.characters) {
@@ -367,6 +367,7 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
         ch.notes_gm ?? null,
         ch.created_at,
         ch.updated_at,
+        (ch as { portrait_image_id?: string | null }).portrait_image_id ?? null,
       );
     }
 
@@ -688,8 +689,8 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
 
     if (data.scenes && (data.scenes as any[]).length > 0) {
       const insertScene = sqlite.prepare(`
-        INSERT INTO scenes (id, scenario_id, title, read_aloud, gm_notes, location, npc_ids, position, background_image_id, board_id, sort_index)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO scenes (id, scenario_id, title, read_aloud, gm_notes, location, npc_ids, position, background_image_id, board_id, sort_index, is_adhoc, stage, bgm)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const s of data.scenes as any[]) {
         insertScene.run(
@@ -704,6 +705,9 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
           s.background_image_id ?? null,
           s.board_id ?? null,
           s.sort_index ?? 0,
+          s.is_adhoc ? 1 : 0,
+          typeof s.stage === 'string' ? s.stage : JSON.stringify(s.stage ?? {}),
+          s.bgm == null ? null : typeof s.bgm === 'string' ? s.bgm : JSON.stringify(s.bgm),
         );
       }
     }

@@ -99,6 +99,7 @@ charactersRoutes.post('/characters', requireGm, async (c) => {
       name: d.name,
       role: d.role,
       image_id: d.image_id ?? null,
+      portrait_image_id: d.portrait_image_id ?? null,
       stats: JSON.stringify(d.stats),
       skills: JSON.stringify(d.skills ?? {}),
       hp: d.hp,
@@ -151,6 +152,7 @@ charactersRoutes.patch('/characters/:id', requireGm, async (c) => {
   if (d.name !== undefined) updateValues.name = d.name;
   if (d.role !== undefined) updateValues.role = d.role;
   if (d.image_id !== undefined) updateValues.image_id = d.image_id;
+  if (d.portrait_image_id !== undefined) updateValues.portrait_image_id = d.portrait_image_id;
   if (d.stats !== undefined) updateValues.stats = JSON.stringify(d.stats);
   if (d.skills !== undefined) updateValues.skills = JSON.stringify(d.skills);
   if (d.hp !== undefined) updateValues.hp = d.hp;
