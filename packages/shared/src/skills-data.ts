@@ -7,6 +7,7 @@
 export interface SkillCatalogEntry {
   key: string;
   name: string;
+  name_en: string;
   stat: string;
   category: string;
   basic: boolean;
@@ -19,7 +20,8 @@ export interface SkillCatalogEntry {
 export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
   "accounting": {
     "key": "accounting",
-    "name": "Accounting",
+    "name": "経理",
+    "name_en": "Accounting",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -31,11 +33,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 133
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "acting": {
     "key": "acting",
-    "name": "Acting",
+    "name": "演技",
+    "name_en": "Acting",
     "stat": "cool",
     "category": "performanceSkills",
     "basic": false,
@@ -47,11 +50,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 137
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "air_vehicle_tech": {
     "key": "air_vehicle_tech",
-    "name": "Air Vehicle Tech",
+    "name": "航空ヴィークル技術",
+    "name_en": "Air Vehicle Tech",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -63,11 +67,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 140
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "animal_handling": {
     "key": "animal_handling",
-    "name": "Animal Handling",
+    "name": "動物使い",
+    "name_en": "Animal Handling",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -79,11 +84,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 133
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "archery": {
     "key": "archery",
-    "name": "Archery",
+    "name": "弓術",
+    "name_en": "Archery",
     "stat": "ref",
     "category": "rangedweaponSkills",
     "basic": false,
@@ -100,6 +106,7 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
   "athletics": {
     "key": "athletics",
     "name": "運動",
+    "name_en": "Athletics",
     "stat": "dex",
     "category": "bodySkills",
     "basic": true,
@@ -111,11 +118,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 131
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "autofire": {
     "key": "autofire",
-    "name": "オートファイア",
+    "name": "フルオート射撃",
+    "name_en": "Autofire",
     "stat": "ref",
     "category": "rangedweaponSkills",
     "basic": false,
@@ -127,11 +135,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 138
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "basic_tech": {
     "key": "basic_tech",
     "name": "基礎技術",
+    "name_en": "Basic Tech",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -143,11 +152,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 140
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "brawling": {
     "key": "brawling",
     "name": "格闘",
+    "name_en": "Brawling",
     "stat": "dex",
     "category": "fightingSkills",
     "basic": true,
@@ -159,11 +169,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 136
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "bribery": {
     "key": "bribery",
-    "name": "Bribery",
+    "name": "賄賂",
+    "name_en": "Bribery",
     "stat": "cool",
     "category": "socialSkills",
     "basic": false,
@@ -175,11 +186,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 138
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "bureaucracy": {
     "key": "bureaucracy",
-    "name": "Bureaucracy",
+    "name": "官僚制度",
+    "name_en": "Bureaucracy",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -191,11 +203,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 133
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "business": {
     "key": "business",
-    "name": "Business",
+    "name": "ビジネス",
+    "name_en": "Business",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -207,11 +220,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 134
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "composition": {
     "key": "composition",
-    "name": "Composition",
+    "name": "文筆",
+    "name_en": "Composition",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -223,11 +237,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 134
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "conceal_reveal_object": {
     "key": "conceal_reveal_object",
-    "name": "Conceal/Reveal Object",
+    "name": "隠蔽／発見",
+    "name_en": "Conceal/Reveal Object",
     "stat": "int",
     "category": "awarenessSkills",
     "basic": false,
@@ -239,11 +254,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 131
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "concentration": {
     "key": "concentration",
-    "name": "集中",
+    "name": "精神集中",
+    "name_en": "Concentration",
     "stat": "will",
     "category": "awarenessSkills",
     "basic": true,
@@ -255,11 +271,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 131
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "contortionist": {
     "key": "contortionist",
-    "name": "Contortionist",
+    "name": "軟体",
+    "name_en": "Contortionist",
     "stat": "dex",
     "category": "bodySkills",
     "basic": false,
@@ -275,7 +292,8 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
   },
   "conversation": {
     "key": "conversation",
-    "name": "会話",
+    "name": "会話術",
+    "name_en": "Conversation",
     "stat": "emp",
     "category": "socialSkills",
     "basic": true,
@@ -287,11 +305,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 138
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "criminology": {
     "key": "criminology",
-    "name": "Criminology",
+    "name": "犯罪捜査",
+    "name_en": "Criminology",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -303,11 +322,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 134
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "cryptography": {
     "key": "cryptography",
-    "name": "Cryptography",
+    "name": "暗号学",
+    "name_en": "Cryptography",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -319,11 +339,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 134
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "cybertech": {
     "key": "cybertech",
-    "name": "サイバーテック",
+    "name": "サイバー技術",
+    "name_en": "Cybertech",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -335,11 +356,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 140
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "dance": {
     "key": "dance",
-    "name": "Dance",
+    "name": "舞踊",
+    "name_en": "Dance",
     "stat": "dex",
     "category": "bodySkills",
     "basic": false,
@@ -351,11 +373,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 132
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "deduction": {
     "key": "deduction",
-    "name": "Deduction",
+    "name": "推理",
+    "name_en": "Deduction",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -367,11 +390,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 134
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "demolitions": {
     "key": "demolitions",
-    "name": "Demolitions",
+    "name": "爆破",
+    "name_en": "Demolitions",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -387,7 +411,8 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
   },
   "drive_land_vehicle": {
     "key": "drive_land_vehicle",
-    "name": "Drive Land Vehicle",
+    "name": "陸上ヴィークル運転",
+    "name_en": "Drive Land Vehicle",
     "stat": "ref",
     "category": "controlSkills",
     "basic": false,
@@ -399,11 +424,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 132
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "education": {
     "key": "education",
     "name": "教養",
+    "name_en": "Education",
     "stat": "int",
     "category": "educationSkills",
     "basic": true,
@@ -415,11 +441,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 135
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "electronics_security_tech": {
     "key": "electronics_security_tech",
-    "name": "電子工学/セキュリティ",
+    "name": "電子／保安技術",
+    "name_en": "Electronics/Security Tech",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -431,11 +458,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 141
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "endurance": {
     "key": "endurance",
-    "name": "Endurance",
+    "name": "忍耐",
+    "name_en": "Endurance",
     "stat": "will",
     "category": "bodySkills",
     "basic": false,
@@ -447,11 +475,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 132
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "evasion": {
     "key": "evasion",
     "name": "回避",
+    "name_en": "Evasion",
     "stat": "dex",
     "category": "fightingSkills",
     "basic": true,
@@ -463,11 +492,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 137
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "first_aid": {
     "key": "first_aid",
     "name": "応急手当",
+    "name_en": "First Aid",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": true,
@@ -479,11 +509,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 141
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "forgery": {
     "key": "forgery",
-    "name": "Forgery",
+    "name": "偽造",
+    "name_en": "Forgery",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -495,11 +526,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 141
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "gamble": {
     "key": "gamble",
-    "name": "Gamble",
+    "name": "ギャンブル",
+    "name_en": "Gamble",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -511,11 +543,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 135
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "handgun": {
     "key": "handgun",
-    "name": "拳銃",
+    "name": "ハンドガン",
+    "name_en": "Handgun",
     "stat": "ref",
     "category": "rangedweaponSkills",
     "basic": false,
@@ -527,11 +560,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 137
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "heavy_weapons": {
     "key": "heavy_weapons",
-    "name": "Heavy Weapons",
+    "name": "重火器",
+    "name_en": "Heavy Weapons",
     "stat": "ref",
     "category": "rangedweaponSkills",
     "basic": false,
@@ -543,11 +577,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 137
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "human_perception": {
     "key": "human_perception",
-    "name": "人間の洞察",
+    "name": "真意看破",
+    "name_en": "Human Perception",
     "stat": "emp",
     "category": "socialSkills",
     "basic": true,
@@ -559,11 +594,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 139
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "interrogation": {
     "key": "interrogation",
-    "name": "Interrogation",
+    "name": "尋問",
+    "name_en": "Interrogation",
     "stat": "cool",
     "category": "socialSkills",
     "basic": false,
@@ -575,11 +611,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 139
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "land_vehicle_tech": {
     "key": "land_vehicle_tech",
-    "name": "Land Vehicle Tech",
+    "name": "陸上ヴィークル技術",
+    "name_en": "Land Vehicle Tech",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -591,11 +628,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 141
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "language_streetslang": {
     "key": "language_streetslang",
-    "name": "Language (Streetslang)",
+    "name": "言語：ストリートスラング",
+    "name_en": "Language (Streetslang)",
     "stat": "int",
     "category": "educationSkills",
     "basic": true,
@@ -607,11 +645,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 135
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "library_search": {
     "key": "library_search",
-    "name": "Library Search",
+    "name": "ライブラリ検索",
+    "name_en": "Library Search",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -623,11 +662,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 135
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "lip_reading": {
     "key": "lip_reading",
-    "name": "Lip Reading",
+    "name": "読唇術",
+    "name_en": "Lip Reading",
     "stat": "int",
     "category": "awarenessSkills",
     "basic": false,
@@ -639,11 +679,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 131
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "local_expert_your_home": {
     "key": "local_expert_your_home",
-    "name": "Local Expert (Your Home)",
+    "name": "土地鑑：自分の居住地",
+    "name_en": "Local Expert (Your Home)",
     "stat": "int",
     "category": "educationSkills",
     "basic": true,
@@ -655,11 +696,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 135
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "melee_weapon": {
     "key": "melee_weapon",
     "name": "近接武器",
+    "name_en": "Melee Weapon",
     "stat": "dex",
     "category": "fightingSkills",
     "basic": false,
@@ -671,11 +713,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 137
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "paint_draw_sculpt": {
     "key": "paint_draw_sculpt",
-    "name": "Paint/Draw/Sculpt",
+    "name": "絵画／彫刻",
+    "name_en": "Paint/Draw/Sculpt",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -691,7 +734,8 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
   },
   "paramedic": {
     "key": "paramedic",
-    "name": "Paramedic",
+    "name": "救急医療",
+    "name_en": "Paramedic",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -703,11 +747,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 141
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "perception": {
     "key": "perception",
     "name": "知覚",
+    "name_en": "Perception",
     "stat": "int",
     "category": "awarenessSkills",
     "basic": true,
@@ -719,11 +764,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 131
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "personal_grooming": {
     "key": "personal_grooming",
-    "name": "Personal Grooming",
+    "name": "美容",
+    "name_en": "Personal Grooming",
     "stat": "cool",
     "category": "socialSkills",
     "basic": false,
@@ -735,11 +781,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 139
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "persuasion": {
     "key": "persuasion",
     "name": "説得",
+    "name_en": "Persuasion",
     "stat": "cool",
     "category": "socialSkills",
     "basic": true,
@@ -751,11 +798,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 139
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "photography_film": {
     "key": "photography_film",
-    "name": "Photography/Film",
+    "name": "撮影",
+    "name_en": "Photography/Film",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -767,11 +815,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 141
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "pick_lock": {
     "key": "pick_lock",
-    "name": "Pick Lock",
+    "name": "鍵開け",
+    "name_en": "Pick Lock",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -783,11 +832,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 142
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "pick_pocket": {
     "key": "pick_pocket",
-    "name": "Pick Pocket",
+    "name": "スリ",
+    "name_en": "Pick Pocket",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -799,11 +849,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 142
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "pilot_air_vehicle": {
     "key": "pilot_air_vehicle",
-    "name": "Pilot Air Vehicle",
+    "name": "航空ヴィークル操縦",
+    "name_en": "Pilot Air Vehicle",
     "stat": "ref",
     "category": "controlSkills",
     "basic": false,
@@ -815,11 +866,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 132
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "pilot_sea_vehicle": {
     "key": "pilot_sea_vehicle",
-    "name": "Pilot Sea Vehicle",
+    "name": "海洋ヴィークル操縦",
+    "name_en": "Pilot Sea Vehicle",
     "stat": "ref",
     "category": "controlSkills",
     "basic": false,
@@ -831,11 +883,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 132
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "resist_torture_drugs": {
     "key": "resist_torture_drugs",
-    "name": "Resist Torture/Drugs",
+    "name": "拷問／薬物抵抗",
+    "name_en": "Resist Torture/Drugs",
     "stat": "will",
     "category": "bodySkills",
     "basic": false,
@@ -847,11 +900,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 132
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "riding": {
     "key": "riding",
-    "name": "Riding",
+    "name": "乗馬",
+    "name_en": "Riding",
     "stat": "ref",
     "category": "controlSkills",
     "basic": false,
@@ -867,7 +921,8 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
   },
   "sea_vehicle_tech": {
     "key": "sea_vehicle_tech",
-    "name": "Sea Vehicle Tech",
+    "name": "海洋ヴィークル技術",
+    "name_en": "Sea Vehicle Tech",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -879,11 +934,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 142
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "shoulder_arms": {
     "key": "shoulder_arms",
-    "name": "肩撃ち武器",
+    "name": "ライフル",
+    "name_en": "Shoulder Arms",
     "stat": "ref",
     "category": "rangedweaponSkills",
     "basic": false,
@@ -895,11 +951,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 138
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "stealth": {
     "key": "stealth",
     "name": "隠密",
+    "name_en": "Stealth",
     "stat": "dex",
     "category": "bodySkills",
     "basic": true,
@@ -911,11 +968,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 132
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "streetwise": {
     "key": "streetwise",
-    "name": "裏社会の事情通",
+    "name": "裏社会",
+    "name_en": "Streetwise",
     "stat": "cool",
     "category": "socialSkills",
     "basic": false,
@@ -927,11 +985,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 139
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "tactics": {
     "key": "tactics",
-    "name": "Tactics",
+    "name": "戦術",
+    "name_en": "Tactics",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -943,11 +1002,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 136
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "tracking": {
     "key": "tracking",
     "name": "追跡",
+    "name_en": "Tracking",
     "stat": "int",
     "category": "awarenessSkills",
     "basic": false,
@@ -959,11 +1019,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 131
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "trading": {
     "key": "trading",
-    "name": "取引",
+    "name": "売買",
+    "name_en": "Trading",
     "stat": "cool",
     "category": "socialSkills",
     "basic": false,
@@ -975,11 +1036,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 139
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "wardrobe___style": {
     "key": "wardrobe___style",
-    "name": "Wardrobe & Style",
+    "name": "ファッション",
+    "name_en": "Wardrobe & Style",
     "stat": "cool",
     "category": "socialSkills",
     "basic": false,
@@ -991,11 +1053,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 139
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "weaponstech": {
     "key": "weaponstech",
-    "name": "Weaponstech",
+    "name": "武器技術",
+    "name_en": "Weaponstech",
     "stat": "tech",
     "category": "techniqueSkills",
     "basic": false,
@@ -1007,11 +1070,12 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 142
       }
     ],
-    "provisional": true
+    "provisional": false
   },
   "wilderness_survival": {
     "key": "wilderness_survival",
-    "name": "Wilderness Survival",
+    "name": "野外生存術",
+    "name_en": "Wilderness Survival",
     "stat": "int",
     "category": "educationSkills",
     "basic": false,
@@ -1023,6 +1087,6 @@ export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = {
         "page": 136
       }
     ],
-    "provisional": true
+    "provisional": false
   }
 };

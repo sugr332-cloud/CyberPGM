@@ -27,7 +27,7 @@ test('Player phone: equipment, skills, and shop purchase requests approved by th
   // 技能: 基本値の一覧
   await phone.getByTestId('player-tab-skills').click();
   await expect(phone.getByTestId('player-skill-row').first()).toBeVisible();
-  await expect(phone.getByTestId('player-skill-row').filter({ hasText: '拳銃' })).toContainText(String(viper.stats.ref + viper.skills.handgun));
+  await expect(phone.getByTestId('player-skill-row').filter({ hasText: 'ハンドガン' })).toContainText(String(viper.stats.ref + viper.skills.handgun));
   await phone.screenshot({ path: 'docs/agy/reports/img/phase5g-player-skills-390.png' });
 
   // 商店: GM が出すまでは閉まっている
@@ -86,11 +86,11 @@ test('Player phone: equipment, skills, and shop purchase requests approved by th
   await expect(skills.getByText('探索で使う')).toBeVisible();
   await expect(skills.getByText('戦闘で使う')).toBeVisible();
   const base = viper.stats.ref + viper.skills.handgun;
-  const gun = skills.getByTestId('action-skill').filter({ hasText: '大型拳銃（拳銃）' });
+  const gun = skills.getByTestId('action-skill').filter({ hasText: '大型拳銃（ハンドガン）' });
   await expect(gun).toContainText(`${base} / 3d6`);
   await gun.getByRole('button').click();
   const f = gun.getByTestId('action-skill-formula');
-  await expect(f).toContainText(`REF ${viper.stats.ref} + 拳銃 ${viper.skills.handgun} = 基本値 ${base}`);
+  await expect(f).toContainText(`REF ${viper.stats.ref} + ハンドガン ${viper.skills.handgun} = 基本値 ${base}`);
   await expect(f).toContainText('難易度を上回れば成功（同じ値は失敗）');
   await expect(f).toContainText('日常的');
   await expect(f).toContainText('当たったらダメージ 3d6');

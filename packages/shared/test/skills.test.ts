@@ -24,16 +24,17 @@ describe('skills catalog and formatting', () => {
     expect(Object.keys(SKILL_CATALOG).length).toBe(63);
   });
 
-  it('formats provisional Japanese skill names correctly', () => {
-    expect(formatSkillName('handgun')).toBe('拳銃');
+  it('formats skill names with the official Japanese names', () => {
+    expect(formatSkillName('handgun')).toBe('ハンドガン');
     expect(formatSkillName('evasion')).toBe('回避');
     expect(formatSkillName('perception')).toBe('知覚');
-    expect(formatSkillName('electronics_security_tech')).toBe('電子工学/セキュリティ');
+    expect(formatSkillName('electronics_security_tech')).toBe('電子／保安技術');
+    expect(formatSkillName('paramedic')).toBe('救急医療');
+    expect(formatSkillName('accounting')).toBe('経理');
   });
 
-  it('falls back to English name for non-provisional JA skills', () => {
-    expect(formatSkillName('paramedic')).toBe('Paramedic');
-    expect(formatSkillName('accounting')).toBe('Accounting');
+  it('has a Japanese name for every catalog skill', () => {
+    for (const s of Object.values(SKILL_CATALOG)) expect(s.name).toMatch(/[^\x00-\x7f]/);
   });
 
   it('falls back to key for unknown skills', () => {
@@ -60,6 +61,10 @@ describe('skills catalog and formatting', () => {
     expect(skillNameToKey('Brawling')).toBe('brawling');
     expect(skillNameToKey('Autofire')).toBe('autofire');
     expect(skillNameToKey('拳銃')).toBe('handgun');
+    expect(skillNameToKey('ハンドガン')).toBe('handgun');
+    expect(skillNameToKey('ライフル')).toBe('shoulder_arms');
+    expect(skillNameToKey('Conceal/Reveal Object')).toBe('conceal_reveal_object');
+    expect(skillNameToKey('人間の洞察')).toBe('human_perception');
     expect(skillNameToKey('回避')).toBe('evasion');
     expect(skillNameToKey('近接武器')).toBe('melee_weapon');
   });

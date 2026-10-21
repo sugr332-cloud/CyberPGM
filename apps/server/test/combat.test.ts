@@ -1330,7 +1330,7 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
           body: JSON.stringify({ action_key: 'ranged', actor_id: viper.id, target_id: ganger.id, weapon_entry_id: 'e1', distance_m: 5 }),
         })
       ).json();
-      // REF 8 + 拳銃 6 = 14 vs 難易度 13 → 出目 0 以上 = 「2 以上で成功」
+      // REF 8 + ハンドガン 6 = 14 vs 難易度 13 → 出目 0 以上 = 「2 以上で成功」
       expect(res.line.text).toContain('= 14 vs 難易度 13（5m）→ 2 以上で成功');
 
       const pdev = registerDevice({ role: 'player', label: 'p', characterId: pcId1 });

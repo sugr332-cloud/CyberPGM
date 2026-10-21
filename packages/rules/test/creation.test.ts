@@ -87,7 +87,7 @@ describe('validateCharacterDraft', () => {
     const errText = res.errors.join(' ');
     expect(errText).toContain('能力値ポイントが割り当て上限');
     expect(errText).toContain('上限 (6) を超えています');
-    expect(errText).toContain('技能「オートファイア」のレベルが上限 (3) を超えています');
+    expect(errText).toContain('技能「フルオート射撃」のレベルが上限 (3) を超えています');
     expect(errText).toContain('基本技能「知覚」が最低レベル (2) 未満です');
     expect(errText).toContain('所持品の合計額');
   });

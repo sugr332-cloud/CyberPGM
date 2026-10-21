@@ -42,9 +42,9 @@ export function skillNameToKey(nameOrKey?: string | null): string {
     return SKILL_CATALOG[lower].key;
   }
 
-  // 2. Direct match on catalog entry name (e.g. "Handgun", "Melee Weapon", "Shoulder Arms")
+  // 2. Direct match on catalog entry name — official Japanese (e.g. "ハンドガン") or English (e.g. "Handgun", "Shoulder Arms")
   for (const entry of Object.values(SKILL_CATALOG)) {
-    if (entry.name.toLowerCase() === lower) {
+    if (entry.name.toLowerCase() === lower || entry.name_en.toLowerCase() === lower) {
       return entry.key;
     }
   }
@@ -55,25 +55,28 @@ export function skillNameToKey(nameOrKey?: string | null): string {
     if (entry.key.replace(/[\s_-]+/g, '') === stripped) {
       return entry.key;
     }
-    if (entry.name.toLowerCase().replace(/[\s_-]+/g, '') === stripped) {
+    if (entry.name_en.toLowerCase().replace(/[\s_-]+/g, '') === stripped) {
       return entry.key;
     }
   }
 
-  // 4. Known Japanese name mapping
+  // 4. Older / unofficial Japanese names (names used before Phase 5o, and spelling variants in the official books)
   const JA_SKILL_MAP: Record<string, string> = {
     拳銃: 'handgun',
-    ハンドガン: 'handgun',
     肩撃ち銃: 'shoulder_arms',
+    肩撃ち武器: 'shoulder_arms',
     ショルダーアームズ: 'shoulder_arms',
-    近接武器: 'melee_weapon',
-    格闘: 'brawling',
-    回避: 'evasion',
     アスレチック: 'athletics',
-    運動: 'athletics',
     隠匿: 'stealth',
-    隠密: 'stealth',
-    知覚: 'perception',
+    集中: 'concentration',
+    オートファイア: 'autofire',
+    取引: 'trading',
+    裏社会の事情通: 'streetwise',
+    会話: 'conversation',
+    人間の洞察: 'human_perception',
+    '電子工学/セキュリティ': 'electronics_security_tech',
+    サイバーテック: 'cybertech',
+    舞踏: 'dance',
   };
   if (JA_SKILL_MAP[trimmed]) {
     return JA_SKILL_MAP[trimmed];

@@ -26,12 +26,12 @@ test('Character editor: build a mook with catalog weapons and armor, then read i
 
   // 技能: 基本値 = REF 8 + 6
   await editor.getByLabel('技能を探す').fill('handgun');
-  await editor.getByLabel('拳銃 のレベル', { exact: true }).fill('6');
-  await expect(editor.getByLabel('拳銃 のレベル', { exact: true }).locator('xpath=following-sibling::span[1]')).toHaveText('14');
+  await editor.getByLabel('ハンドガン のレベル', { exact: true }).fill('6');
+  await expect(editor.getByLabel('ハンドガン のレベル', { exact: true }).locator('xpath=following-sibling::span[1]')).toHaveText('14');
 
   // 武器: 選ぶと性能と効果が出る
   await editor.getByLabel('品目を探す').fill('Heavy Pistol');
-  await editor.getByTestId('editor-item-results').getByRole('button').filter({ hasText: '3d6 · ROF 2' }).first().click();
+  await editor.getByTestId('editor-item-results').getByRole('button').filter({ hasText: '大型拳銃' }).filter({ hasText: '3d6 · ROF 2' }).first().click();
   const preview = editor.getByTestId('editor-item-preview');
   await expect(preview.getByText('大型拳銃', { exact: true }).first()).toBeVisible();
   await expect(preview.getByText('ダメージ / ROF')).toBeVisible();
@@ -113,7 +113,7 @@ test('Character editor: replace a name-only weapon with a catalog item', async (
   await editor.getByRole('button', { name: '品目から探す' }).click();
   await expect(editor.getByText('「ヘビー・ピストル」の代わりに持たせる武器を選んでください')).toBeVisible();
   await editor.getByLabel('品目を探す').fill('Heavy Pistol');
-  await editor.getByTestId('editor-item-results').getByRole('button').filter({ hasText: '3d6 · ROF 2' }).first().click();
+  await editor.getByTestId('editor-item-results').getByRole('button').filter({ hasText: '大型拳銃' }).filter({ hasText: '3d6 · ROF 2' }).first().click();
   await editor.getByTestId('editor-item-preview').getByRole('button', { name: '持たせる' }).click();
   await editor.getByRole('button', { name: '保存する' }).click();
   await expect(editor.getByText('保存しました')).toBeVisible();
