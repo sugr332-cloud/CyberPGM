@@ -216,6 +216,8 @@ export const ItemPatchInputSchema = z.object({
   verify_status: z.enum(['official_verified', 'unofficial', 'unverified', 'homebrew']).optional(),
   tags: z.array(z.string()).optional(),
   notes: z.string().nullable().optional(),
+  effect_ja: z.string().nullable().optional(),
+  flavor_ja: z.string().nullable().optional(),
 });
 
 export const PriceCategoryConfigSchema = z.object({
@@ -275,6 +277,11 @@ export const SaveFileSchema = z.object({
   scenario_sessions: z.array(z.unknown()).optional().default([]),
   session_log: z.array(z.unknown()).optional().default([]),
   story_checks: z.array(z.unknown()).optional().default([]),
+  // GM が書き換えた品目の効果とフレーバー（Phase 5c。下書きのままのものは入れない）
+  item_notes: z
+    .array(z.object({ fvtt_id: z.string(), effect_ja: z.string().nullable(), flavor_ja: z.string().nullable() }))
+    .optional()
+    .default([]),
 });
 
 export const WsClientMessageSchema = z.discriminatedUnion('type', [

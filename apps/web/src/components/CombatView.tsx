@@ -10,6 +10,7 @@ import {
   BoardObject,
   BoardToken,
   BoardDrop,
+  formatSkillName,
 } from '@cyberpgm/shared';
 import {
   initiativeTotal,
@@ -22,6 +23,7 @@ import {
   LosStatus,
 } from '@cyberpgm/rules';
 import { BoardView } from './BoardView.js';
+import { ItemNotes } from './ItemNotes.js';
 
 interface CombatViewProps {
   characters: CharacterSheet[];
@@ -39,6 +41,20 @@ export const CombatView: React.FC<CombatViewProps> = ({
   isStandaloneWindow = false,
 }) => {
   const [combat, setCombat] = useState<Combat | null>(null);
+  // 参加者カードの詳細と、品目の性能・効果・フレーバーの窓（GM のみ。SPEC §5.1、Phase 5c）
+  const [expandedParticipantId, setExpandedParticipantId] = useState<string | null>(null);
+  const [itemPopup, setItemPopup] = useState<{ name: string; item: any | null } | null>(null);
+  const openItemPopup = async (name: string, itemId?: string | null) => {
+    if (!itemId) {
+      setItemPopup({ name, item: null });
+      return;
+    }
+    try {
+      setItemPopup({ name, item: await api.getItem(itemId) });
+    } catch {
+      setItemPopup({ name, item: null });
+    }
+  };
   const activePart = combat?.participants?.[combat.turn_index];
   const [actions, setActions] = useState<CombatActionDef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +92,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
   // Active Combat: Turn Guide State
   const [selectedActionKey, setSelectedActionKey] = useState<string | null>(null);
   const [targetParticipantId, setTargetParticipantId] = useState<string | null>(null);
-  const [distanceM, setDistanceM] = useState<number>(5);
+  // 距離は盤面から自動で入るか、GM が入れる（決め打ちの値を置かない。4a §11.1）
+  const [distanceM, setDistanceM] = useState<number | null>(null);
   const [selectedWeaponId, setSelectedWeaponId] = useState<string | null>(null);
   const [meleeIgnoreArmorInput, setMeleeIgnoreArmorInput] = useState<number | undefined>(undefined);
   const [ammoSpent, setAmmoSpent] = useState<number>(10);
@@ -585,7 +602,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       const attacks: any[] = [
         {
           target_id: targetParticipantId || undefined,
-          distance_m: distanceM,
+          distance_m: distanceM ?? undefined,
           dodge_mode: dodgeMode,
           attack_roll: { first: attackFirst, extra: attackExtra },
           defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
@@ -603,7 +620,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
           .filter((n) => Number.isInteger(n) && n >= 1 && n <= 6);
         attacks.push({
           target_id: targetParticipantId || undefined,
-          distance_m: distanceM,
+          distance_m: distanceM ?? undefined,
           dodge_mode: dodgeMode,
           attack_roll: { first: secondAttackFirst, extra: secondAttackExtra },
           defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
@@ -623,7 +640,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         action_key: selectedActionKey,
         actor_id: activePart.id,
         target_id: targetParticipantId || undefined,
-        distance_m: distanceM,
+        distance_m: distanceM ?? undefined,
         weapon_id: selectedWeaponId || undefined,
         weapon_entry_id: selectedWeaponId || undefined,
         ignore_armor_percent: ignoreArmorToSend,
@@ -673,7 +690,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       const attacks: any[] = [
         {
           target_id: targetParticipantId || undefined,
-          distance_m: distanceM,
+          distance_m: distanceM ?? undefined,
           dodge_mode: dodgeMode,
           attack_roll: { first: attackFirst, extra: attackExtra },
           defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
@@ -691,7 +708,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
           .filter((n) => Number.isInteger(n) && n >= 1 && n <= 6);
         attacks.push({
           target_id: targetParticipantId || undefined,
-          distance_m: distanceM,
+          distance_m: distanceM ?? undefined,
           dodge_mode: dodgeMode,
           attack_roll: { first: secondAttackFirst, extra: secondAttackExtra },
           defense_roll: dodgeMode === 'dodge' ? { first: defenseFirst, extra: defenseExtra } : undefined,
@@ -711,7 +728,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         action_key: selectedActionKey,
         actor_id: activePart.id,
         target_id: targetParticipantId || undefined,
-        distance_m: distanceM,
+        distance_m: distanceM ?? undefined,
         weapon_id: selectedWeaponId || undefined,
         weapon_entry_id: selectedWeaponId || undefined,
         ignore_armor_percent: ignoreArmorToSend,
@@ -1939,8 +1956,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             <input
                               type="number"
                               min={0}
-                              value={distanceM}
-                              onChange={(e) => setDistanceM(Number(e.target.value) || 0)}
+                              value={distanceM ?? ''}
+                              onChange={(e) => setDistanceM(e.target.value === '' ? null : Number(e.target.value))}
                               style={{
                                 width: '60px',
                                 padding: '4px 6px',
@@ -2619,6 +2636,61 @@ export const CombatView: React.FC<CombatViewProps> = ({
           )}
         </div>
       </div>
+
+      {itemPopup && (
+        <div
+          data-testid="item-popup"
+          onClick={() => setItemPopup(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(420px, 92vw)',
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '8px',
+              padding: '14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 700 }}>{itemPopup.item?.name_ja_override || itemPopup.item?.name_ja || itemPopup.name}</span>
+              <button type="button" onClick={() => setItemPopup(null)} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
+                ✕
+              </button>
+            </div>
+            {itemPopup.item ? (
+              <>
+                <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
+                  {itemPopup.item.weapon
+                    ? `${itemPopup.item.weapon.damage ?? '—'} · ROF ${itemPopup.item.weapon.rof ?? '—'} · 装弾数 ${itemPopup.item.weapon.magazine_max ?? '—'}`
+                    : itemPopup.item.armor
+                    ? itemPopup.item.armor.is_shield
+                      ? `シールド HP ${itemPopup.item.armor.shield_hp ?? '—'}`
+                      : `SP 頭 ${itemPopup.item.armor.sp_head ?? '—'} / 胴 ${itemPopup.item.armor.sp_body ?? '—'}`
+                    : itemPopup.item.cyberware
+                    ? `人間性 −${itemPopup.item.cyberware.humanity_loss_static ?? '—'}（${itemPopup.item.cyberware.humanity_loss_roll ?? '—'}）`
+                    : `${itemPopup.item.price_eb ?? '—'} eb`}
+                </div>
+                <ItemNotes item={itemPopup.item} />
+              </>
+            ) : (
+              <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>品目の情報なし</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -2635,10 +2707,45 @@ export const CombatView: React.FC<CombatViewProps> = ({
     if (hp < hpMax / 2 && hp > 0) hpColor = 'var(--color-warning)';
     if (hp <= 0) hpColor = 'var(--color-danger)';
 
+    const expanded = expandedParticipantId === p.id;
+    const inventory = ((char?.inventory as any[]) || []).filter((i) => i && typeof i === 'object');
+    const cyberware = char?.cyberware || [];
+    const textWeapons = ((char?.weapons as unknown[]) || []).filter((w): w is string => typeof w === 'string');
+    const itemRow = (key: string, label: string, itemId?: string | null, extra?: string) => (
+      <button
+        key={key}
+        type="button"
+        data-testid="card-item-row"
+        onClick={(e) => {
+          e.stopPropagation();
+          openItemPopup(label, itemId);
+        }}
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          width: '100%',
+          padding: '3px 6px',
+          background: 'var(--color-surface-elevated)',
+          border: '1px solid var(--color-border-light)',
+          borderRadius: '3px',
+          color: 'var(--color-text)',
+          fontSize: '0.75rem',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        <span>{label}</span>
+        {extra && <span style={{ color: 'var(--color-text-muted)' }}>{extra}</span>}
+      </button>
+    );
+
     return (
       <div
         key={p.id}
+        data-testid={`participant-card-${p.id}`}
+        onClick={() => setExpandedParticipantId(expanded ? null : p.id)}
         style={{
+          cursor: 'pointer',
           backgroundColor: isCurrentTurn ? 'rgba(79, 182, 227, 0.08)' : 'var(--color-surface)',
           border: isCurrentTurn
             ? `2px solid ${isAlly ? 'var(--color-ally)' : 'var(--color-enemy)'}`
@@ -2713,6 +2820,33 @@ export const CombatView: React.FC<CombatViewProps> = ({
           <span>SP 頭 {char?.sp_head ?? '—'} / 胴 {char?.sp_body ?? '—'}</span>
           <span>{char?.status && char.status.length > 0 ? char.status.join(', ') : '通常'}</span>
         </div>
+
+        {expanded && char && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontFamily: 'var(--font-mono)' }}>
+              {Object.entries(char.stats || {}).map(([k, v]) => (
+                <span key={k}>
+                  {k.toUpperCase()} {v as number}
+                </span>
+              ))}
+            </div>
+            {Object.keys(char.skills || {}).length > 0 && (
+              <div style={{ color: 'var(--color-text-muted)' }}>
+                {Object.entries(char.skills)
+                  .map(([k, lv]) => `${formatSkillName(k)} ${lv}`)
+                  .join(' / ')}
+              </div>
+            )}
+            <div style={{ color: 'var(--color-text-muted)' }}>武器・防具・所持品</div>
+            {inventory.length === 0 && textWeapons.length === 0 && <span>—</span>}
+            {inventory.map((i: any) =>
+              itemRow(i.entry_id ?? i.name, i.name, i.item_id, i.kind === 'weapon' && typeof i.ammo === 'number' ? `残弾 ${i.ammo}` : i.qty > 1 ? `×${i.qty}` : undefined),
+            )}
+            {textWeapons.map((w) => itemRow(`w-${w}`, w, null))}
+            {cyberware.length > 0 && <div style={{ color: 'var(--color-text-muted)' }}>サイバーウェア</div>}
+            {cyberware.map((cw, idx) => itemRow(`cw-${idx}`, cw.name, cw.item_id))}
+          </div>
+        )}
       </div>
     );
   }

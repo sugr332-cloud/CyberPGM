@@ -253,6 +253,9 @@ export const api = {
       body: JSON.stringify(data),
     }, getGmToken()),
 
+  resetItemNotes: (id: string) =>
+    request<any>(`/api/items/${id}/reset-notes`, { method: 'POST' }, getGmToken()),
+
   uploadItemImage: (id: string, formData: FormData) =>
     request<any>(`/api/items/${id}/images`, {
       method: 'POST',

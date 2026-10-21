@@ -349,6 +349,7 @@ export interface SaveFile {
   scenario_sessions?: unknown[];
   session_log?: unknown[];
   story_checks?: unknown[];
+  item_notes?: Array<{ fvtt_id: string; effect_ja: string | null; flavor_ja: string | null }>;
 }
 
 export interface Shop {
@@ -431,6 +432,8 @@ export interface ItemPatchInput {
   verify_status?: 'official_verified' | 'unofficial' | 'unverified' | 'homebrew';
   tags?: string[];
   notes?: string | null;
+  effect_ja?: string | null;
+  flavor_ja?: string | null;
 }
 
 export interface SaveSummary {

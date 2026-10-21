@@ -21,7 +21,8 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: `PORT=${port} DATABASE_URL=${dbPath} IMAGES_DIR=${e2eImagesDir} tsx apps/server/src/index.ts`,
+    // サーバは globalSetup より先に起動するので、マイグレーションもここで行う
+    command: `DATABASE_URL=${dbPath} DB_PATH=${dbPath} tsx apps/server/src/db/migrate.ts && PORT=${port} DATABASE_URL=${dbPath} IMAGES_DIR=${e2eImagesDir} tsx apps/server/src/index.ts`,
     url: `http://127.0.0.1:${port}/api/health`,
     reuseExistingServer: false,
     timeout: 10000,

@@ -9,6 +9,11 @@ export const items = sqliteTable('items', {
   name_ja_override: text('name_ja_override'),
   summary_ja: text('summary_ja'),
   description_en: text('description_en'),
+  // 効果とフレーバー（docs/data/item-notes.ja.json の下書きから入れ、GM が書き換えられる。2026-10-21 ユーザー決定）
+  effect_ja: text('effect_ja'),
+  flavor_ja: text('flavor_ja'),
+  effect_is_draft: integer('effect_is_draft', { mode: 'boolean' }).notNull().default(false),
+  flavor_is_draft: integer('flavor_is_draft', { mode: 'boolean' }).notNull().default(false),
   price_eb: integer('price_eb'),
   price_category: text('price_category'),
   source_book: text('source_book'),

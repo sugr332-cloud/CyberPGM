@@ -11,6 +11,7 @@ import {
   WEAPON_TYPES,
 } from '@cyberpgm/shared';
 import { api, getGmToken } from '../api.js';
+import { ItemNotes } from './ItemNotes.js';
 
 interface ShopViewProps {
   characters: CharacterSheet[];
@@ -1424,6 +1425,9 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                     {selectedItem.name_en}
                   </div>
                 </div>
+
+                {/* 効果とフレーバー（GM のみ。Phase 5c） */}
+                <ItemNotes item={selectedItem} editable onUpdated={(updated) => setSelectedItem({ ...selectedItem, ...updated })} />
 
                 {/* Image & Image Upload Trigger */}
                 <div
