@@ -149,6 +149,7 @@ test('Shop purchase flow: GM purchases Heavy Pistol for Viper, reflected on Play
   await expect(banner).toContainText('−');
 
   // Check inventory has the purchased pistol
+  await playerPage.getByTestId('player-tab-gear').click(); // 所持品は「装備」タブ（Phase 5g）
   const invList = playerPage.getByTestId('player-inventory-list');
   await expect(invList).toBeVisible({ timeout: 5000 });
   await expect(invList).toContainText(pistolName);

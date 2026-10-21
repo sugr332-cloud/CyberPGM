@@ -34,8 +34,11 @@ export function itemSpecLine(item: any): string {
 const row: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: '8px' };
 const muted: React.CSSProperties = { color: 'var(--color-text-muted)' };
 
-/** 品目の性能・価格・効果・フレーバー（GM のみ。キャラ作成・PC の詳細・戦闘カードで使う。Phase 5f） */
-export function ItemSpecs({ item }: { item: any }) {
+/**
+ * 品目の性能・価格・効果・フレーバー（キャラ作成・PC の詳細・戦闘カードで使う。Phase 5f）。
+ * プレイヤーのスマホでは forPlayer で性能だけにする（効果・フレーバー・GM 要約は GM だけ。2026-10-21 ユーザー決定）
+ */
+export function ItemSpecs({ item, forPlayer = false }: { item: any; forPlayer?: boolean }) {
   return (
     <div data-testid="item-specs" style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.8rem' }}>
       <div style={row}>
@@ -99,8 +102,8 @@ export function ItemSpecs({ item }: { item: any }) {
           </div>
         </>
       )}
-      {item.summary_ja && <div style={{ ...muted, whiteSpace: 'pre-wrap' }}>{item.summary_ja}</div>}
-      <ItemNotes item={item} />
+      {!forPlayer && item.summary_ja && <div style={{ ...muted, whiteSpace: 'pre-wrap' }}>{item.summary_ja}</div>}
+      {!forPlayer && <ItemNotes item={item} />}
     </div>
   );
 }
@@ -109,10 +112,11 @@ interface PopupProps {
   name: string;
   itemId?: string | null;
   onClose: () => void;
+  forPlayer?: boolean;
 }
 
 /** 品目の窓。品目 ID のない持ち物（手入力の名前だけ）は「品目の情報なし」 */
-export function ItemDetailPopup({ name, itemId, onClose }: PopupProps) {
+export function ItemDetailPopup({ name, itemId, onClose, forPlayer = false }: PopupProps) {
   const [item, setItem] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -122,10 +126,10 @@ export function ItemDetailPopup({ name, itemId, onClose }: PopupProps) {
     setLoading(true);
     // 品目 ID のない持ち物（名前だけの武器など）は、名前がぴったり同じ品目を探す
     const load = itemId
-      ? api.getItem(itemId)
+      ? (forPlayer ? api.getItemForPlayer : api.getItem)(itemId)
       : api.getItems({ q: name, limit: 50 }).then((res) => {
           const found = res.items.find((i) => [i.name_ja_override, i.name_ja, i.name_en].includes(name));
-          return found ? api.getItem(found.id) : null;
+          return found ? (forPlayer ? api.getItemForPlayer : api.getItem)(found.id) : null;
         });
     load
       .then((res) => active && setItem(res))
@@ -134,7 +138,7 @@ export function ItemDetailPopup({ name, itemId, onClose }: PopupProps) {
     return () => {
       active = false;
     };
-  }, [itemId, name]);
+  }, [itemId, name, forPlayer]);
 
   return (
     <div
@@ -166,10 +170,10 @@ export function ItemDetailPopup({ name, itemId, onClose }: PopupProps) {
         {item ? (
           <>
             <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>{itemSpecLine(item)}</div>
-            <ItemSpecs item={item} />
+            <ItemSpecs item={item} forPlayer={forPlayer} />
           </>
         ) : (
-          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{loading ? '読み込み中…' : itemId ? '品目の情報なし' : '品目と結び付いていない名前だけの持ち物です（キャラ作成タブの「品目から探す」で結び付けられます）'}</div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{loading ? '読み込み中…' : itemId ? '品目の情報なし' : forPlayer ? '品目の情報なし' : '品目と結び付いていない名前だけの持ち物です（キャラ作成タブの「品目から探す」で結び付けられます）'}</div>
         )}
       </div>
     </div>

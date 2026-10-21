@@ -905,4 +905,44 @@ export const api = {
       getGmToken(),
     );
   },
+
+  // スマホの商店と購入申請（Phase 5g）
+  getPlayerShop: (asGm = false) =>
+    request<{ shop: { id: string; name: string } | null; stock: PlayerShopStock[] }>('/api/player-shop', {}, asGm ? getGmToken() : getPlayerToken()),
+  setPlayerShop: (shopId: string | null) =>
+    request<{ shop_id: string | null }>('/api/player-shop', { method: 'PUT', body: JSON.stringify({ shop_id: shopId }) }, getGmToken()),
+  createPurchaseRequest: (lines: Array<{ item_id: string; qty: number }>) =>
+    request<{ request: PurchaseRequest }>('/api/purchase-requests', { method: 'POST', body: JSON.stringify({ lines }) }, getPlayerToken()),
+  getMyPurchaseRequests: () => request<{ requests: PurchaseRequest[] }>('/api/purchase-requests/mine', {}, getPlayerToken()),
+  getPurchaseRequests: () => request<{ requests: PurchaseRequest[] }>('/api/purchase-requests', {}, getGmToken()),
+  approvePurchaseRequest: (id: string, installCyberware?: Array<{ item_id: string; humanity_loss?: number }>) =>
+    request<{ request: PurchaseRequest }>(
+      `/api/purchase-requests/${id}/approve`,
+      { method: 'POST', body: JSON.stringify(installCyberware ? { install_cyberware: installCyberware } : {}) },
+      getGmToken(),
+    ),
+  rejectPurchaseRequest: (id: string, comment: string) =>
+    request<{ request: PurchaseRequest }>(`/api/purchase-requests/${id}/reject`, { method: 'POST', body: JSON.stringify({ comment }) }, getGmToken()),
+  /** プレイヤーが品目の性能を見る（効果・フレーバーはサーバーが外す） */
+  getItemForPlayer: (id: string) => request<any>(`/api/items/${id}`, {}, getPlayerToken()),
 };
+
+export interface PlayerShopStock {
+  item_id: string;
+  quantity: number | null;
+  unit_price: number | null;
+  item: any;
+}
+
+export interface PurchaseRequest {
+  id: string;
+  character_id: string;
+  character_name: string | null;
+  shop_id: string | null;
+  lines: Array<{ item_id: string; name: string; qty: number; unit_price: number }>;
+  total_eb: number;
+  status: 'pending' | 'approved' | 'rejected';
+  comment: string | null;
+  created_at: number;
+  updated_at: number;
+}

@@ -140,7 +140,14 @@ shopsRoutes.get('/:id/stock', async (c) => {
     .where(eq(shop_stock.shop_id, shopId))
     .all();
 
-  return c.json({ stock: stockRows });
+  // 効果とフレーバー（Phase 5c）は GM だけに送る
+  if (c.get('role') === 'gm') return c.json({ stock: stockRows });
+  return c.json({
+    stock: stockRows.map((r) => {
+      const { effect_ja: _e, flavor_ja: _f, effect_is_draft: _ed, flavor_is_draft: _fd, ...item } = r.item;
+      return { ...r, item };
+    }),
+  });
 });
 
 // POST /api/shops/:id/stock - add or update stock item in shop (GM only)

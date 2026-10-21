@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { eq, desc } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
@@ -24,20 +25,21 @@ import {
 
 export const commerceRoutes = new Hono();
 
-// POST /api/purchase - Purchase items and/or install cyberware (GM only)
-commerceRoutes.post('/purchase', requireGm, async (c) => {
-  const body = await c.req.json();
-  const parsed = PurchaseInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: 'Invalid purchase data', details: parsed.error.issues }, 400);
-  }
+type PurchaseInput = z.infer<typeof PurchaseInputSchema>;
 
-  const { character_id, shop_id, lines, install_cyberware } = parsed.data;
+export type PurchaseResult =
+  | { ok: true; total_eb: number; character: ReturnType<typeof getCharacterSheetById> }
+  | { ok: false; status: 400 | 404 | 500; body: Record<string, unknown> };
+
+/** 購入の処理（GM の商店と、プレイヤーの購入申請の承認で使う。Phase 5g で関数にした） */
+export function executePurchase(input: PurchaseInput): PurchaseResult {
+  const fail = (body: Record<string, unknown>, status: 400 | 404 | 500): PurchaseResult => ({ ok: false, status, body });
+  const { character_id, shop_id, lines, install_cyberware } = input;
 
   // 1. Fetch character
   const charRow = db.select().from(characters).where(eq(characters.id, character_id)).get();
   if (!charRow) {
-    return c.json({ error: 'Character not found' }, 404);
+    return fail({ error: 'Character not found' }, 404);
   }
 
   // 2. Fetch shop if specified
@@ -45,7 +47,7 @@ commerceRoutes.post('/purchase', requireGm, async (c) => {
   if (shop_id) {
     shopRow = db.select().from(shops).where(eq(shops.id, shop_id)).get();
     if (!shopRow) {
-      return c.json({ error: 'Shop not found' }, 404);
+      return fail({ error: 'Shop not found' }, 404);
     }
   }
 
@@ -66,7 +68,7 @@ commerceRoutes.post('/purchase', requireGm, async (c) => {
   for (const line of lines) {
     const item = db.select().from(items).where(eq(items.id, line.item_id)).get();
     if (!item) {
-      return c.json({ error: `Item not found: ${line.item_id}` }, 404);
+      return fail({ error: `Item not found: ${line.item_id}` }, 404);
     }
 
     const overridden = line.unit_price_override !== undefined;
@@ -107,7 +109,7 @@ commerceRoutes.post('/purchase', requireGm, async (c) => {
 
   // 4. Check character funds
   if (charRow.eb < totalEb) {
-    return c.json(
+    return fail(
       {
         error: '所持金が不足しています',
         required: totalEb,
@@ -129,7 +131,7 @@ commerceRoutes.post('/purchase', requireGm, async (c) => {
         .find((s) => s.item_id === r.item_id);
 
       if (stockItem && stockItem.quantity !== null && stockItem.quantity < r.qty) {
-        return c.json(
+        return fail(
           {
             error: `在庫が不足しています: ${r.item.name_ja_override || r.item.name_ja || r.item.name_en} (在庫: ${stockItem.quantity})`,
           },
@@ -198,6 +200,7 @@ commerceRoutes.post('/purchase', requireGm, async (c) => {
               entry_id: generateUlid(),
               item_id: r.item_id,
               name: r.item.name_ja_override || r.item.name_ja || r.item.name_en,
+              kind: r.item.kind,
               qty: r.qty,
               equipped: false,
             });
@@ -255,7 +258,7 @@ commerceRoutes.post('/purchase', requireGm, async (c) => {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return c.json({ error: `購入処理中にエラーが発生しました: ${msg}` }, 500);
+    return fail({ error: `購入処理中にエラーが発生しました: ${msg}` }, 500);
   }
 
   // 7. Realtime Broadcast & notify
@@ -270,11 +273,19 @@ commerceRoutes.post('/purchase', requireGm, async (c) => {
     );
   }
 
-  return c.json({
-    success: true,
-    total_eb: totalEb,
-    character: updatedSheet,
-  });
+  return { ok: true, total_eb: totalEb, character: updatedSheet };
+}
+
+// POST /api/purchase - Purchase items and/or install cyberware (GM only)
+commerceRoutes.post('/purchase', requireGm, async (c) => {
+  const body = await c.req.json();
+  const parsed = PurchaseInputSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid purchase data', details: parsed.error.issues }, 400);
+  }
+  const result = executePurchase(parsed.data);
+  if (!result.ok) return c.json(result.body, result.status);
+  return c.json({ success: true, total_eb: result.total_eb, character: result.character });
 });
 
 // POST /api/sell - Sell items from PC inventory (GM only)
