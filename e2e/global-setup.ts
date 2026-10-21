@@ -15,11 +15,12 @@ export default async function globalSetup() {
   // （品目のカタログはそのまま使う）
   for (const t of [
     'story_checks', 'session_log', 'scenario_sessions', 'combat_log', 'combat_participants', 'combats',
-    'board_drops', 'board_tokens', 'board_objects', 'boards', 'transactions', 'money_log', 'char_log',
+    'board_drops', 'board_tokens', 'board_objects', 'boards', 'purchase_requests', 'transactions', 'money_log', 'char_log',
     'character_submissions', 'devices', 'saves', 'characters', 'shop_stock', 'shops',
   ]) {
     sqlite.prepare(`DELETE FROM ${t}`).run();
   }
+  sqlite.prepare("DELETE FROM app_settings WHERE key = 'player_shop_id'").run();
   sqlite.close();
   execFileSync('npx', ['tsx', 'apps/server/src/db/seed-demo.ts'], {
     env: { ...process.env, DB_PATH: dbPath, DATABASE_URL: dbPath },

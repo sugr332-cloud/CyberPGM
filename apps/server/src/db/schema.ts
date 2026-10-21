@@ -211,6 +211,21 @@ export const transactions = sqliteTable('transactions', {
   at: integer('at').notNull(),
 });
 
+// プレイヤーのスマホからの購入申請（Phase 5g）。GM が承認すると購入として処理する
+export const purchase_requests = sqliteTable('purchase_requests', {
+  id: text('id').primaryKey(),
+  character_id: text('character_id')
+    .notNull()
+    .references(() => characters.id, { onDelete: 'cascade' }),
+  shop_id: text('shop_id').references(() => shops.id, { onDelete: 'set null' }),
+  lines: text('lines').notNull(), // JSON: [{ item_id, name, qty, unit_price }]
+  total_eb: integer('total_eb').notNull(),
+  status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'rejected'
+  comment: text('comment'),
+  created_at: integer('created_at').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
 export const character_submissions = sqliteTable('character_submissions', {
   id: text('id').primaryKey(),
   source: text('source').notNull(), // 'wifi' | 'file'

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { CharacterSheet, SKILL_CATALOG, formatSkillName } from '@cyberpgm/shared';
 
 // 難易度目安（DV値）: イージー・モード p.15（Issue #3）
-const DV_GUIDE = [
+export const DV_GUIDE = [
   { label: '日常的', dv: 13 },
   { label: '困難', dv: 15 },
   { label: '専門的', dv: 17 },

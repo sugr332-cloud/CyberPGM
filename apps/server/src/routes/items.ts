@@ -150,7 +150,7 @@ itemsRouter.get('/', async (c) => {
 });
 
 /** isGm でないときは、GM だけに見せる効果とフレーバー（Phase 5c）を外す */
-function formatItemSummary(item: any, isGm = true) {
+export function formatItemSummary(item: any, isGm = true) {
   const imgs: Array<typeof images.$inferSelect> = item.images || [];
   let primaryImgId: string | null = null;
   if (imgs.length > 0) {

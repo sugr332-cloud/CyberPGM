@@ -12,10 +12,13 @@ import {
 } from '@cyberpgm/shared';
 import { api, getGmToken } from '../api.js';
 import { ItemNotes } from './ItemNotes.js';
+import { PurchaseRequestsPanel } from './PurchaseRequestsPanel.js';
 
 interface ShopViewProps {
   characters: CharacterSheet[];
   onRefreshCharacters?: () => void;
+  /** スマホからの購入申請が来たときに増える（Phase 5g） */
+  purchaseRefreshKey?: number;
 }
 
 interface CartItem {
@@ -24,7 +27,7 @@ interface CartItem {
   unit_price_override?: number;
 }
 
-export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharacters }) => {
+export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharacters, purchaseRefreshKey = 0 }) => {
   // Shops & Selected Shop
   const [shops, setShops] = useState<Shop[]>([]);
   const [selectedShopId, setSelectedShopId] = useState<string | null>(null);
@@ -771,6 +774,12 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
           </button>
         </div>
       </div>
+
+      <PurchaseRequestsPanel
+        currentShop={currentShop ? { id: currentShop.id, name: currentShop.name } : null}
+        refreshKey={purchaseRefreshKey}
+        onPurchased={() => onRefreshCharacters?.()}
+      />
 
       {/* Commerce Notice */}
       {commerceMsg && (

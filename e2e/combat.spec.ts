@@ -210,7 +210,7 @@ test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM A
 
   // 4. Back to Player Mobile Screen: Verify result notification & sheet updates
   await playerPage.bringToFront();
-  await playerPage.getByRole('button', { name: 'キャラシート' }).click();
+  await playerPage.getByTestId('player-tab-sheet').click();
 
   // Screenshot 4: スマホの行動画面と被弾・結果の通知 (390px)
   await playerPage.screenshot({

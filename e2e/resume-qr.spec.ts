@@ -49,7 +49,7 @@ test('Resume QR: after loading a save, each PC has a QR that opens their sheet o
   await phone.goto(`${url.pathname}${url.search}`);
   await expect(phone.getByText('自分のキャラクターを選択:')).toHaveCount(0);
   await expect(phone.getByText('ヴァイパー').first()).toBeVisible();
-  await expect(phone.getByRole('button', { name: 'キャラシート' })).toBeVisible();
+  await expect(phone.getByTestId('player-tab-sheet')).toBeVisible();
   await phone.screenshot({ path: 'docs/agy/reports/img/phase5d-phone-from-qr-390.png' });
 
   // PC タブの「このキャラの QR」は 1 人分だけ

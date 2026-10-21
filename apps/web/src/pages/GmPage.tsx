@@ -76,6 +76,9 @@ export const GmPage: React.FC = () => {
   // キャラ作成タブ（Phase 5f）: PC タブの「編集」「＋ 追加」から開く対象
   const [editorRequest, setEditorRequest] = useState<{ id: string } | { kind: 'pc' | 'npc' | 'mook' } | null>(null);
   const [detailPcIds, setDetailPcIds] = useState<Set<string>>(new Set());
+  // スマホからの購入申請（Phase 5g）: 来たら商店タブに数を出し、商店タブを読み直す
+  const [purchaseRefreshKey, setPurchaseRefreshKey] = useState(0);
+  const [pendingPurchaseCount, setPendingPurchaseCount] = useState(0);
   const openEditor = (req: { id: string } | { kind: 'pc' | 'npc' | 'mook' }) => {
     setEditorRequest(req);
     setActiveTab('chara');
@@ -109,6 +112,8 @@ export const GmPage: React.FC = () => {
       setDevices(p.devices);
     } else if (type === 'gm:claim-request') {
       setPendingClaim(payload as WsClaimRequestPayload);
+    } else if (type === 'gm:purchase-request') {
+      setPurchaseRefreshKey((k) => k + 1);
     }
   }, []);
 
@@ -144,6 +149,10 @@ export const GmPage: React.FC = () => {
       .then((res: { logs: MoneyLogEntry[] }) => setMoneyLogs(res.logs))
       .catch(() => {});
 
+    api.getPurchaseRequests()
+      .then((res) => setPendingPurchaseCount(res.requests.length))
+      .catch(() => {});
+
     api.getCharacterSubmissions()
       .then((res) => {
         const count = res.submissions.filter((s) => s.status === 'pending').length;
@@ -155,6 +164,13 @@ export const GmPage: React.FC = () => {
   useEffect(() => {
     refreshAllData();
   }, [refreshAllData]);
+
+  useEffect(() => {
+    if (!token || purchaseRefreshKey === 0) return;
+    api.getPurchaseRequests()
+      .then((res) => setPendingPurchaseCount(res.requests.length))
+      .catch(() => {});
+  }, [purchaseRefreshKey, token]);
 
   // Resolve Claim Request
   const handleResolveClaim = async (allow: boolean) => {
@@ -423,6 +439,14 @@ export const GmPage: React.FC = () => {
                   }}
                 >
                   {tab.label}
+                  {tab.id === 'shop' && pendingPurchaseCount > 0 && (
+                    <span
+                      data-testid="shop-request-badge"
+                      style={{ marginLeft: '6px', backgroundColor: 'var(--color-warning)', color: '#000', fontSize: '0.7rem', fontWeight: 800, padding: '1px 6px', borderRadius: '10px' }}
+                    >
+                      {pendingPurchaseCount}
+                    </span>
+                  )}
                 </button>
               ))}
             </nav>
@@ -1045,7 +1069,7 @@ export const GmPage: React.FC = () => {
             wsMessage={latestWsMessage}
           />
         ) : activeTab === 'shop' ? (
-          <ShopView characters={characters} onRefreshCharacters={refreshAllData} />
+          <ShopView characters={characters} onRefreshCharacters={refreshAllData} purchaseRefreshKey={purchaseRefreshKey} />
         ) : activeTab === 'skills' ? (
           <SkillsView characters={characters} />
         ) : activeTab === 'scenario' ? (

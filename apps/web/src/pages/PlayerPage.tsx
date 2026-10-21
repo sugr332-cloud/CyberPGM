@@ -4,8 +4,6 @@ import {
   CharacterSheet,
   CharLogEntry,
   WsNotifyPayload,
-  formatSkillName,
-  InventoryEntry,
 } from '@cyberpgm/shared';
 import {
   api,
@@ -15,6 +13,10 @@ import {
 } from '../api.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { Footer } from '../components/Footer.js';
+import { PlayerEquipmentView } from '../components/PlayerEquipmentView.js';
+import { PlayerSkillsView } from '../components/PlayerSkillsView.js';
+import { PlayerShopView } from '../components/PlayerShopView.js';
+import { PlayerActionSkills } from '../components/PlayerActionSkills.js';
 
 export const PlayerPage: React.FC = () => {
   const navigate = useNavigate();
@@ -33,7 +35,9 @@ export const PlayerPage: React.FC = () => {
   // Character sheet state
   const [sheet, setSheet] = useState<CharacterSheet | null>(null);
   const [logs, setLogs] = useState<CharLogEntry[]>([]);
-  const [activeTab, setActiveTab] = useState<'sheet' | 'act' | 'handouts'>('sheet');
+  const [activeTab, setActiveTab] = useState<'sheet' | 'gear' | 'skills' | 'shop' | 'act' | 'handouts'>('sheet');
+  // スマホの商店（Phase 5g）: 店の開け閉め・申請の結果が来たら読み直す
+  const [shopRefreshKey, setShopRefreshKey] = useState(0);
   const [banner, setBanner] = useState<WsNotifyPayload | null>(null);
 
   // Phase 5b Story & Handouts state
@@ -101,6 +105,8 @@ export const PlayerPage: React.FC = () => {
   const handleWsMessage = useCallback((type: string, payload: unknown) => {
     if (type === 'me:update') {
       setSheet(payload as CharacterSheet);
+    } else if (type === 'player-shop:update' || type === 'purchase-request:update') {
+      setShopRefreshKey((k) => k + 1);
     } else if (type === 'combat:turn') {
       const p = payload as any;
       setCombatTurnInfo(p);
@@ -743,6 +749,12 @@ export const PlayerPage: React.FC = () => {
             </div>
           )}
         </div>
+      ) : activeTab === 'gear' ? (
+        <PlayerEquipmentView sheet={sheet} />
+      ) : activeTab === 'skills' ? (
+        <PlayerSkillsView sheet={sheet} />
+      ) : activeTab === 'shop' ? (
+        <PlayerShopView eb={sheet.eb} refreshKey={shopRefreshKey} />
       ) : activeTab === 'sheet' ? (
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Header Card: Name, Role, Funds */}
@@ -997,158 +1009,6 @@ export const PlayerPage: React.FC = () => {
               <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
                 装着なし
               </span>
-            )}
-          </div>
-
-          {/* Inventory */}
-          <div
-            data-testid="player-inventory-card"
-            style={{
-              backgroundColor: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '8px',
-              padding: '16px',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>所持品</span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                {sheet.inventory.length} 件
-              </span>
-            </div>
-            {sheet.inventory.length > 0 ? (
-              <div
-                data-testid="player-inventory-list"
-                style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}
-              >
-                {sheet.inventory.map((item: InventoryEntry, i: number) => (
-                  <div
-                    key={item.entry_id || i}
-                    data-testid="player-inventory-item"
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '8px 10px',
-                      borderRadius: '4px',
-                      backgroundColor: 'var(--color-surface-elevated)',
-                      fontSize: '0.85rem',
-                    }}
-                  >
-                    <span style={{ fontWeight: 500 }}>
-                      {item.name}
-                      {item.ammo !== undefined && item.ammo !== null && (
-                        <span
-                          data-testid="player-inventory-ammo"
-                          style={{
-                            marginLeft: '8px',
-                            fontSize: '0.75rem',
-                            padding: '2px 6px',
-                            borderRadius: '3px',
-                            backgroundColor: 'rgba(79, 182, 227, 0.2)',
-                            color: 'var(--color-ally)',
-                            fontFamily: 'var(--font-mono)',
-                          }}
-                        >
-                          弾数: {item.ammo}
-                        </span>
-                      )}
-                    </span>
-                    <span
-                      style={{
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: '0.8rem',
-                        color: 'var(--color-text-muted)',
-                      }}
-                    >
-                      × {item.qty}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-                所持品なし
-              </span>
-            )}
-          </div>
-
-          {/* Skills List */}
-          <div
-            style={{
-              backgroundColor: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '8px',
-              padding: '16px',
-            }}
-          >
-            <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '8px' }}>
-              技能（基本値 = 能力値 + 技能 − ペナルティ）
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {sheet.skillsList.map((sk) => (
-                <div
-                  key={sk.key}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '6px 8px',
-                    borderRadius: '4px',
-                    backgroundColor: 'var(--color-surface-elevated)',
-                    fontSize: '0.85rem',
-                  }}
-                >
-                  <span>{formatSkillName(sk.name || sk.key)}</span>
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                      Lv.{sk.level}
-                    </span>
-                    <strong
-                      style={{
-                        fontFamily: 'var(--font-mono)',
-                        color: 'var(--color-ally)',
-                        fontSize: '0.95rem',
-                        minWidth: '24px',
-                        textAlign: 'right',
-                      }}
-                    >
-                      {sk.base}
-                    </strong>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Weapons */}
-          <div
-            style={{
-              backgroundColor: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '8px',
-              padding: '16px',
-            }}
-          >
-            <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '8px' }}>武器</div>
-            {sheet.weapons.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {sheet.weapons.map((w, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      padding: '6px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: 'var(--color-surface-elevated)',
-                      fontSize: '0.85rem',
-                    }}
-                  >
-                    {w}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>なし</span>
             )}
           </div>
 
@@ -2069,6 +1929,7 @@ export const PlayerPage: React.FC = () => {
               )}
             </div>
           )}
+          <PlayerActionSkills sheet={sheet} inCombat={!!currentCombat && currentCombat.status !== 'ended'} />
         </div>
       )}
 
@@ -2085,52 +1946,38 @@ export const PlayerPage: React.FC = () => {
           backgroundColor: 'var(--color-surface)',
           borderTop: '1px solid var(--color-border)',
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
+          gridTemplateColumns: 'repeat(6, 1fr)',
           zIndex: 100,
         }}
       >
-        <button
-          onClick={() => setActiveTab('sheet')}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: activeTab === 'sheet' ? 'var(--color-ally)' : 'var(--color-text-muted)',
-            fontWeight: activeTab === 'sheet' ? 700 : 400,
-            fontSize: '0.9rem',
-            cursor: 'pointer',
-            borderTop: activeTab === 'sheet' ? '2px solid var(--color-ally)' : 'none',
-          }}
-        >
-          キャラシート
-        </button>
-        <button
-          onClick={() => setActiveTab('act')}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: activeTab === 'act' ? 'var(--color-ally)' : 'var(--color-text-muted)',
-            fontWeight: activeTab === 'act' ? 700 : 400,
-            fontSize: '0.9rem',
-            cursor: 'pointer',
-            borderTop: activeTab === 'act' ? '2px solid var(--color-ally)' : 'none',
-          }}
-        >
-          行動
-        </button>
-        <button
-          onClick={() => setActiveTab('handouts')}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: activeTab === 'handouts' ? 'var(--color-ally)' : 'var(--color-text-muted)',
-            fontWeight: activeTab === 'handouts' ? 700 : 400,
-            fontSize: '0.9rem',
-            cursor: 'pointer',
-            borderTop: activeTab === 'handouts' ? '2px solid var(--color-ally)' : 'none',
-          }}
-        >
-          資料
-        </button>
+        {(
+          [
+            { id: 'sheet', label: 'シート' },
+            { id: 'gear', label: '装備' },
+            { id: 'skills', label: '技能' },
+            { id: 'shop', label: '商店' },
+            { id: 'act', label: '行動' },
+            { id: 'handouts', label: '資料' },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.id}
+            data-testid={`player-tab-${tab.id}`}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: activeTab === tab.id ? 'var(--color-ally)' : 'var(--color-text-muted)',
+              fontWeight: activeTab === tab.id ? 700 : 400,
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              borderTop: activeTab === tab.id ? '2px solid var(--color-ally)' : 'none',
+              padding: 0,
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
       </nav>
     </div>
   );

@@ -103,6 +103,20 @@ export class SessionManager {
     }
   }
 
+  /** プレイヤーのスマホ全部に送る（Phase 5g: スマホの商店の開け閉め） */
+  public broadcastToPlayers(message: object): void {
+    const payload = JSON.stringify(message);
+    for (const client of this.clients) {
+      if (client.role === 'player') {
+        try {
+          client.ws.send(payload);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
   /**
    * Sends a message to connected clients of a specific character.
    */
