@@ -14,7 +14,7 @@ import {
   woundPenalty,
   skillBase,
 } from '@cyberpgm/rules';
-import { api } from '../api.js';
+import { api, gmFetch } from '../api.js';
 
 interface SkillsViewProps {
   characters: CharacterSheet[];
@@ -33,6 +33,28 @@ export const SkillsView: React.FC<SkillsViewProps> = ({ characters }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedSkillKey, setSelectedSkillKey] = useState<string>('perception');
   const [targetDv, setTargetDv] = useState<number>(15);
+  const [boardMsg, setBoardMsg] = useState<string | null>(null);
+
+  // 選んだ技能と難易度で、ストーリーの判定ボードに全員分の行を作る（仕様 §5.6。Phase 5n）。
+  // 進行中のシナリオに入っている PC だけ。いなければ全員
+  const addToCheckBoard = async () => {
+    setBoardMsg(null);
+    const active = await gmFetch('/api/scenario-sessions/active').then((r) => r.json()).catch(() => null);
+    const session = active?.session;
+    if (!session) {
+      setBoardMsg('シナリオを進行していないので、判定ボードに追加できません（シナリオ → 進める で開始してください）');
+      return;
+    }
+    const pcs = characters.filter((c) => c.kind === 'pc');
+    const inScenario = pcs.filter((c) => c.scenario_id === session.scenario_id);
+    const ids = (inScenario.length > 0 ? inScenario : pcs).map((c) => c.id);
+    const res = await gmFetch(`/api/scenario-sessions/${session.id}/checks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actor_character_ids: ids, skill_key: selectedSkillKey, dv: targetDv }),
+    }).then((r) => r.json());
+    setBoardMsg(res.error ? `追加できませんでした: ${res.error}` : `判定ボードに ${ids.length} 人分を追加しました（シナリオ → 進める で見られます）`);
+  };
   const [customDvInput, setCustomDvInput] = useState<string>('15');
 
   // Skill Notes from DB
@@ -448,10 +470,27 @@ export const SkillsView: React.FC<SkillsViewProps> = ({ characters }) => {
             <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>
               各PCの成功率（難易度 {targetDv}）
             </h3>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+            <span style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
               {characters.length} 名
+              <button
+                type="button"
+                data-testid="add-to-check-board"
+                onClick={addToCheckBoard}
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: 'var(--color-ally)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '4px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                この判定を判定ボードに追加
+              </button>
             </span>
           </div>
+          {boardMsg && <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{boardMsg}</div>}
 
           {characters.length === 0 ? (
             <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', margin: '8px 0' }}>

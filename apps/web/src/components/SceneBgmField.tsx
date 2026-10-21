@@ -47,7 +47,9 @@ export function SceneBgmField({ value, onChange }: Props) {
 
   return (
     <div data-testid="scene-bgm-field" style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>BGM（表示ウィンドウで流れる）</label>
+      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+        BGM（シーンに入ると流れる。曲は BGM フォルダ data/audio に入れると一覧に出る）
+      </label>
       <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
         <select
           aria-label="シーンの BGM"
@@ -64,6 +66,10 @@ export function SceneBgmField({ value, onChange }: Props) {
         </select>
         <button type="button" onClick={() => fileRef.current?.click()} style={{ ...field, cursor: 'pointer' }}>
           音声を登録
+        </button>
+        {/* BGM フォルダ（data/audio）に置いた曲を読み直す（Phase 5n） */}
+        <button type="button" onClick={() => load()} style={{ ...field, cursor: 'pointer' }}>
+          フォルダを読み直す
         </button>
         <input
           ref={fileRef}

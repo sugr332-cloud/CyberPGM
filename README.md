@@ -27,3 +27,13 @@
 
 > CyberPGM is unofficial content provided under the Homebrew Content Policy of R. Talsorian Games and is not approved or endorsed by RTG. This content references materials that are the property of R. Talsorian Games and its licensees.
 > データ: Cyberpunk RED - Core（Foundry VTT システム、GPLv3）。アイコン: game-icons.net ほか（CC-BY 3.0 など。詳細は CREDITS.md）
+
+## BGM
+
+- 曲（mp3 / ogg / m4a / wav）は `data/audio/` に置く。サブフォルダも使える（例: `data/audio/戦闘/ボス戦.mp3` は「戦闘 / ボス戦」と出る）
+- 置いた曲は、シナリオメーカーのシーンの「BGM」と、シナリオ進行の「舞台」の BGM の一覧に自動で出る（「フォルダを読み直す」で更新）
+- 曲は表示ウィンドウ（TV）で流れる。表示ウィンドウを開かないときは、舞台の「この PC（GM 画面）で鳴らす」をオンにする
+
+## ログ
+
+サーバーのログとエラーは `data/logs/cyberpgm-YYYY-MM-DD.log` にも残る。

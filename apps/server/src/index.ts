@@ -34,7 +34,9 @@ import { sessionManager } from './session.js';
 import { createDailyBackup } from './config.js';
 import { resolveLanIp, startDualServer } from './net.js';
 import { linkTextWeapons } from './weapon-link.js';
-import { audioRoutes } from './routes/audio.js';
+import { searchRoutes } from './routes/search.js';
+import { startLogFile } from './logfile.js';
+import { audioRoutes, syncAudioFolder, getAudioDir } from './routes/audio.js';
 import { playerShopRoutes } from './routes/player-shop.js';
 import { playersRoutes } from './routes/players.js';
 
@@ -68,6 +70,7 @@ app.route('/api', boardsRoutes);
 app.route('/api/scenarios', scenariosRouter);
 app.route('/api', scenarioPlayRoutes);
 app.route('/api', audioRoutes);
+app.route('/api', searchRoutes);
 app.route('/api', playerShopRoutes);
 app.route('/api', playersRoutes);
 
@@ -245,6 +248,8 @@ app.get('*', async (c, next) => {
 
 // Server boot logic
 export async function startServer(): Promise<void> {
+  const logFile = startLogFile();
+  console.log(`[log] ログは ${logFile} にも残します`);
   // 1. Daily backup
   const dbPath = path.join(root, 'data', 'cyberpgm.db');
   const backupFile = createDailyBackup(dbPath);
@@ -253,6 +258,8 @@ export async function startServer(): Promise<void> {
   }
 
   // 文字だけの武器を持ち物に移す（戦闘で選べるように。Phase 5j）
+  const bgm = syncAudioFolder();
+  if (bgm.added > 0) console.log(`[bgm] BGM フォルダ (${getAudioDir()}) の曲を ${bgm.added} 件、一覧に入れました`);
   const linked = linkTextWeapons();
   if (linked > 0) console.log(`[weapons] 文字だけの武器 ${linked} 件を持ち物に移しました`);
 

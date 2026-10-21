@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CharacterSheet, StagePortrait } from '@cyberpgm/shared';
 import { getGmToken, gmFetch } from '../api.js';
+import { getGmBgmOn, setGmBgmOn } from '../gmBgm.js';
 
 interface ImageRow {
   id: string;
@@ -63,6 +64,8 @@ export function StagePanel({ characters }: Props) {
   const [display, setDisplay] = useState<DisplayState | null>(null);
   const [imageList, setImageList] = useState<ImageRow[]>([]);
   const [audioList, setAudioList] = useState<AudioRow[]>([]);
+  const [audioFolder, setAudioFolder] = useState('');
+  const [gmBgmOn, setGmBgmOnState] = useState(getGmBgmOn());
   const [sessionCode, setSessionCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -78,6 +81,7 @@ export function StagePanel({ characters }: Props) {
     setDisplay(d.display ?? null);
     setImageList(imgs.images ?? []);
     setAudioList(aud.audio ?? []);
+    setAudioFolder(aud.folder ?? '');
     setSessionCode(sess.code ?? '');
   }, []);
 
@@ -303,6 +307,25 @@ export function StagePanel({ characters }: Props) {
             </label>
           </>
         )}
+      </div>
+      {/* 表示ウィンドウを開かないときは、この PC の GM 画面で鳴らす（Phase 5n） */}
+      <label style={{ display: 'flex', gap: '4px', alignItems: 'center', color: 'var(--color-text-muted)' }}>
+        <input
+          type="checkbox"
+          data-testid="gm-bgm-toggle"
+          checked={gmBgmOn}
+          onChange={(e) => {
+            setGmBgmOnState(e.target.checked);
+            setGmBgmOn(e.target.checked);
+          }}
+        />
+        この PC（GM 画面）で鳴らす（表示ウィンドウを開かないとき）
+      </label>
+      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', color: 'var(--color-text-muted)', fontSize: '0.75rem', flexWrap: 'wrap' }}>
+        <span>曲は BGM フォルダ{audioFolder ? `（${audioFolder}）` : ''}に入れると一覧に出ます（mp3 / ogg / m4a / wav。サブフォルダも可）</span>
+        <button type="button" style={btn} onClick={() => load().catch(() => setError('BGM フォルダを読めませんでした'))}>
+          読み直す
+        </button>
       </div>
       <label style={{ display: 'flex', gap: '4px', alignItems: 'center', color: 'var(--color-text-muted)' }}>
         <input

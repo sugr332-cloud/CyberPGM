@@ -11,6 +11,7 @@ import {
   api,
   getGmToken,
   setGmToken,
+  gmFetch,
 } from '../api.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { Footer } from '../components/Footer.js';
@@ -23,6 +24,9 @@ import { ScenarioPlayView } from '../components/ScenarioPlayView.js';
 import { ResumeQrPanel } from '../components/ResumeQrPanel.js';
 import { CharacterEditorView } from '../components/CharacterEditorView.js';
 import { CharacterDetail } from '../components/CharacterDetail.js';
+import { BgmPlayer, BgmState } from '../components/BgmPlayer.js';
+import { getGmBgmOn, onGmBgmChange } from '../gmBgm.js';
+import { GlobalSearch } from '../components/GlobalSearch.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -110,7 +114,9 @@ export const GmPage: React.FC = () => {
   // WebSocket Message Handler
   const handleWsMessage = useCallback((type: string, payload: unknown) => {
     setLatestWsMessage({ type, payload });
-    if (type === 'gm:presence') {
+    if (type === 'bgm:update') {
+      setGmBgm((payload as BgmState | null) ?? null);
+    } else if (type === 'gm:presence') {
       const p = payload as { devices: DeviceInfo[] };
       setDevices(p.devices);
     } else if (type === 'gm:claim-request') {
@@ -124,6 +130,18 @@ export const GmPage: React.FC = () => {
     token,
     onMessage: handleWsMessage,
   });
+
+  // この PC（GM 画面）で BGM を鳴らす（Phase 5n）。いまの曲は bgm:update で届く
+  const [gmBgm, setGmBgm] = useState<BgmState | null>(null);
+  const [gmBgmOn, setGmBgmOnState] = useState(getGmBgmOn());
+  useEffect(() => onGmBgmChange(setGmBgmOnState), []);
+  useEffect(() => {
+    if (!token) return;
+    gmFetch('/api/display')
+      .then((r: Response) => r.json())
+      .then((res: { display?: { bgm?: BgmState | null } }) => setGmBgm(res.display?.bgm ?? null))
+      .catch(() => {});
+  }, [token]);
 
   // Fetch initial data
   const refreshAllData = useCallback(() => {
@@ -307,6 +325,20 @@ export const GmPage: React.FC = () => {
     }
   };
 
+  // セーブの名前を変える（Phase 5n）
+  const handleRenameSave = async (id: string, name: string) => {
+    const next = prompt('新しい名前', name)?.trim();
+    if (!next || next === name) return;
+    try {
+      await api.renameSave(id, next);
+      const res = await api.getSaves();
+      setSaveList(res.saves);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`名前の変更に失敗しました: ${msg}`);
+    }
+  };
+
   const handleOverwriteSave = async (id: string, name: string) => {
     if (!confirm(`セーブ「${name}」を現在の状態で上書きしますか？`)) return;
     try {
@@ -385,6 +417,7 @@ export const GmPage: React.FC = () => {
         paddingBottom: isMobile ? '56px' : '0',
       }}
     >
+      {gmBgmOn && <BgmPlayer bgm={gmBgm} compact />}
       {/* Top Header */}
       <header
         style={{
@@ -466,6 +499,13 @@ export const GmPage: React.FC = () => {
 
         {/* Header Right Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '6px' : '12px' }}>
+          {/* 全文検索（Phase 5n）。選んだものの種類のタブに移る */}
+          <GlobalSearch
+            compact={isMobile}
+            onOpen={(hit) =>
+              setActiveTab(hit.kind === 'character' ? 'pc' : hit.kind === 'item' ? 'shop' : 'scenario')
+            }
+          />
           <button
             onClick={handleOpenQr}
             style={{
@@ -1573,6 +1613,20 @@ export const GmPage: React.FC = () => {
                         >
                           書き出し
                         </a>
+                        <button
+                          onClick={() => handleRenameSave(sv.id, sv.name)}
+                          style={{
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border-light)',
+                            color: 'var(--color-text)',
+                            borderRadius: '4px',
+                            padding: '4px 8px',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          名前を変える
+                        </button>
                         <button
                           onClick={() => handleDeleteSave(sv.id, sv.name)}
                           style={{

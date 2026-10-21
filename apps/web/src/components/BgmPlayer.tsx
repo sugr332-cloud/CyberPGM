@@ -13,11 +13,12 @@ const FADE_MS = 1500;
  * 表示ウィンドウの BGM（Phase 5e）。曲の切り替え・停止は FADE_MS かけてフェードする。
  * ブラウザは操作なしで音を出せないので、最初の 1 回だけ「クリックして音声を有効にする」を出す。
  */
-export function BgmPlayer({ bgm }: { bgm: BgmState | null }) {
+export function BgmPlayer({ bgm, compact = false }: { bgm: BgmState | null; compact?: boolean }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const currentId = useRef<string | null>(null);
   const fadeTimer = useRef<number | null>(null);
-  const [unlocked, setUnlocked] = useState(false);
+  // compact（GM の画面）: GM はもう画面を操作しているので、最初から鳴らしてみる。止められたら小さいボタンを出す
+  const [unlocked, setUnlocked] = useState(compact);
 
   const target = bgm && bgm.playing ? bgm.volume / 100 : 0;
 
@@ -83,18 +84,34 @@ export function BgmPlayer({ bgm }: { bgm: BgmState | null }) {
           el.play().then(() => fadeTo(target)).catch(() => undefined);
         }
       }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 50,
-        background: 'rgba(0, 0, 0, 0.6)',
-        color: 'var(--color-text)',
-        border: 'none',
-        fontSize: '1.4rem',
-        cursor: 'pointer',
-      }}
+      style={
+        compact
+          ? {
+              position: 'fixed',
+              right: '16px',
+              bottom: '16px',
+              zIndex: 50,
+              padding: '10px 14px',
+              background: 'var(--color-ally)',
+              color: '#000',
+              border: 'none',
+              borderRadius: '6px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }
+          : {
+              position: 'fixed',
+              inset: 0,
+              zIndex: 50,
+              background: 'rgba(0, 0, 0, 0.6)',
+              color: 'var(--color-text)',
+              border: 'none',
+              fontSize: '1.4rem',
+              cursor: 'pointer',
+            }
+      }
     >
-      クリックして音声を有効にする
+      {compact ? '♪ クリックして BGM を鳴らす' : 'クリックして音声を有効にする'}
     </button>
   );
 }

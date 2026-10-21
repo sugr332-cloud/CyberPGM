@@ -33,6 +33,7 @@ import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES } from '../ser
 import { woundState, initiativeTotal } from '@cyberpgm/rules';
 import { randomInt } from 'node:crypto';
 import { linkTextWeapons } from '../weapon-link.js';
+import { attackLine } from '../services/attack-line.js';
 
 export const combatRoutes = new Hono();
 
@@ -230,6 +231,35 @@ combatRoutes.get('/combat-actions', async (c) => {
   } catch {
     return c.json({ actions: [] });
   }
+});
+
+/**
+ * POST /api/combats/:id/line（GM）: 出目を入れる前の計算式と成功ライン（Phase 5n）
+ */
+combatRoutes.post('/combats/:id/line', requireGm, async (c) => {
+  const combat = getHydratedCombat(c.req.param('id')!);
+  if (!combat) return c.json({ error: 'Combat not found' }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const actor = combat.participants.find((p) => p.id === body.actor_id);
+  if (!actor) return c.json({ line: null });
+  const target = combat.participants.find((p) => p.id === body.target_id);
+  return c.json({ line: attackLine(body, actor, target) });
+});
+
+/**
+ * GET /api/combats/current/my-lines?weapon_entry_id=（スマホ）: 自分の攻撃の成功ライン。射撃は距離帯ごと（Phase 5n）
+ */
+combatRoutes.get('/combats/current/my-lines', async (c) => {
+  const charId = c.get('characterId');
+  const combat = getCurrentCombat();
+  const me = combat?.participants.find((p) => p.character_id === charId);
+  if (!combat || !me) return c.json({ lines: {} });
+  const weapon_entry_id = c.req.query('weapon_entry_id') || undefined;
+  const lines: Record<string, unknown> = {};
+  for (const key of ['ranged', 'aimed', 'autofire', 'melee', 'brawl']) {
+    lines[key] = attackLine({ action_key: key, weapon_entry_id }, me);
+  }
+  return c.json({ lines });
 });
 
 /**

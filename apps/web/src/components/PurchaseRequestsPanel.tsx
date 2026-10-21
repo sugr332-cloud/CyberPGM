@@ -27,6 +27,9 @@ export function PurchaseRequestsPanel({ currentShop, refreshKey, onPurchased }: 
   const [openShop, setOpenShop] = useState<{ id: string; name: string } | null>(null);
   const [requests, setRequests] = useState<PurchaseRequest[]>([]);
   const [kinds, setKinds] = useState<Record<string, string>>({});
+  // サイバーウェアの人間性の減り方（固定値 / 振った値）と、振った値（Phase 5n）
+  const [lossRules, setLossRules] = useState<Record<string, { roll: string | null; fixed: number | null }>>({});
+  const [lossRolled, setLossRolled] = useState<Record<string, string>>({});
   const [install, setInstall] = useState<Record<string, boolean>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +44,13 @@ export function PurchaseRequestsPanel({ currentShop, refreshKey, onPurchased }: 
         const ids = Array.from(new Set(res.requests.flatMap((r) => r.lines.map((l) => l.item_id))));
         const list = await Promise.all(ids.map((id) => api.getItem(id).catch(() => null)));
         setKinds(Object.fromEntries(list.filter(Boolean).map((it) => [it.id, it.kind])));
+        setLossRules(
+          Object.fromEntries(
+            list
+              .filter((it) => it?.cyberware)
+              .map((it) => [it.id, { roll: it.cyberware.humanity_loss_roll ?? null, fixed: it.cyberware.humanity_loss_static ?? null }]),
+          ),
+        );
       })
       .catch(() => undefined);
   };
@@ -56,7 +66,13 @@ export function PurchaseRequestsPanel({ currentShop, refreshKey, onPurchased }: 
   const approve = async (r: PurchaseRequest) => {
     setError(null);
     try {
-      const cw = r.lines.filter((l) => kinds[l.item_id] === 'cyberware' && install[`${r.id}:${l.item_id}`]).map((l) => ({ item_id: l.item_id }));
+      const cw = r.lines
+        .filter((l) => kinds[l.item_id] === 'cyberware' && install[`${r.id}:${l.item_id}`])
+        .map((l) => {
+          // 振った値が入っていればそれ、空なら固定値（作成後は GM が選ぶ。仕様 §5.5）
+          const rolled = lossRolled[`${r.id}:${l.item_id}`];
+          return rolled && Number(rolled) >= 0 ? { item_id: l.item_id, humanity_loss: Number(rolled) } : { item_id: l.item_id };
+        });
       await api.approvePurchaseRequest(r.id, cw.length > 0 ? cw : undefined);
       onPurchased?.();
     } catch (err) {
@@ -116,6 +132,25 @@ export function PurchaseRequestsPanel({ currentShop, refreshKey, onPurchased }: 
                       onChange={(e) => setInstall((prev) => ({ ...prev, [`${r.id}:${l.item_id}`]: e.target.checked }))}
                     />
                     {l.name} をその場で取り付ける（人間性が減ります）
+                    {install[`${r.id}:${l.item_id}`] && (
+                      <>
+                        <span style={{ color: 'var(--color-text-muted)' }}>
+                          固定値 {lossRules[l.item_id]?.fixed ?? '—'}
+                          {lossRules[l.item_id]?.roll ? ` / 振るなら ${lossRules[l.item_id]?.roll}:` : ''}
+                        </span>
+                        {lossRules[l.item_id]?.roll && (
+                          <input
+                            aria-label={`${l.name} の人間性の出目`}
+                            type="number"
+                            min={0}
+                            placeholder="空欄は固定値"
+                            value={lossRolled[`${r.id}:${l.item_id}`] ?? ''}
+                            onChange={(e) => setLossRolled((prev) => ({ ...prev, [`${r.id}:${l.item_id}`]: e.target.value }))}
+                            style={{ ...button, width: '110px', backgroundColor: 'var(--color-bg)', cursor: 'text' }}
+                          />
+                        )}
+                      </>
+                    )}
                   </label>
                 ))}
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>

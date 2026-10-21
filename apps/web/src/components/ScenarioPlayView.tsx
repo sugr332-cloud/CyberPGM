@@ -11,7 +11,7 @@ import {
 import { BoardView } from './BoardView.js';
 import { StoryCheckRow, StoryCheckView } from './StoryCheckRow.js';
 import { StagePanel } from './StagePanel.js';
-import { getGmToken, gmFetch } from '../api.js';
+import { api, getGmToken, gmFetch } from '../api.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 
 interface ScenarioPlayViewProps {
@@ -486,12 +486,23 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   }, [scenarioData, activeSession?.current_scene_id]);
 
   const [activeBoard, setActiveBoard] = useState<any | null>(null);
+  const [showDv, setShowDv] = useState(true);
+  const [shopNames, setShopNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api.getShops().then((res) => setShopNames(Object.fromEntries(res.shops.map((x) => [x.id, x.name])))).catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    gmFetch('/api/settings/show-dv')
+      .then((r) => r.json())
+      .then((res) => setShowDv(res.show_dv_to_players !== false))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (currentScene?.board_id) {
       gmFetch(`/api/boards/${currentScene.board_id}`)
         .then((r) => r.json())
-        .then((b) => setActiveBoard(b))
+        .then((b) => setActiveBoard(b.board ?? null)) // { board } で返る（前は中身を取り出しておらず、盤面が空に見えていた。Phase 5n）
         .catch(() => setActiveBoard(null));
     } else {
       setActiveBoard(null);
@@ -693,6 +704,33 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
               {errorMsg}
             </span>
           )}
+          {/* このシナリオの店をスマホに出す（Phase 5n） */}
+          {((scenarioData?.scenario?.meta?.shop_ids ?? []) as string[]).map((sid) => {
+            const shop = shopNames[sid];
+            if (!shop) return null;
+            return (
+              <button
+                key={sid}
+                type="button"
+                data-testid="open-scenario-shop"
+                onClick={async () => {
+                  await api.setPlayerShop(sid);
+                  setSuccessMsg(`「${shop}」をスマホに出しました`);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: 'transparent',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  color: 'var(--color-text)',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                「{shop}」をスマホに出す
+              </button>
+            );
+          })}
           <button
             type="button"
             onClick={handleClearScenario}
@@ -989,6 +1027,15 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                       tokens={activeBoard.tokens || []}
                       isGm={true}
                       onUpdateFog={(newFog) => handleUpdateBoardFog(activeBoard.id, newFog)}
+                      onUpdateBoard={async (patch) => {
+                        await gmFetch(`/api/boards/${activeBoard.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(patch),
+                        });
+                        const b = await gmFetch(`/api/boards/${activeBoard.id}`).then((r) => r.json());
+                        setActiveBoard(b.board ?? null);
+                      }}
                       style={{ height: '360px' }}
                     />
                   </div>
@@ -1150,6 +1197,24 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                 全員判定
               </button>
             </div>
+            {/* スマホに難易度と成功ラインを見せるか（Phase 5n） */}
+            <label style={{ display: 'flex', gap: '4px', alignItems: 'center', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+              <input
+                type="checkbox"
+                data-testid="show-dv-toggle"
+                checked={showDv}
+                onChange={async (e) => {
+                  const v = e.target.checked;
+                  setShowDv(v);
+                  await gmFetch('/api/settings/show-dv', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ show_dv_to_players: v }),
+                  });
+                }}
+              />
+              スマホに難易度と成功ライン（〇 以上で成功）を見せる
+            </label>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {checks.map((chk) => (
