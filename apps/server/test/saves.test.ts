@@ -215,6 +215,31 @@ describe('Saves & Load operations (phase 2 §6 & §9)', () => {
     expect(loadV3Res.status).toBe(200);
   });
 
+  it('saves and loads version 6 with scenario sessions, logs and story checks (Phase 5b §7)', async () => {
+    const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${gmToken}` };
+    const created = await (
+      await app.request('/api/scenarios', { method: 'POST', headers: H, body: JSON.stringify({ title: '保存テスト', use_template: true }) })
+    ).json();
+    const start = await (
+      await app.request('/api/scenario-sessions/start', { method: 'POST', headers: H, body: JSON.stringify({ scenario_id: created.scenario.id }) })
+    ).json();
+    await app.request(`/api/scenario-sessions/${start.sessionId}/logs/note`, { method: 'POST', headers: H, body: JSON.stringify({ text: '保存前のメモ' }) });
+
+    const save = await (await app.request('/api/saves', { method: 'POST', headers: H, body: JSON.stringify({ name: 'v6' }) })).json();
+    const file = await (await app.request(`/api/saves/${(save.save ?? save).id}/file`, { headers: H })).json();
+    expect(file.version).toBe(6);
+    expect(file.scenario_sessions.length).toBeGreaterThan(0);
+    expect(file.session_log.some((l: { text: string }) => l.text === '保存前のメモ')).toBe(true);
+
+    await app.request(`/api/scenario-sessions/${start.sessionId}/logs/note`, { method: 'POST', headers: H, body: JSON.stringify({ text: '保存後のメモ' }) });
+    const load = await app.request(`/api/saves/${(save.save ?? save).id}/load`, { method: 'POST', headers: H });
+    expect(load.status).toBe(200);
+    const logs = await (await app.request(`/api/scenario-sessions/${start.sessionId}/logs`, { headers: H })).json();
+    const texts = (logs.logs ?? logs).map((l: { text: string }) => l.text);
+    expect(texts).toContain('保存前のメモ');
+    expect(texts).not.toContain('保存後のメモ');
+  });
+
   it('rejects corrupted or schema-invalid files during import', async () => {
     // 1. Invalid JSON
     const badJsonRes = await app.request('/api/saves/import', {

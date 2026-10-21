@@ -1,0 +1,1 @@
+ALTER TABLE `story_checks` ADD `action_label` text;

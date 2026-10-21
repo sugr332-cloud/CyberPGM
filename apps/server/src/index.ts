@@ -19,6 +19,12 @@ import { skillNotesRoutes } from './routes/skill-notes.js';
 import { combatRoutes, getCurrentCombat } from './routes/combat.js';
 import { boardsRoutes, getHydratedBoard } from './routes/boards.js';
 import { scenariosRouter } from './routes/scenarios.js';
+import {
+  scenarioPlayRoutes,
+  getCurrentStoryScreen,
+  handleStoryChoose,
+  handleStoryRoll,
+} from './routes/scenario-play.js';
 import { db } from './db/client.js';
 import { initPhase3bData } from './db/init-phase3b.js';
 import { initPhase4aData } from './db/init-phase4a.js';
@@ -55,10 +61,12 @@ app.route('/api', skillNotesRoutes);
 app.route('/api', combatRoutes);
 app.route('/api', boardsRoutes);
 app.route('/api/scenarios', scenariosRouter);
+app.route('/api', scenarioPlayRoutes);
 
 // Configure session providers
 sessionManager.setCombatProvider(getCurrentCombat);
 sessionManager.setBoardProvider(getHydratedBoard);
+sessionManager.setStoryProvider(getCurrentStoryScreen);
 
 // Initialize Phase 3b data (skill notes, creation method)
 initPhase3bData(db);
@@ -142,6 +150,23 @@ app.get(
                 ...data.payload,
                 character_id: characterId,
               });
+            }
+          } else if (data && data.type === 'story:choose') {
+            if (role === 'player' && characterId) {
+              handleStoryChoose({
+                ...data.payload,
+                characterId,
+              });
+            }
+          } else if (data && data.type === 'story:roll') {
+            if (role === 'player' && characterId) {
+              handleStoryRoll(
+                {
+                  ...data.payload,
+                  characterId,
+                },
+                ws,
+              );
             }
           }
         } catch {

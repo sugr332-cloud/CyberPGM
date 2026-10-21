@@ -7,6 +7,8 @@ import { generateUlid } from '@cyberpgm/shared';
 test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM Apply, and Undo', async ({ browser }) => {
   const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
   const { db, sqlite } = createDb(dbPath);
+  // 大型拳銃の品目 ID は DB ごとに違うので名前で引く
+  const heavyPistolId = (sqlite.prepare("SELECT id FROM items WHERE name_en = 'Heavy Pistol'").get() as { id: string }).id;
 
   // Clean combat state in test DB
   sqlite.prepare('DELETE FROM combat_log').run();
@@ -50,6 +52,7 @@ test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM A
     if (wIdx >= 0) {
       inv[wIdx] = {
         ...inv[wIdx],
+        item_id: heavyPistolId,
         name: '大型拳銃',
         kind: 'weapon',
         ammo: 8,
@@ -57,7 +60,7 @@ test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM A
     } else {
       inv.push({
         entry_id: generateUlid(),
-        item_id: '01M5BTW75NVPEE0BDG9BDF05HW',
+        item_id: heavyPistolId,
         name: '大型拳銃',
         kind: 'weapon',
         qty: 1,

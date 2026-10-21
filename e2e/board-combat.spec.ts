@@ -7,6 +7,8 @@ import { generateUlid } from '@cyberpgm/shared';
 test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover, separate window, TV view without enemy HP', async ({ browser }) => {
   const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
   const { db, sqlite } = createDb(dbPath);
+  // 大型拳銃の品目 ID は DB ごとに違うので名前で引く
+  const heavyPistolId = (sqlite.prepare("SELECT id FROM items WHERE name_en = 'Heavy Pistol'").get() as { id: string }).id;
 
   // 1. Clean DB state for reliable test run
   sqlite.prepare('DELETE FROM combat_log').run();
@@ -68,7 +70,7 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
       inventory: JSON.stringify([
         {
           entry_id: generateUlid(),
-          item_id: '01M5BTW75NVPEE0BDG9BDF05HW',
+          item_id: heavyPistolId,
           name: '大型拳銃',
           kind: 'weapon',
           qty: 1,
@@ -83,12 +85,12 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
     }).run();
     viper = db.select().from(characters).where(eq(characters.id, vId)).get();
   } else {
-    const inv = JSON.parse(viper.inventory || '[]');
-    const hasWep = inv.some((i: any) => i.kind === 'weapon');
-    if (!hasWep) {
+    // 前の実行で残った武器（古い品目 ID）を外して、この DB の大型拳銃を持たせる
+    const inv = JSON.parse(viper.inventory || '[]').filter((i: any) => i.kind !== 'weapon');
+    {
       inv.push({
         entry_id: generateUlid(),
-        item_id: '01M5BTW75NVPEE0BDG9BDF05HW',
+        item_id: heavyPistolId,
         name: '大型拳銃',
         kind: 'weapon',
         qty: 1,
@@ -411,8 +413,8 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
   await tvPage.goto(`/screen?code=${sessionCode}`);
 
   // Verify TV screen loads without login or PIN
-  await expect(tvPage.getByText(/CyberPGM/i)).toBeVisible();
   await expect(tvPage.locator('.board-view-container')).toBeVisible();
+  await expect(tvPage.getByText('CyberPGM', { exact: true })).toBeVisible();
 
   // TV Screen: Verify board SVG has scaled up and is not fixed to 800px
   const tvSvg = tvPage.locator('.board-view-container svg');

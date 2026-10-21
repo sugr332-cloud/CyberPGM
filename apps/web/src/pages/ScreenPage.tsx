@@ -9,11 +9,20 @@ export const ScreenPage: React.FC = () => {
   const codeParam = searchParams.get('code') || searchParams.get('session_code') || '';
   const [sessionCode, setSessionCode] = useState<string>(codeParam);
   const [screenData, setScreenData] = useState<{
-    combat: Combat | null;
-    board: Board | null;
-    objects: BoardObject[];
-    tokens: BoardToken[];
-    drops: BoardDrop[];
+    active?: boolean;
+    mode?: 'combat' | 'story';
+    combat?: Combat | null;
+    board?: Board | null;
+    objects?: BoardObject[];
+    tokens?: BoardToken[];
+    drops?: BoardDrop[];
+    background_image_path?: string | null;
+    tv_handout?: {
+      id: string;
+      title: string;
+      body: string;
+      image_path?: string | null;
+    } | null;
   } | null>(null);
 
   // Sync param to state if query param changes
@@ -325,10 +334,76 @@ export const ScreenPage: React.FC = () => {
               isScreen={true}
               style={{ width: '100%', height: '100%' }}
             />
+          ) : screenData?.background_image_path ? (
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#000',
+              }}
+            >
+              <img
+                src={screenData.background_image_path}
+                alt="Scene Background"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain',
+                }}
+              />
+            </div>
           ) : (
             <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '48px' }}>
-              <p style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '8px' }}>盤面が設定されていません</p>
-              <p style={{ fontSize: '0.9rem' }}>GMが戦闘タブで盤面を開始するのをお待ちください</p>
+              <p style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '8px' }}>CyberPGM 共有画面</p>
+              <p style={{ fontSize: '0.9rem' }}>GMからの投影をお待ちください</p>
+            </div>
+          )}
+
+          {/* Floating TV Handout Card */}
+          {screenData?.tv_handout && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '24px',
+                right: '24px',
+                maxWidth: '480px',
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                border: '2px solid var(--color-ally)',
+                borderRadius: '12px',
+                padding: '20px',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.8)',
+                backdropFilter: 'blur(8px)',
+                zIndex: 30,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-ally)', fontWeight: 700, letterSpacing: '0.05em' }}>
+                  【資料公開】
+                </span>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--color-text)' }}>
+                  {screenData.tv_handout.title}
+                </h3>
+              </div>
+              {screenData.tv_handout.image_path && (
+                <img
+                  src={screenData.tv_handout.image_path}
+                  alt={screenData.tv_handout.title}
+                  style={{
+                    width: '100%',
+                    maxHeight: '240px',
+                    objectFit: 'contain',
+                    borderRadius: '6px',
+                    marginBottom: '10px',
+                    backgroundColor: '#000',
+                  }}
+                />
+              )}
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--color-text-muted)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                {screenData.tv_handout.body}
+              </p>
             </div>
           )}
         </div>

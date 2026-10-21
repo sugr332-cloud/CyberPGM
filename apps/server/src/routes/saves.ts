@@ -30,6 +30,9 @@ import {
   handouts,
   encounters,
   random_tables,
+  scenario_sessions,
+  session_log,
+  story_checks,
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
@@ -109,10 +112,13 @@ export function buildSaveData(name: string): SaveFile {
   const handoutRows = db.select().from(handouts).all();
   const encounterRows = db.select().from(encounters).all();
   const randomTableRows = db.select().from(random_tables).all();
+  const sessionRows = db.select().from(scenario_sessions).all();
+  const logRowsSession = db.select().from(session_log).all();
+  const checkRows = db.select().from(story_checks).all();
 
   return {
     format: 'cpgm-save',
-    version: 5,
+    version: 6,
     savedAt: Date.now(),
     name,
     characters: chars,
@@ -140,6 +146,9 @@ export function buildSaveData(name: string): SaveFile {
     handouts: handoutRows,
     encounters: encounterRows,
     random_tables: randomTableRows,
+    scenario_sessions: sessionRows,
+    session_log: logRowsSession,
+    story_checks: checkRows,
   };
 }
 
@@ -616,7 +625,10 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
       }
     }
 
-    // Restore scenario tables (version 5)
+    // Restore scenario tables (version 5 & 6)
+    sqlite.prepare('DELETE FROM story_checks').run();
+    sqlite.prepare('DELETE FROM session_log').run();
+    sqlite.prepare('DELETE FROM scenario_sessions').run();
     sqlite.prepare('DELETE FROM random_tables').run();
     sqlite.prepare('DELETE FROM encounters').run();
     sqlite.prepare('DELETE FROM handouts').run();
@@ -782,6 +794,63 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
           rt.title,
           rt.dice,
           typeof rt.rows === 'string' ? rt.rows : JSON.stringify(rt.rows || []),
+        );
+      }
+    }
+
+    if (data.scenario_sessions && (data.scenario_sessions as any[]).length > 0) {
+      const insertSession = sqlite.prepare(`
+        INSERT INTO scenario_sessions (id, scenario_id, current_scene_id, started_at, ended_at, revealed)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const ss of data.scenario_sessions as any[]) {
+        insertSession.run(
+          ss.id,
+          ss.scenario_id,
+          ss.current_scene_id ?? null,
+          ss.started_at,
+          ss.ended_at ?? null,
+          typeof ss.revealed === 'string' ? ss.revealed : JSON.stringify(ss.revealed || { clue_ids: [], handout_ids: [] }),
+        );
+      }
+    }
+
+    if (data.session_log && (data.session_log as any[]).length > 0) {
+      const insertSLog = sqlite.prepare(`
+        INSERT INTO session_log (id, scenario_session_id, at, kind, text, ref)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const sl of data.session_log as any[]) {
+        insertSLog.run(
+          sl.id,
+          sl.scenario_session_id,
+          sl.at,
+          sl.kind,
+          sl.text,
+          typeof sl.ref === 'string' ? sl.ref : sl.ref ? JSON.stringify(sl.ref) : null,
+        );
+      }
+    }
+
+    if (data.story_checks && (data.story_checks as any[]).length > 0) {
+      const insertCheck = sqlite.prepare(`
+        INSERT INTO story_checks (id, scenario_session_id, scene_id, choice_id, actor_character_id, skill_key, dv, opposed, rolls, result, applied_log_id, action_label)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const sc of data.story_checks as any[]) {
+        insertCheck.run(
+          sc.id,
+          sc.scenario_session_id,
+          sc.scene_id ?? null,
+          sc.choice_id ?? null,
+          sc.actor_character_id,
+          sc.skill_key ?? null,
+          sc.dv ?? null,
+          typeof sc.opposed === 'string' ? sc.opposed : sc.opposed ? JSON.stringify(sc.opposed) : null,
+          typeof sc.rolls === 'string' ? sc.rolls : JSON.stringify(sc.rolls || []),
+          sc.result ?? null,
+          sc.applied_log_id ?? null,
+          sc.action_label ?? null,
         );
       }
     }

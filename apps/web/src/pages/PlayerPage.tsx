@@ -33,8 +33,44 @@ export const PlayerPage: React.FC = () => {
   // Character sheet state
   const [sheet, setSheet] = useState<CharacterSheet | null>(null);
   const [logs, setLogs] = useState<CharLogEntry[]>([]);
-  const [activeTab, setActiveTab] = useState<'sheet' | 'act'>('sheet');
+  const [activeTab, setActiveTab] = useState<'sheet' | 'act' | 'handouts'>('sheet');
   const [banner, setBanner] = useState<WsNotifyPayload | null>(null);
+
+  // Phase 5b Story & Handouts state
+  const [revealedData, setRevealedData] = useState<{
+    clues: Array<{ id: string; title: string; body: string; image_path?: string | null }>;
+    handouts: Array<{ id: string; title: string; body: string; image_path?: string | null }>;
+  }>({ clues: [], handouts: [] });
+  const [projectedDisplay, setProjectedDisplay] = useState<{ image_path: string | null } | null>(null);
+  const [publishedStoryChoices, setPublishedStoryChoices] = useState<
+    Array<{ id: string; label: string; skill_key?: string | null; dv?: number | null; who?: string }>
+  >([]);
+  const [generalStoryActions, setGeneralStoryActions] = useState<Array<{ key: string; label: string }>>([
+    { key: 'investigate', label: '調べる' },
+    { key: 'talk', label: '話す' },
+    { key: 'negotiate', label: '交渉' },
+    { key: 'threaten', label: '脅す' },
+    { key: 'hide', label: '隠れる' },
+  ]);
+  const [freeTextInput, setFreeTextInput] = useState('');
+  const [activeStoryCheck, setActiveStoryCheck] = useState<{
+    check_id: string;
+    skill_key: string | null;
+    dv: number | null;
+    formula?: string;
+  } | null>(null);
+  const [storyFirstRoll, setStoryFirstRoll] = useState<number | null>(null);
+  const [storyExtraRoll, setStoryExtraRoll] = useState<number | null>(null);
+  const [storyNeedsExtra, setStoryNeedsExtra] = useState(false);
+  const [storyMissing, setStoryMissing] = useState<string | null>(null);
+  const [storyResultNotification, setStoryResultNotification] = useState<{
+    check_id: string;
+    formula: string;
+    rolls: number[];
+    total: number;
+    result: 'success' | 'failure' | 'draw';
+  } | null>(null);
+  const [actionSuccessBanner, setActionSuccessBanner] = useState<string | null>(null);
 
   // Combat state for player
   const [currentCombat, setCurrentCombat] = useState<any | null>(null);
@@ -101,6 +137,30 @@ export const PlayerPage: React.FC = () => {
         },
         ...prev,
       ]);
+    } else if (type === 'handouts:update') {
+      setRevealedData(payload as any);
+    } else if (type === 'display:update') {
+      setProjectedDisplay(payload as any);
+    } else if (type === 'story:choices') {
+      const p = payload as any;
+      // null は「公開中の選択肢を下げた」（シーンが変わった・進行を終えた）
+      setPublishedStoryChoices(p?.choices ?? []);
+      if (p?.generalActions) setGeneralStoryActions(p.generalActions);
+    } else if (type === 'story:check_assigned') {
+      setActiveStoryCheck(payload as any);
+      setStoryFirstRoll(null);
+      setStoryExtraRoll(null);
+      setStoryNeedsExtra(false);
+    } else if (type === 'story:result') {
+      const res = payload as any;
+      if (res?.result) {
+        setStoryResultNotification(res);
+        setActiveStoryCheck(null);
+        setStoryMissing(null);
+      } else {
+        // まだ結果が出ない（追加の出目・GM の難易度待ち）。出目パッドを開いたままにする
+        setStoryMissing((res?.missing_inputs ?? []).join(' / ') || 'GM の確認待ち');
+      }
     }
   }, [sheet?.id, token]);
 
@@ -127,6 +187,14 @@ export const PlayerPage: React.FC = () => {
     api.getCurrentCombat(token)
       .then((res) => {
         setCurrentCombat(res.combat);
+      })
+      .catch(() => {});
+
+    // 公開済みの手がかり・ハンドアウトを取り直す（再接続のとき）
+    fetch('/api/scenario-sessions/current/revealed', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((rev) => {
+        if (rev && !rev.error) setRevealedData(rev);
       })
       .catch(() => {});
   }, [token]);
@@ -533,7 +601,124 @@ export const PlayerPage: React.FC = () => {
       )}
 
       {/* Main Content Area */}
-      {activeTab === 'sheet' ? (
+      {activeTab === 'handouts' ? (
+        <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--color-ally)' }}>
+            公開資料・手掛かり
+          </h2>
+
+          {/* Clues */}
+          {revealedData.clues.map((cl) => (
+            <div
+              key={cl.id}
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    fontSize: '0.7rem',
+                    padding: '2px 6px',
+                    borderRadius: '3px',
+                    backgroundColor: 'rgba(79, 182, 227, 0.2)',
+                    color: 'var(--color-ally)',
+                    fontWeight: 700,
+                  }}
+                >
+                  手掛かり
+                </span>
+                <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{cl.title}</span>
+              </div>
+              {cl.image_path && (
+                <img
+                  src={cl.image_path}
+                  alt={cl.title}
+                  style={{
+                    width: '100%',
+                    maxHeight: '180px',
+                    objectFit: 'contain',
+                    borderRadius: '4px',
+                    backgroundColor: '#000',
+                  }}
+                />
+              )}
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-muted)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                {cl.body}
+              </p>
+            </div>
+          ))}
+
+          {/* Handouts */}
+          {revealedData.handouts.map((h) => (
+            <div
+              key={h.id}
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    fontSize: '0.7rem',
+                    padding: '2px 6px',
+                    borderRadius: '3px',
+                    backgroundColor: 'rgba(235, 179, 58, 0.2)',
+                    color: 'var(--color-warning)',
+                    fontWeight: 700,
+                  }}
+                >
+                  ハンドアウト
+                </span>
+                <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{h.title}</span>
+              </div>
+              {h.image_path && (
+                <img
+                  src={h.image_path}
+                  alt={h.title}
+                  style={{
+                    width: '100%',
+                    maxHeight: '180px',
+                    objectFit: 'contain',
+                    borderRadius: '4px',
+                    backgroundColor: '#000',
+                  }}
+                />
+              )}
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-muted)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                {h.body}
+              </p>
+            </div>
+          ))}
+
+          {revealedData.clues.length === 0 && revealedData.handouts.length === 0 && (
+            <div
+              style={{
+                padding: '32px 16px',
+                textAlign: 'center',
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                color: 'var(--color-text-muted)',
+              }}
+            >
+              <p style={{ margin: 0, fontSize: '0.9rem' }}>まだ公開された資料はありません</p>
+            </div>
+          )}
+        </div>
+      ) : activeTab === 'sheet' ? (
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Header Card: Name, Role, Funds */}
           <div
@@ -998,20 +1183,395 @@ export const PlayerPage: React.FC = () => {
         /* Action Tab (Phase 4a) */
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {!currentCombat || currentCombat.status === 'ended' ? (
-            <div
-              style={{
-                padding: '32px 16px',
-                textAlign: 'center',
-                backgroundColor: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                color: 'var(--color-text-muted)',
-              }}
-            >
-              <h2 style={{ fontSize: '1.1rem', color: 'var(--color-text)', margin: '0 0 8px' }}>現在は戦闘中ではありません</h2>
-              <p style={{ fontSize: '0.85rem', margin: 0 }}>
-                GMが戦闘を開始すると、手番に応じた行動ボタンや出目パッドが表示されます。
-              </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* GM Projection Banner */}
+              {projectedDisplay?.image_path && (
+                <div
+                  style={{
+                    backgroundColor: 'var(--color-surface)',
+                    border: '1px solid var(--color-ally)',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ fontSize: '0.8rem', color: 'var(--color-ally)', fontWeight: 700 }}>
+                    【GM からの表示】
+                  </div>
+                  <img
+                    src={projectedDisplay.image_path}
+                    alt="GM Projection"
+                    style={{
+                      width: '100%',
+                      maxHeight: '220px',
+                      objectFit: 'contain',
+                      borderRadius: '4px',
+                      backgroundColor: '#000',
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Action Chosen Feedback Banner */}
+              {actionSuccessBanner && (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(46, 204, 113, 0.2)',
+                    border: '1px solid var(--color-success)',
+                    borderRadius: '6px',
+                    color: 'var(--color-success)',
+                    fontSize: '0.85rem',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <span>{actionSuccessBanner}</span>
+                  <button
+                    type="button"
+                    onClick={() => setActionSuccessBanner(null)}
+                    style={{ background: 'none', border: 'none', color: 'var(--color-success)', cursor: 'pointer' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Check Prompt & Dice Pad */}
+              {activeStoryCheck && (
+                <div
+                  style={{
+                    backgroundColor: 'var(--color-surface)',
+                    border: '2px solid var(--color-warning)',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-warning)' }}>
+                      判定のダイス入力
+                    </span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                      1d10
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--color-text)', lineHeight: 1.5 }}>
+                    {activeStoryCheck.formula || `判定 vs 難易度 ${activeStoryCheck.dv ?? '—'}`}
+                  </div>
+                  {storyMissing && (
+                    <div style={{ fontSize: '0.8rem', color: 'var(--color-warning)' }}>{storyMissing}</div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                      {storyFirstRoll === null
+                        ? '1d10 の出目をタップしてください:'
+                        : storyNeedsExtra
+                        ? `1個目: ${storyFirstRoll} (${storyFirstRoll === 10 ? 'クリティカル！追加ダイス' : 'ファンブル！追加ダイス'})`
+                        : `選択した出目: ${storyFirstRoll}`}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
+                        const isSelected = (!storyNeedsExtra && storyFirstRoll === num) || (storyNeedsExtra && storyExtraRoll === num);
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => {
+                              if (storyFirstRoll === null) {
+                                setStoryFirstRoll(num);
+                                if (num === 10 || num === 1) {
+                                  setStoryNeedsExtra(true);
+                                }
+                              } else if (storyNeedsExtra) {
+                                setStoryExtraRoll(num);
+                              } else {
+                                setStoryFirstRoll(num);
+                                if (num === 10 || num === 1) {
+                                  setStoryNeedsExtra(true);
+                                  setStoryExtraRoll(null);
+                                } else {
+                                  setStoryNeedsExtra(false);
+                                  setStoryExtraRoll(null);
+                                }
+                              }
+                            }}
+                            style={{
+                              padding: '12px 0',
+                              backgroundColor: isSelected ? 'var(--color-warning)' : 'var(--color-surface-elevated)',
+                              color: isSelected ? '#000' : 'var(--color-text)',
+                              border: '1px solid var(--color-border-light)',
+                              borderRadius: '6px',
+                              fontSize: '1.1rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              textAlign: 'center',
+                            }}
+                          >
+                            {num}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (storyFirstRoll === null) return;
+                        const rolls = [storyFirstRoll];
+                        if (storyNeedsExtra && storyExtraRoll !== null) {
+                          rolls.push(storyExtraRoll);
+                        }
+                        sendMessage({
+                          type: 'story:roll',
+                          payload: {
+                            check_id: activeStoryCheck.check_id,
+                            rolls,
+                          },
+                        });
+                      }}
+                      disabled={storyFirstRoll === null || (storyNeedsExtra && storyExtraRoll === null)}
+                      style={{
+                        padding: '12px',
+                        backgroundColor: 'var(--color-ally)',
+                        color: '#000',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontWeight: 800,
+                        fontSize: '0.95rem',
+                        cursor: storyFirstRoll !== null ? 'pointer' : 'not-allowed',
+                        opacity: storyFirstRoll !== null ? 1 : 0.5,
+                        marginTop: '6px',
+                      }}
+                    >
+                      GM に出目を送信
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Story Result Notification */}
+              {storyResultNotification && (
+                <div
+                  style={{
+                    backgroundColor: 'var(--color-surface)',
+                    border: `2px solid ${storyResultNotification.result === 'success' ? 'var(--color-success)' : 'var(--color-accent)'}`,
+                    borderRadius: '8px',
+                    padding: '14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span
+                      style={{
+                        fontWeight: 800,
+                        fontSize: '1rem',
+                        color: storyResultNotification.result === 'success' ? 'var(--color-success)' : 'var(--color-accent)',
+                      }}
+                    >
+                      {storyResultNotification.result === 'success' ? '判定成功' : '判定失敗'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setStoryResultNotification(null)}
+                      style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                    {storyResultNotification.formula}
+                  </div>
+                </div>
+              )}
+
+              {/* Published Choices */}
+              <div
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-ally)' }}>
+                  公開された選択肢
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {publishedStoryChoices
+                    .filter((ch) => !ch.who || ch.who === '全員' || ch.who === sheet.name || ch.who === sheet.role)
+                    .map((ch) => (
+                      <button
+                        key={ch.id}
+                        type="button"
+                        onClick={() => {
+                          sendMessage({
+                            type: 'story:choose',
+                            payload: {
+                              choice_id: ch.id,
+                              action_label: ch.label,
+                            },
+                          });
+                          setActionSuccessBanner(`「${ch.label}」を選択しました`);
+                        }}
+                        style={{
+                          padding: '12px 14px',
+                          backgroundColor: 'var(--color-surface-elevated)',
+                          border: '1px solid var(--color-border-light)',
+                          borderRadius: '6px',
+                          color: 'var(--color-text)',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {ch.label}
+                      </button>
+                    ))}
+                  {publishedStoryChoices.length === 0 && (
+                    <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                      公開されているシナリオ選択肢はありません
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* General Actions */}
+              <div
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text)' }}>
+                  汎用行動
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  {generalStoryActions.map((act) => (
+                    <button
+                      key={act.key}
+                      type="button"
+                      onClick={() => {
+                        sendMessage({
+                          type: 'story:choose',
+                          payload: {
+                            action_type: 'general',
+                            action_label: act.label,
+                          },
+                        });
+                        setActionSuccessBanner(`「${act.label}」を選択しました`);
+                      }}
+                      style={{
+                        padding: '10px 8px',
+                        backgroundColor: 'var(--color-surface-elevated)',
+                        border: '1px solid var(--color-border-light)',
+                        borderRadius: '6px',
+                        color: 'var(--color-text)',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {act.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Free Text Action */}
+              <div
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text)' }}>
+                  自由行動
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    placeholder="例: 周囲の配線を調べる"
+                    value={freeTextInput}
+                    onChange={(e) => setFreeTextInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && freeTextInput.trim()) {
+                        sendMessage({
+                          type: 'story:choose',
+                          payload: {
+                            action_type: 'free',
+                            free_text: freeTextInput.trim(),
+                          },
+                        });
+                        setActionSuccessBanner(`「${freeTextInput.trim()}」を試みます`);
+                        setFreeTextInput('');
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '10px 12px',
+                      backgroundColor: 'var(--color-bg)',
+                      border: '1px solid var(--color-border-light)',
+                      borderRadius: '6px',
+                      color: 'var(--color-text)',
+                      fontSize: '0.85rem',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!freeTextInput.trim()) return;
+                      sendMessage({
+                        type: 'story:choose',
+                        payload: {
+                          action_type: 'free',
+                          free_text: freeTextInput.trim(),
+                        },
+                      });
+                      setActionSuccessBanner(`「${freeTextInput.trim()}」を試みます`);
+                      setFreeTextInput('');
+                    }}
+                    disabled={!freeTextInput.trim()}
+                    style={{
+                      padding: '10px 16px',
+                      backgroundColor: 'var(--color-ally)',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: '#000',
+                      fontWeight: 700,
+                      fontSize: '0.85rem',
+                      cursor: freeTextInput.trim() ? 'pointer' : 'not-allowed',
+                      opacity: freeTextInput.trim() ? 1 : 0.5,
+                    }}
+                  >
+                    送信
+                  </button>
+                </div>
+              </div>
             </div>
           ) : currentCombat.status === 'setup' ? (
             <div
@@ -1500,7 +2060,7 @@ export const PlayerPage: React.FC = () => {
           backgroundColor: 'var(--color-surface)',
           borderTop: '1px solid var(--color-border)',
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
+          gridTemplateColumns: '1fr 1fr 1fr',
           zIndex: 100,
         }}
       >
@@ -1531,6 +2091,20 @@ export const PlayerPage: React.FC = () => {
           }}
         >
           行動
+        </button>
+        <button
+          onClick={() => setActiveTab('handouts')}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: activeTab === 'handouts' ? 'var(--color-ally)' : 'var(--color-text-muted)',
+            fontWeight: activeTab === 'handouts' ? 700 : 400,
+            fontSize: '0.9rem',
+            cursor: 'pointer',
+            borderTop: activeTab === 'handouts' ? '2px solid var(--color-ally)' : 'none',
+          }}
+        >
+          資料
         </button>
       </nav>
     </div>

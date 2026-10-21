@@ -36,6 +36,7 @@ export interface BoardViewProps {
   onMoveToken?: (tokenId: string, x: number, y: number) => void;
   onSelectDrop?: (drop: BoardDrop) => void;
   onSelectParticipant?: (participantId: string) => void;
+  onUpdateFog?: (fog: { x: number; y: number }[]) => void;
   style?: React.CSSProperties;
   className?: string;
 }
@@ -61,6 +62,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   onMoveToken,
   onSelectDrop,
   onSelectParticipant,
+  onUpdateFog,
   style,
   className = '',
 }) => {
@@ -83,6 +85,59 @@ export const BoardView: React.FC<BoardViewProps> = ({
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [draggingTokenId, setDraggingTokenId] = useState<string | null>(null);
   const [draggingObjectId, setDraggingObjectId] = useState<string | null>(null);
+
+  // Fog of War state
+  const [isFogMode, setIsFogMode] = useState<boolean>(false);
+  const [fogTool, setFogTool] = useState<'hide' | 'reveal'>('hide');
+  const [fogCells, setFogCells] = useState<{ x: number; y: number }[]>(board.fog || []);
+  const [isPaintingFog, setIsPaintingFog] = useState(false);
+
+  React.useEffect(() => {
+    setFogCells(board.fog || []);
+  }, [board.fog]);
+
+  const updateFogAndNotify = useCallback(
+    (newFog: { x: number; y: number }[]) => {
+      setFogCells(newFog);
+      onUpdateFog?.(newFog);
+    },
+    [onUpdateFog]
+  );
+
+  const applyFogToolToCell = useCallback(
+    (cell: { x: number; y: number }) => {
+      setFogCells((prev) => {
+        const exists = prev.some((f) => f.x === cell.x && f.y === cell.y);
+        let next: { x: number; y: number }[];
+        if (fogTool === 'hide') {
+          if (exists) return prev;
+          next = [...prev, cell];
+        } else {
+          if (!exists) return prev;
+          next = prev.filter((f) => !(f.x === cell.x && f.y === cell.y));
+        }
+        onUpdateFog?.(next);
+        return next;
+      });
+    },
+    [fogTool, onUpdateFog]
+  );
+
+  const hideAllFog = () => {
+    const all: { x: number; y: number }[] = [];
+    const cCount = grid.cols || 20;
+    const rCount = grid.rows || 15;
+    for (let y = 0; y < rCount; y++) {
+      for (let x = 0; x < cCount; x++) {
+        all.push({ x, y });
+      }
+    }
+    updateFogAndNotify(all);
+  };
+
+  const clearAllFog = () => {
+    updateFogAndNotify([]);
+  };
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -182,7 +237,29 @@ export const BoardView: React.FC<BoardViewProps> = ({
     setDraggingTokenId(tokenId);
   };
 
+  const handleSvgMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (isGm && isFogMode) {
+      const cell = getCellFromEvent(e);
+      if (cell) {
+        setIsPaintingFog(true);
+        applyFogToolToCell(cell);
+      }
+    }
+  };
+
+  const handleSvgMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (isGm && isFogMode && isPaintingFog) {
+      const cell = getCellFromEvent(e);
+      if (cell) {
+        applyFogToolToCell(cell);
+      }
+    }
+  };
+
   const handleMouseUp = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (isPaintingFog) {
+      setIsPaintingFog(false);
+    }
     if (draggingTokenId) {
       const cell = getCellFromEvent(e);
       if (cell) {
@@ -369,6 +446,93 @@ export const BoardView: React.FC<BoardViewProps> = ({
               </button>
             </div>
           )}
+
+          {isGm && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setIsFogMode(!isFogMode)}
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: isFogMode ? 'rgba(79, 182, 227, 0.25)' : 'var(--color-surface-elevated)',
+                  border: `1px solid ${isFogMode ? 'var(--color-ally)' : 'var(--color-border-light)'}`,
+                  borderRadius: '4px',
+                  color: isFogMode ? 'var(--color-ally)' : 'var(--color-text)',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: isFogMode ? 700 : 500,
+                }}
+              >
+                霧ツール
+              </button>
+              {isFogMode && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setFogTool('hide')}
+                    style={{
+                      padding: '3px 8px',
+                      backgroundColor: fogTool === 'hide' ? 'var(--color-ally)' : 'var(--color-surface-elevated)',
+                      color: fogTool === 'hide' ? '#000' : 'var(--color-text)',
+                      border: '1px solid var(--color-border-light)',
+                      borderRadius: '4px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    隠す
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFogTool('reveal')}
+                    style={{
+                      padding: '3px 8px',
+                      backgroundColor: fogTool === 'reveal' ? 'var(--color-ally)' : 'var(--color-surface-elevated)',
+                      color: fogTool === 'reveal' ? '#000' : 'var(--color-text)',
+                      border: '1px solid var(--color-border-light)',
+                      borderRadius: '4px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    晴らす
+                  </button>
+                  <button
+                    type="button"
+                    onClick={hideAllFog}
+                    style={{
+                      padding: '3px 8px',
+                      backgroundColor: 'var(--color-surface-elevated)',
+                      color: 'var(--color-text-muted)',
+                      border: '1px solid var(--color-border-light)',
+                      borderRadius: '4px',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    全覆い
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearAllFog}
+                    style={{
+                      padding: '3px 8px',
+                      backgroundColor: 'var(--color-surface-elevated)',
+                      color: 'var(--color-text-muted)',
+                      border: '1px solid var(--color-border-light)',
+                      borderRadius: '4px',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    全晴れ
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -465,6 +629,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
           preserveAspectRatio="xMidYMid meet"
           className="border border-slate-800 shadow-2xl transition-transform"
           onClick={handleSvgClick}
+          onMouseDown={handleSvgMouseDown}
+          onMouseMove={handleSvgMouseMove}
           onMouseUp={handleMouseUp}
           style={{
             maxWidth: '100%',
@@ -980,6 +1146,23 @@ export const BoardView: React.FC<BoardViewProps> = ({
                 </g>
               );
             })}
+          </g>
+
+          {/* Fog of War Layer */}
+          <g className="fog-layer">
+            {fogCells.map((f, i) => (
+              <rect
+                key={`fog-${f.x}-${f.y}-${i}`}
+                x={f.x * cellPx}
+                y={f.y * cellPx}
+                width={cellPx}
+                height={cellPx}
+                fill={isGm ? 'rgba(0, 0, 0, 0.65)' : '#000000'}
+                stroke={isGm && isFogMode ? 'rgba(255, 255, 255, 0.25)' : 'none'}
+                strokeWidth={0.5}
+                style={{ pointerEvents: 'none' }}
+              />
+            ))}
           </g>
         </svg>
       </div>
