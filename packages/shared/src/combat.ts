@@ -92,6 +92,7 @@ export interface CombatParticipant {
     sp_body: number;
     weapons: unknown[];
     inventory: unknown[];
+    cyberware?: Array<{ item_id?: string; name: string; type?: string; static_loss?: number }>;
     status: string[];
     crit_injuries: unknown[];
   } | null;

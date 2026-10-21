@@ -149,6 +149,11 @@ export function buildSaveData(name: string): SaveFile {
     scenario_sessions: sessionRows,
     session_log: logRowsSession,
     story_checks: checkRows,
+    item_notes: sqlite
+      .prepare(
+        'SELECT fvtt_id, effect_ja, flavor_ja FROM items WHERE fvtt_id IS NOT NULL AND (effect_is_draft = 0 OR flavor_is_draft = 0) AND (effect_ja IS NOT NULL OR flavor_ja IS NOT NULL)',
+      )
+      .all() as Array<{ fvtt_id: string; effect_ja: string | null; flavor_ja: string | null }>,
   };
 }
 
@@ -316,6 +321,14 @@ savesRoutes.post('/:id/load', requireGm, async (c) => {
 
   // 2. Perform restore inside a single SQLite transaction
   const restoreTransaction = sqlite.transaction(() => {
+    // GM が書き換えた品目の効果とフレーバー（品目そのものは保存ファイルに入れない）
+    const restoreNote = sqlite.prepare(
+      'UPDATE items SET effect_ja = ?, flavor_ja = ?, effect_is_draft = 0, flavor_is_draft = 0 WHERE fvtt_id = ?',
+    );
+    for (const n of (data.item_notes ?? []) as Array<{ fvtt_id: string; effect_ja: string | null; flavor_ja: string | null }>) {
+      restoreNote.run(n.effect_ja, n.flavor_ja, n.fvtt_id);
+    }
+
     // Clear existing characters and logs
     sqlite.prepare('DELETE FROM money_log').run();
     sqlite.prepare('DELETE FROM char_log').run();

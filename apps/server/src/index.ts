@@ -28,6 +28,7 @@ import {
 import { db } from './db/client.js';
 import { initPhase3bData } from './db/init-phase3b.js';
 import { initPhase4aData } from './db/init-phase4a.js';
+import { initPhase5cData } from './db/init-phase5c.js';
 import { verifyToken, authMiddleware } from './auth.js';
 import { sessionManager } from './session.js';
 import { createDailyBackup } from './config.js';
@@ -73,6 +74,7 @@ initPhase3bData(db);
 
 // Initialize Phase 4a data (combat actions)
 initPhase4aData(db);
+initPhase5cData(db);
 
 // WebSocket endpoint
 app.get(

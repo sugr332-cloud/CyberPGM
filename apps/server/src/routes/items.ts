@@ -8,6 +8,7 @@ import {
   generateUlid,
 } from '@cyberpgm/shared';
 import { requireGm } from '../auth.js';
+import { loadItemNotes } from '../db/init-phase5c.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -136,7 +137,8 @@ itemsRouter.get('/', async (c) => {
     },
   });
 
-  const formattedItems = itemList.map((item) => formatItemSummary(item));
+  const isGm = c.get('role') === 'gm';
+  const formattedItems = itemList.map((item) => formatItemSummary(item, isGm));
 
   return c.json({
     total,
@@ -147,7 +149,8 @@ itemsRouter.get('/', async (c) => {
   });
 });
 
-function formatItemSummary(item: any) {
+/** isGm でないときは、GM だけに見せる効果とフレーバー（Phase 5c）を外す */
+function formatItemSummary(item: any, isGm = true) {
   const imgs: Array<typeof images.$inferSelect> = item.images || [];
   let primaryImgId: string | null = null;
   if (imgs.length > 0) {
@@ -162,8 +165,11 @@ function formatItemSummary(item: any) {
     }
   }
 
+  const base = isGm
+    ? item
+    : (({ effect_ja: _e, flavor_ja: _f, effect_is_draft: _ed, flavor_is_draft: _fd, ...rest }) => rest)(item);
   return {
-    ...item,
+    ...base,
     image_id: primaryImgId ?? item.image_id ?? null,
     // Weapon fields (§10 Review 02)
     damage: item.weapon?.damage ?? null,
@@ -200,7 +206,7 @@ itemsRouter.get('/:id', async (c) => {
     return c.json({ error: 'Item not found' }, 404);
   }
 
-  return c.json(formatItemSummary(item));
+  return c.json(formatItemSummary(item, c.get('role') === 'gm'));
 });
 
 // PATCH /api/items/:id - update GM-editable fields of an item (GM only)
@@ -228,6 +234,15 @@ itemsRouter.patch('/:id', requireGm, async (c) => {
   if (parsed.data.verify_status !== undefined) updates.verify_status = parsed.data.verify_status;
   if (parsed.data.tags !== undefined) updates.tags = JSON.stringify(parsed.data.tags);
   if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
+  // GM が書き換えたら下書きではなくなる
+  if (parsed.data.effect_ja !== undefined) {
+    updates.effect_ja = parsed.data.effect_ja;
+    updates.effect_is_draft = false;
+  }
+  if (parsed.data.flavor_ja !== undefined) {
+    updates.flavor_ja = parsed.data.flavor_ja;
+    updates.flavor_is_draft = false;
+  }
 
   db.update(items).set(updates).where(eq(items.id, id)).run();
 
@@ -241,6 +256,24 @@ itemsRouter.patch('/:id', requireGm, async (c) => {
     },
   });
 
+  return c.json(formatItemSummary(updatedItem));
+});
+
+// POST /api/items/:id/reset-notes - 効果とフレーバーを下書きに戻す (GM only)
+itemsRouter.post('/:id/reset-notes', requireGm, async (c) => {
+  const id = c.req.param('id')!;
+  const existing = db.select().from(items).where(eq(items.id, id)).get();
+  if (!existing) return c.json({ error: 'Item not found' }, 404);
+  const note = existing.fvtt_id ? loadItemNotes()[existing.fvtt_id] : undefined;
+  if (!note) return c.json({ error: 'この品目には下書きがありません' }, 404);
+  db.update(items)
+    .set({ effect_ja: note.effect, flavor_ja: note.flavor, effect_is_draft: true, flavor_is_draft: true, updated_at: Date.now() })
+    .where(eq(items.id, id))
+    .run();
+  const updatedItem = await db.query.items.findFirst({
+    where: eq(items.id, id),
+    with: { weapon: true, armor: true, cyberware: true, images: true },
+  });
   return c.json(formatItemSummary(updatedItem));
 });
 

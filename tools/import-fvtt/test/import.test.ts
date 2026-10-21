@@ -178,7 +178,11 @@ describe('FVTT Importer', () => {
           source_page_ja = 99,
           verify_status = 'official_verified',
           tags = '["favorite"]',
-          notes = 'GM用メモテキスト'
+          notes = 'GM用メモテキスト',
+          effect_ja = 'GM が書いた効果',
+          flavor_ja = 'GM が書いたフレーバー',
+          effect_is_draft = 0,
+          flavor_is_draft = 0
         WHERE fvtt_id = 'testWeapon000001'`,
       )
       .run();
@@ -202,6 +206,10 @@ describe('FVTT Importer', () => {
     expect(editedItem.verify_status).toBe('official_verified');
     expect(editedItem.tags).toBe('["favorite"]');
     expect(editedItem.notes).toBe('GM用メモテキスト');
+    // Phase 5c: 効果とフレーバーも取り込み直しで消えない
+    expect(editedItem.effect_ja).toBe('GM が書いた効果');
+    expect(editedItem.flavor_ja).toBe('GM が書いたフレーバー');
+    expect(editedItem.effect_is_draft).toBe(0);
 
     sqlite2.close();
   });

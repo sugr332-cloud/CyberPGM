@@ -118,6 +118,7 @@ export function getHydratedCombat(combatId: string): Combat | null {
           sp_body: formatted.sp_body,
           weapons: formatted.weapons,
           inventory: hydratedInventory,
+          cyberware: formatted.cyberware,
           status: formatted.status,
           crit_injuries: formatted.crit_injuries,
         };
