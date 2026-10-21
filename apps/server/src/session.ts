@@ -43,6 +43,8 @@ export class SessionManager {
   private boardProvider: ((id: string) => any) | null = null;
   private storyProvider: (() => any) | null = null;
   private publishedStory: PublishedStory | null = null;
+  // 起動時に待ち受けた LAN の URL（例: http://192.168.0.90:8787）。QR はこれで作る（Phase 5h）
+  private lanBaseUrl: string | null = null;
 
   constructor() {
     this.sessionCode = generateSessionCode();
@@ -62,6 +64,18 @@ export class SessionManager {
 
   public getSessionCode(): string {
     return this.sessionCode;
+  }
+
+  public setLanBaseUrl(url: string | null): void {
+    this.lanBaseUrl = url;
+  }
+
+  /**
+   * 参加 QR の URL の土台。GM が localhost や Tailscale で開いていても、
+   * スマホが届く LAN の URL を使う。LAN で待ち受けていないときだけ、GM が開いたアドレスを使う。
+   */
+  public getJoinBaseUrl(requestBaseUrl: string): string {
+    return this.lanBaseUrl ?? requestBaseUrl;
   }
 
   public resetSessionCode(): string {
