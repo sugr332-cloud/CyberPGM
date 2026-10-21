@@ -44,6 +44,7 @@ import {
 } from '@cyberpgm/rules';
 import { getHydratedBoard } from './boards.js';
 import { addCombatParticipants, getHydratedCombat, pcsInPlay } from './combat.js';
+import { armorPenaltyOf } from '../character-helper.js';
 
 export const scenarioPlayRoutes = new Hono();
 
@@ -1427,7 +1428,7 @@ scenarioPlayRoutes.post('/scenarios/encounters/:encounterId/start-combat', requi
       round: 1,
       turn_index: 0,
       settings: JSON.stringify({
-        tieBreak: 'ref',
+        tieBreak: 'reroll',
         autoRollNpc: true,
         autoRollPc: false,
         hideEnemyStats: true,
@@ -1525,9 +1526,12 @@ function checkActorBase(characterId: string | null | undefined, skillKey: string
   if (typeof stat !== 'number') return null;
   const level = skills[skillKey] ?? 0; // 取っていない技能はレベル 0（ルールどおり）
   const pen = woundPenalty(woundState(char.hp, char.hp_max));
-  const base = stat + level + pen;
+  // 重い防具は REF・DEX を下げる（Phase 5m）
+  const armorPen = def.stat === 'ref' || def.stat === 'dex' ? armorPenaltyOf(JSON.parse(char.inventory || '[]')) : 0;
+  const base = stat + level + pen - armorPen;
   const penText = pen ? ` ${pen}（${pen === -2 ? '重傷' : '瀕死'}）` : '';
-  return { base, parts: `${STAT_LABEL[def.stat] ?? def.stat} ${stat} + ${formatSkillName(skillKey)} ${level}${penText} = ${base}` };
+  const armorText = armorPen ? ` −${armorPen}（防具）` : '';
+  return { base, parts: `${STAT_LABEL[def.stat] ?? def.stat} ${stat} + ${formatSkillName(skillKey)} ${level}${penText}${armorText} = ${base}` };
 }
 
 function rollText(rolls: number[]): string {

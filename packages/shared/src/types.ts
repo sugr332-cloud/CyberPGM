@@ -260,6 +260,7 @@ export interface Character {
   notes_gm?: string | null;
   player_id?: string | null; // 持ち主のプレイヤー（Phase 5i）
   scenario_id?: string | null; // 参加中で未クリアのシナリオ（Phase 5i）
+  armor_penalty?: number; // 着ている防具の一番大きいペナルティ。REF・DEX・MOVE から引く（Phase 5m）
   created_at: number;
   updated_at: number;
 }

@@ -48,7 +48,9 @@ export function PlayerActionSkills({ sheet, inCombat }: { sheet: CharacterSheet;
     if (!def) return null;
     const stat = def.stat as keyof CharacterStats;
     const level = sheet.skills[key] ?? 0;
-    return { key, name: def.name, stat, level, base: Math.max(0, (sheet.stats[stat] ?? 0) + level + wound) };
+    // 重い防具は REF・DEX を下げる（Phase 5m）
+    const armorPen = stat === 'ref' || stat === 'dex' ? (sheet.armor_penalty ?? 0) : 0;
+    return { key, name: def.name, stat, level, base: Math.max(0, (sheet.stats[stat] ?? 0) + level + wound - armorPen) };
   };
 
   const pick = (categories: string[], always: string[]) =>

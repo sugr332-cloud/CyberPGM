@@ -23,7 +23,7 @@ export const CombatActionDefSchema = z.object({
 });
 
 export interface CombatSettings {
-  tieBreak: 'ref' | 'manual';
+  tieBreak: 'reroll' | 'ref' | 'manual'; // reroll: 同値は振り直す（ルール。既定）
   autoRollNpc: boolean;
   autoRollPc: boolean;
   hideEnemyStats: boolean;
@@ -31,7 +31,7 @@ export interface CombatSettings {
 }
 
 export const CombatSettingsSchema = z.object({
-  tieBreak: z.enum(['ref', 'manual']).default('ref'),
+  tieBreak: z.enum(['reroll', 'ref', 'manual']).default('reroll'),
   autoRollNpc: z.boolean().default(true),
   autoRollPc: z.boolean().default(false),
   hideEnemyStats: z.boolean().default(true),
@@ -42,6 +42,7 @@ export interface CombatInitiativeRoll {
   extra?: number;
   total?: number;
   needsExtra?: boolean;
+  tiebreak?: number[]; // 同値の振り直しの出目（Phase 5m）
 }
 
 export const CombatInitiativeRollSchema = z.object({
@@ -49,6 +50,7 @@ export const CombatInitiativeRollSchema = z.object({
   extra: z.number().int().optional(),
   total: z.number().int().optional(),
   needsExtra: z.boolean().optional(),
+  tiebreak: z.array(z.number().int().min(1).max(10)).optional(),
 });
 
 export interface CombatParticipantState {
@@ -95,6 +97,7 @@ export interface CombatParticipant {
     cyberware?: Array<{ item_id?: string; name: string; type?: string; static_loss?: number }>;
     status: string[];
     crit_injuries: unknown[];
+    armor_penalty?: number; // 重い防具のペナルティ（REF・DEX・MOVE から引く。Phase 5m）
   } | null;
 }
 

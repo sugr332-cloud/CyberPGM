@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { db } from './db/client.js';
-import { characters, images } from './db/schema.js';
+import { characters, images, armors } from './db/schema.js';
 import {
   Character,
   CharacterSheet,
@@ -12,6 +12,19 @@ import {
   CharacterInventorySchema,
 } from '@cyberpgm/shared';
 import { maxHumanity, currentEmp, woundState, woundPenalty } from '@cyberpgm/rules';
+
+/**
+ * 着ている（equipped）防具の一番大きいペナルティ。複数着ても足さず、大きいほうだけ（Phase 5m）
+ */
+export function armorPenaltyOf(inventory: Array<{ kind?: string | null; item_id?: string | null; equipped?: boolean | null }>): number {
+  let pen = 0;
+  for (const e of inventory) {
+    if (e.kind !== 'armor' || !e.item_id || e.equipped === false) continue;
+    const a = db.select({ penalty: armors.penalty }).from(armors).where(eq(armors.item_id, e.item_id)).get();
+    pen = Math.max(pen, Math.abs(a?.penalty ?? 0));
+  }
+  return pen;
+}
 
 /**
  * Maps a DB character row into a domain Character object.
@@ -36,6 +49,7 @@ export function formatCharacterRow(row: typeof characters.$inferSelect, imagePat
     cyberware: JSON.parse(row.cyberware) as CyberwareEntry[],
     weapons: JSON.parse(row.weapons) as string[],
     inventory: CharacterInventorySchema.parse(JSON.parse(row.inventory || '[]')),
+    armor_penalty: armorPenaltyOf(JSON.parse(row.inventory || '[]')),
     status: JSON.parse(row.status) as string[],
     crit_injuries: JSON.parse(row.crit_injuries) as unknown[],
     eb: row.eb,
@@ -140,7 +154,9 @@ export function calculateCharacterSheet(char: Character): CharacterSheet {
     const skillDef = getSkillDef(key);
     const statKey = (skillDef?.stat as keyof CharacterStats) ?? skillStatMap[key.toLowerCase()] ?? 'int';
     const statValue = statKey === 'emp' ? calculatedCurrentEmp : char.stats[statKey];
-    const base = Math.max(0, statValue + level + calculatedWoundPenalty); // wound penalty is negative or 0
+    // 重い防具は REF・DEX の技能を下げる（Phase 5m）
+    const armorPen = statKey === 'ref' || statKey === 'dex' ? (char.armor_penalty ?? 0) : 0;
+    const base = Math.max(0, statValue + level + calculatedWoundPenalty - armorPen); // wound penalty is negative or 0
     return {
       key,
       name: formatSkillName(key),

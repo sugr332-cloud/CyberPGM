@@ -129,6 +129,7 @@ export function getHydratedCombat(combatId: string): Combat | null {
           cyberware: formatted.cyberware,
           status: formatted.status,
           crit_injuries: formatted.crit_injuries,
+          armor_penalty: formatted.armor_penalty,
         };
       }
     }
@@ -338,7 +339,7 @@ combatRoutes.post('/combats', requireGm, async (c) => {
   const id = generateUlid();
   const now = Date.now();
   const defaultSettings = {
-    tieBreak: 'ref',
+    tieBreak: 'reroll',
     autoRollNpc: true,
     autoRollPc: false,
     hideEnemyStats: true,
