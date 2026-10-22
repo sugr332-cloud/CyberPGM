@@ -40,37 +40,74 @@ export function initPhase3bData(dbInstance: AppDatabase) {
     }
   }
 
-  // 2. Seed default creation_method.complete_package in rule_constants if missing
+  // 2. 作成方法を用意する（Phase 5t。日本語版コアルールブック p.73〜104）。
+  //    ストリートラット・エッジランナー・スクラッチビルドの 3 つ。GM が値を変えたものは上書きしない。
+  //    以前の仮の complete_package（値がすべて未設定）はスクラッチビルドの値にする
   try {
-    const existingMethod = dbInstance
-      .select()
-      .from(rule_constants)
-      .where(eq(rule_constants.key, 'creation_method.complete_package'))
-      .get();
-
-    if (!existingMethod) {
-      const defaultMethod = {
-        key: 'complete_package',
-        label: '完全版の作成方法（仮）',
+    const methods = [
+      {
+        key: 'streetrat',
+        label: 'ストリートラット（テンプレート）方式',
         stat_points: null,
         stat_min: null,
         stat_max: null,
-        skill_points: null,
-        skill_level_max: null,
-        basic_skill_min: null,
-        difficult_cost: null,
+        skill_points: 86,
+        skill_level_max: 6,
+        basic_skill_min: 2,
+        difficult_cost: 2,
         uses_starting_funds: true,
-      };
-
-      dbInstance
-        .insert(rule_constants)
-        .values({
-          key: 'creation_method.complete_package',
-          value: JSON.stringify(defaultMethod),
-          source_page_ja: null,
-          note: 'Default creation method (values null until verified, Issue #7)',
-        })
-        .run();
+        template: 'streetrat',
+        starting_funds_default: 500,
+      },
+      {
+        key: 'edgerunner',
+        label: 'エッジランナー（簡易選択）方式',
+        stat_points: null,
+        stat_min: null,
+        stat_max: null,
+        skill_points: 86,
+        skill_level_max: 6,
+        basic_skill_min: 2,
+        difficult_cost: 2,
+        uses_starting_funds: true,
+        template: 'edgerunner',
+        starting_funds_default: 500,
+      },
+      {
+        key: 'complete_package',
+        label: 'スクラッチビルド（自由配分）方式',
+        stat_points: 62,
+        stat_min: 2,
+        stat_max: 8,
+        skill_points: 86,
+        skill_level_max: 6,
+        basic_skill_min: 2,
+        difficult_cost: 2,
+        uses_starting_funds: true,
+        template: null,
+        starting_funds_default: 2550,
+      },
+    ];
+    for (const m of methods) {
+      const key = `creation_method.${m.key}`;
+      const existing = dbInstance.select().from(rule_constants).where(eq(rule_constants.key, key)).get();
+      let placeholder = false;
+      if (existing) {
+        try {
+          const cur = JSON.parse(existing.value);
+          placeholder = cur.label === '完全版の作成方法（仮）' && cur.stat_points === null && cur.skill_points === null;
+        } catch {
+          placeholder = true;
+        }
+      }
+      if (!existing) {
+        dbInstance
+          .insert(rule_constants)
+          .values({ key, value: JSON.stringify(m), source_page_ja: 73, note: 'Creation method (Japanese core rulebook p.73-104)' })
+          .run();
+      } else if (placeholder) {
+        dbInstance.update(rule_constants).set({ value: JSON.stringify(m), source_page_ja: 73 }).where(eq(rule_constants.key, key)).run();
+      }
     }
   } catch (err) {
     console.warn('[initPhase3bData] Failed to seed creation_method in rule_constants:', err);

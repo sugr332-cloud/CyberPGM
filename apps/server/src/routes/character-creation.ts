@@ -9,6 +9,7 @@ import {
   images,
   players,
   scenarios,
+  items,
 } from '../db/schema.js';
 import { eq, like, desc } from 'drizzle-orm';
 import {
@@ -19,6 +20,9 @@ import {
   CreationMethodConfig,
   RoleInfo,
   getProjectRoot,
+  CreationTemplates,
+  skillNameToKey,
+  getSkillDef,
 } from '@cyberpgm/shared';
 import { validateCharacterDraft, hpMaxFromStats } from '@cyberpgm/rules';
 import { requireGm } from '../auth.js';
@@ -86,8 +90,67 @@ export function getActiveCreationSettings() {
     }
   }
 
+  // GM もシナリオも開始資金を決めていなければ、作成方法の既定（パッケージ方式 500eb、スクラッチビルド 2,550eb。Phase 5t）
+  if (startingFunds === null && typeof activeMethodConfig?.starting_funds_default === 'number') {
+    startingFunds = activeMethodConfig.starting_funds_default;
+  }
+
   return { activeKey, activeMethodConfig, startingFunds, scenarioId, scenarioTitle };
 }
+
+/**
+ * キャラクター作成のロール別データ（Phase 5t）。手元のルール資料 data/sources/core-ja/creation.json から読む。
+ * 技能名は技能キーに、品目は英語名で品目を探して ID と日本語名・価格に直す。ファイルがなければ空
+ */
+export function loadCreationTemplates(): CreationTemplates {
+  const empty: CreationTemplates = { stat_order: [], stat_tables: {}, skill_templates: {}, gear_packages: {} };
+  let raw: any;
+  try {
+    raw = JSON.parse(fs.readFileSync(path.join(getProjectRoot(), 'data', 'sources', 'core-ja', 'creation.json'), 'utf-8'));
+  } catch {
+    return empty;
+  }
+  const skill_templates: CreationTemplates['skill_templates'] = {};
+  for (const [role, t] of Object.entries<any>(raw.skillTemplates ?? {})) {
+    const skills: Record<string, number> = {};
+    const unsupported: Record<string, number> = {};
+    for (const [nameJa, lvl] of Object.entries<number>(t.skills ?? {})) {
+      const key = skillNameToKey(nameJa);
+      if (getSkillDef(key)) skills[key] = lvl;
+      else unsupported[nameJa] = lvl;
+    }
+    skill_templates[role] = { page: t.page, skills, unsupported };
+  }
+  const gear_packages: CreationTemplates['gear_packages'] = {};
+  for (const [role, g] of Object.entries<any>(raw.gearPackages ?? {})) {
+    gear_packages[role] = {
+      page: g.page,
+      slots: (g.slots ?? []).map((slot: any[]) =>
+        slot.map((o) => {
+          const it = db.select().from(items).where(eq(items.name_en, o.item)).get();
+          return {
+            item_id: it?.id,
+            name: it?.name_ja_override || it?.name_ja || o.item,
+            qty: o.qty ?? 1,
+            price_eb: it?.price_eb ?? undefined,
+            category: it?.kind ?? undefined,
+            ...(o.pair ? { pair: o.pair } : {}),
+          };
+        }),
+      ),
+    };
+  }
+  return {
+    stat_order: raw.statOrder ?? [],
+    stat_tables: raw.statTables ?? {},
+    skill_templates,
+    gear_packages,
+    gear_note: raw.gearNote,
+  };
+}
+
+// GET /api/creation-templates（Phase 5t）
+characterCreationRoutes.get('/creation-templates', async (c) => c.json(loadCreationTemplates()));
 
 /**
  * Helper to process image data:
