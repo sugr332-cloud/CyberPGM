@@ -1242,6 +1242,16 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
       } else if (ch.field === 'extra' || ch.field === 'stats') {
         // 【運命】点・環境の状態など（extra）と、真空で減った能力値（stats）（Phase 5v）
         sqlite.prepare(`UPDATE characters SET ${ch.field} = ?, updated_at = ? WHERE id = ?`).run(JSON.stringify(ch.after), now, ch.target_id);
+      } else if (ch.field === 'initiative_top') {
+        // ヴィークルを始動した操縦者は行動順の先頭へ（p.192。Phase 5y）。戻せるように前の並びを残す
+        const parts = sqlite.prepare('SELECT id, initiative, order_index FROM combat_participants WHERE combat_id = ?').all(combatId) as Array<{ id: string; initiative: number; order_index: number }>;
+        ch.before = { order: parts.map((p) => ({ id: p.id, initiative: p.initiative, order_index: p.order_index })), turn_index: (sqlite.prepare('SELECT turn_index FROM combats WHERE id = ?').get(combatId) as any)?.turn_index };
+        const top = Math.max(0, ...parts.map((p) => p.initiative)) + 1;
+        sqlite.prepare('UPDATE combat_participants SET initiative = ? WHERE id = ?').run(top, ch.target_id);
+        const sorted = (sqlite.prepare('SELECT id FROM combat_participants WHERE combat_id = ? ORDER BY initiative DESC, order_index ASC').all(combatId) as Array<{ id: string }>);
+        sorted.forEach((p, idx) => sqlite.prepare('UPDATE combat_participants SET order_index = ? WHERE id = ?').run(idx, p.id));
+        // 今の手番の人を指したままにする
+        sqlite.prepare('UPDATE combats SET turn_index = ? WHERE id = ?').run(sorted.findIndex((p) => p.id === ch.target_id), combatId);
       } else if (ch.field === 'humanity') {
         // 人間性の増減（after に差分。Phase 5w）
         sqlite.prepare('UPDATE characters SET humanity = humanity + ?, updated_at = ? WHERE id = ?').run(Number(ch.after) || 0, now, ch.target_id);
@@ -1323,6 +1333,10 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
   });
 
   applyTx();
+  // 行動順の先頭へ（ヴィークル始動）は反映するときに前の並びを残すので、ログを書き直す（Phase 5y）
+  if (result.changes.some((ch) => ch.field === 'initiative_top')) {
+    sqlite.prepare('UPDATE combat_log SET changes = ? WHERE id = ?').run(JSON.stringify(result.changes), logId);
+  }
 
   // 移動アクションとアクションを使い切った、または行動した人が倒れたら、自動で次の手番へ（Phase 5j）
   // 同じログに 'turn' の変化として残すので、「取り消し」で手番も戻る
@@ -1482,6 +1496,12 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
         sqlite.prepare(`UPDATE characters SET ${ch.field} = ?, updated_at = ? WHERE id = ?`).run(JSON.stringify(ch.before), now, ch.target_id);
       } else if (ch.field === 'humanity') {
         sqlite.prepare('UPDATE characters SET humanity = humanity - ?, updated_at = ? WHERE id = ?').run(Number(ch.after) || 0, now, ch.target_id);
+      } else if (ch.field === 'initiative_top') {
+        const b = ch.before as { order: Array<{ id: string; initiative: number; order_index: number }>; turn_index: number } | null;
+        if (b) {
+          for (const o of b.order) sqlite.prepare('UPDATE combat_participants SET initiative = ?, order_index = ? WHERE id = ?').run(o.initiative, o.order_index, o.id);
+          sqlite.prepare('UPDATE combats SET turn_index = ? WHERE id = ?').run(b.turn_index, combatId);
+        }
       } else if (ch.field === 'state') {
         const part = sqlite
           .prepare('SELECT state, move_used, action_used FROM combat_participants WHERE id = ?')

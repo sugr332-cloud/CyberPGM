@@ -202,6 +202,70 @@
       "desc": "ランクと同じポイントを、ダメージ軽減・決定的失敗無効・イニシアチブ強化・精密攻撃・弱点看破・危険感知に割り振り直す（戦闘中はアクション 1 回）。"
     },
     {
+      "key": "vehicle_board",
+      "label": "ヴィークル搭乗",
+      "slot": "action",
+      "status": "confirmed",
+      "rev": 2,
+      "desc": "ヴィークルに乗り込む（アクション 1 回）。運転席か客席を選ぶ。"
+    },
+    {
+      "key": "vehicle_start",
+      "label": "ヴィークル始動",
+      "slot": "action",
+      "status": "confirmed",
+      "rev": 2,
+      "desc": "運転席からヴィークルを始動する（アクション 1 回）。操縦者は行動順の先頭になり、【移動】はヴィークルの値。「走る」はできない。"
+    },
+    {
+      "key": "vehicle_stop",
+      "label": "ヴィークル停止",
+      "slot": "action",
+      "status": "confirmed",
+      "rev": 2,
+      "desc": "ヴィークルを止める（アクション 1 回）。"
+    },
+    {
+      "key": "vehicle_exit",
+      "label": "ヴィークルから降りる",
+      "slot": "move",
+      "status": "confirmed",
+      "rev": 2,
+      "desc": "降りるのは移動アクション。続けて動くなら「走る」。"
+    },
+    {
+      "key": "vehicle_control",
+      "label": "操縦",
+      "slot": "action",
+      "status": "confirmed",
+      "rev": 2,
+      "desc": "REF + 操縦技能が 10 以上なら判定もアクションも要らない。9 以下なら毎ターン、アクションで難易度 10 の判定。失敗すると制御不能。"
+    },
+    {
+      "key": "vehicle_maneuver",
+      "label": "特殊機動",
+      "slot": "action",
+      "status": "confirmed",
+      "rev": 2,
+      "desc": "急ハンドル・急角度のターン・急ブレーキ・着陸（13）、スピンターン・ジャンプ・曲技飛行（17）。アクションと移動アクションを使う。失敗すると制御不能。"
+    },
+    {
+      "key": "vehicle_ram",
+      "label": "体当たり",
+      "slot": "action",
+      "status": "confirmed",
+      "rev": 2,
+      "desc": "人・遮蔽物・ヴィークルにぶつける。双方に 6d6、巻き込まれた全員が頸椎損傷。歩行者は DEX + 回避 + 1d10 が 13 を上回れば避けられる。戦闘用プラウがあれば自分のヴィークルと乗員は無傷。"
+    },
+    {
+      "key": "attack_vehicle",
+      "label": "ヴィークルを攻撃",
+      "slot": "action",
+      "status": "confirmed",
+      "rev": 2,
+      "desc": "ヴィークルは回避しない。射撃は距離の難易度、近接は動いていれば難易度 13（止まっていれば自動で命中）。弱点を狙うと −8 で、SP を引いたあと 2 倍。SDP が 0 で破壊。"
+    },
+    {
       "key": "hazard",
       "label": "環境ダメージ（GM）",
       "slot": "free",
