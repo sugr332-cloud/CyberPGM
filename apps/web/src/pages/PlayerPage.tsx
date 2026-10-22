@@ -801,8 +801,8 @@ export const PlayerPage: React.FC = () => {
                           onClick={() => {
                             if (!needsExtraRoll) {
                               setPadFirstRoll(num);
-                              // 死亡セーブ（10 は必ず失敗）とイニシアチブ（REF + 1d10。p.126）は振り足さない
-                              if ((num === 10 || num === 1) && padRollType !== 'death_save' && padRollType !== 'initiative') {
+                              // 死亡セーブは振り足さない（10 は必ず失敗）
+                              if ((num === 10 || num === 1) && padRollType !== 'death_save') {
                                 setNeedsExtraRoll(true);
                               } else {
                                 setNeedsExtraRoll(false);
