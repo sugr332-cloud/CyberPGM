@@ -11,6 +11,8 @@ import {
   getSkillDef,
   CharacterInventorySchema,
   CharacterExtra,
+  drugModifiers,
+  cyberpsychosisStage,
 } from '@cyberpgm/shared';
 import { maxHumanity, currentEmp, woundState, woundPenalty } from '@cyberpgm/rules';
 
@@ -84,7 +86,9 @@ export function calculateCharacterSheet(char: Character): CharacterSheet {
 
   // 2. Wound status & penalty
   const calculatedWoundState = woundState(char.hp, char.hp_max);
-  const calculatedWoundPenalty = woundPenalty(calculatedWoundState);
+  // ドラッグ・依存症の修正（Phase 5w）
+  const eff = effectiveForChecks(char.stats, char.skills, char.extra);
+  const calculatedWoundPenalty = eff.ignoreSeriousWound && calculatedWoundState === 'seriously' ? 0 : woundPenalty(calculatedWoundState);
 
   // 3. Skills list calculation
   const skillStatMap: Record<string, keyof CharacterStats> = {
@@ -155,10 +159,11 @@ export function calculateCharacterSheet(char: Character): CharacterSheet {
   const skillsList: CharacterSheetSkillItem[] = Object.entries(char.skills).map(([key, level]) => {
     const skillDef = getSkillDef(key);
     const statKey = (skillDef?.stat as keyof CharacterStats) ?? skillStatMap[key.toLowerCase()] ?? 'int';
-    const statValue = statKey === 'emp' ? calculatedCurrentEmp : char.stats[statKey];
+    const statValue = statKey === 'emp' ? calculatedCurrentEmp : eff.stats[statKey];
     // 重い防具は REF・DEX の技能を下げる（Phase 5m）
     const armorPen = statKey === 'ref' || statKey === 'dex' ? (char.armor_penalty ?? 0) : 0;
-    const base = Math.max(0, statValue + level + calculatedWoundPenalty - armorPen); // wound penalty is negative or 0
+    const drugSkill = (eff.skills[key] ?? level) - level; // スマッシュなど
+    const base = Math.max(0, statValue + level + drugSkill + calculatedWoundPenalty - armorPen); // wound penalty is negative or 0
     return {
       key,
       name: formatSkillName(key),
@@ -176,6 +181,9 @@ export function calculateCharacterSheet(char: Character): CharacterSheet {
     woundState: calculatedWoundState,
     woundPenalty: calculatedWoundPenalty,
     skillsList,
+    // サイバーサイコシスの段階とドラッグの効果（Phase 5w。p.227〜232）
+    psychosis: cyberpsychosisStage(calculatedCurrentEmp, char.humanity),
+    effectNotes: eff.notes,
   };
 }
 
@@ -222,4 +230,17 @@ export function maskAmmoForPlayer<T extends { inventory?: unknown }>(c: T, hidde
     inventory: (c.inventory as Array<Record<string, unknown>>).map(({ ammo: _ammo, ...rest }) => rest),
     ammo_hidden: true,
   };
+}
+
+/**
+ * 判定に使う能力値と技能（ドラッグと依存症の修正を入れたもの。Phase 5w。日本語版 p.227〜229）。
+ * キャラの記録（stats・skills）そのものは変えない
+ */
+export function effectiveForChecks(stats: CharacterStats, skills: Record<string, number>, extra: CharacterExtra | undefined | null) {
+  const mod = drugModifiers(extra);
+  const s = { ...stats };
+  for (const [k, v] of Object.entries(mod.stats)) (s as Record<string, number>)[k] = Math.max(0, (s as Record<string, number>)[k] + (v ?? 0));
+  const sk = { ...skills };
+  for (const [k, v] of Object.entries(mod.skills)) if (sk[k] !== undefined || v > 0) sk[k] = Math.max(0, (sk[k] ?? 0) + v);
+  return { stats: s, skills: sk, ignoreSeriousWound: mod.ignoreSeriousWound, notes: mod.notes };
 }

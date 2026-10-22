@@ -1,3 +1,4 @@
+import { MedicalPanel } from './MedicalPanel.js';
 import { AddSpecializedSkill } from './AddSpecializedSkill.js';
 import { RoleInfoPanel } from './RoleInfoPanel.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -199,6 +200,18 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
     }
     onRequestHandled?.();
   }, [request, characters]);
+
+  // 医療の操作のあと、一覧が読み直されたら編集中の値（HP・人間性・サイバーウェアなど）も読み直す（Phase 5w）
+  const reloadAfterMedical = useRef<string | null>(null);
+  useEffect(() => {
+    const id = reloadAfterMedical.current;
+    if (!id) return;
+    const c = characters.find((ch) => ch.id === id);
+    if (c) {
+      reloadAfterMedical.current = null;
+      open(formFromCharacter(c));
+    }
+  }, [characters]);
 
   // 持っている品目の情報を読む（防具の SP と詳細のため）
   useEffect(() => {
@@ -619,6 +632,21 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
           </div>
           <AddSpecializedSkill existing={Object.keys(form.skills)} onAdd={(key) => setForm((f) => ({ ...f, skills: { ...f.skills, [key]: f.skills[key] ?? 1 } }))} />
         </div>
+
+        {/* 医療・ドラッグ・セラピー・人間性（Phase 5w） */}
+        {form.id && characters.find((c) => c.id === form.id) && (
+          <div style={panel}>
+            <span style={heading}>医療・ドラッグ・セラピー・人間性</span>
+            <MedicalPanel
+              character={characters.find((c) => c.id === form.id)!}
+              characters={characters}
+              onChanged={() => {
+                reloadAfterMedical.current = form.id ?? null;
+                onSaved();
+              }}
+            />
+          </div>
+        )}
 
         {/* 装備 */}
         <div style={panel}>

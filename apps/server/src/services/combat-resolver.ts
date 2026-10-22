@@ -40,7 +40,11 @@ import {
   POISON_DICE,
   DRUG_EFFECT,
   HAZARD_LEVEL_LABEL,
+  CRIT_INJURIES_JA,
+  drugModifiers,
+  DRUGS,
 } from '@cyberpgm/shared';
+import { useDrug } from './medical.js';
 import { z } from 'zod';
 import type { AppDatabase } from '../db/client.js';
 import { rule_constants, weapons, items, boards, board_tokens, board_objects, board_drops } from '../db/schema.js';
@@ -109,6 +113,7 @@ const ACTION_LABEL: Record<string, string> = {
   throw_object: '投げる',
   hazard: '環境ダメージ',
   hazard_end: '環境の状態を終える',
+  use_drug: 'ドラッグ・薬品を使う',
 };
 
 /**
@@ -245,7 +250,8 @@ function resolveCombatActionInner(
 
   const actorWound = woundState(actorChar.hp, actorChar.hp_max);
   // つかみ状態のあいだは、つかんでいる側もつかまれている側もすべての判定に −2（日本語版 p.177。Phase 5u）
-  const actorWoundPen = woundPenalty(actorWound) + grapplePenalty(actorChar.status);
+  // ブラック・レースと興奮剤は重傷の効果を無視する（Phase 5w。p.150・229）
+  const actorWoundPen = (drugModifiers(actorChar.extra).ignoreSeriousWound && actorWound === 'seriously' ? 0 : woundPenalty(actorWound)) + grapplePenalty(actorChar.status);
   // 【運命】点: 振る前に使うと 1 点につき +1（日本語版 p.130。Phase 5v）。ROF 2 などで 2 回振るときは 1 回目だけ
   const luck = Math.max(0, input.luck_spent ?? 0);
   const luckText = luck ? ` +${luck}（運命）` : '';
@@ -310,7 +316,9 @@ function resolveCombatActionInner(
     const critTable = getRuleConstant<CriticalInjuryEntry[]>(`critical_injury.${table}`) || [];
     const critEntry = lookupCriticalInjury(critTable, roll);
     if (!critEntry) return null;
-    return { ...critEntry, name: stripHtml(critEntry.name), summary: stripHtml(critEntry.summary || ''), table };
+    // 名前と効果は日本語版の表記にする（Phase 5w。p.221〜222）
+    const ja = CRIT_INJURIES_JA[table]?.[critEntry.range[0]];
+    return { ...critEntry, name: ja?.name ?? stripHtml(critEntry.name), summary: ja?.effect ?? stripHtml(critEntry.summary || ''), name_en: stripHtml(critEntry.name), table };
   };
 
   // いちばんレベルの高い〈武術〉（流派を指定すればその流派）。種類なしの martial_arts もあれば使う（Phase 5u）
@@ -1401,6 +1409,73 @@ function resolveCombatActionInner(
     return done(true, `過酷な気候: HP に直接 ${input.damage_dice[0]}（そのあいだは自然治癒しない）`, direct(input.damage_dice[0], '過酷な気候'));
   }
 
+  // ── ドラッグ・薬品を使う（Phase 5w。日本語版 p.150・227） ──
+  // 同意する相手にはアクション 1 回で注射。同意しない相手にはエアハイポで近接攻撃し、当たれば注射
+  if (input.action_key === 'use_drug') {
+    const fail = (msg: string | string[]): ResolveResult => {
+      const list = Array.isArray(msg) ? msg : [msg];
+      return { action_key: 'use_drug', actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: list.join(' / '), breakdown: {}, changes: [], missing_inputs: list };
+    };
+    const tPart = targetPart ?? actorPart;
+    const tChar = tPart.character;
+    if (!tChar) return fail('対象を選択してください');
+    const inv = (actorChar.inventory as InventoryEntry[]) ?? [];
+    const entry = inv.find((i) => i.entry_id === input.drug_entry_id);
+    if (!entry) return fail('使うドラッグ・薬品を選んでください');
+    const it = entry.item_id ? db.select().from(items).where(eq(items.id, entry.item_id)).get() : null;
+    const def = DRUGS.find((d) => d.item_en === it?.name_en || d.name === entry.name);
+    if (!def) return fail(`${entry.name} はドラッグ・薬品として扱えません`);
+    const changes: CombatChange[] = [
+      { target_id: actorPart.id, target_name: actorPart.name, field: 'state', ...useAction(actorPart), desc: `${actorPart.name} アクション使用 (${def.name})${actionCountLabel(actorPart)}` },
+    ];
+    let formula = '';
+    if (input.unwilling && tPart.id !== actorPart.id) {
+      const missing: string[] = [];
+      const a = input.attack_roll;
+      const d = input.defense_roll;
+      if (!a) missing.push('攻撃の出目 (1d10) を入力してください');
+      if (!d) missing.push('回避の出目 (1d10) を入力してください');
+      if (missing.length) return fail(missing);
+      const atkSkill = actorChar.skills[skillNameToKey('melee_weapon')] ?? 0;
+      const atk = actorDex + atkSkill + actorWoundPen + luck + resolveD10(a!.first, a!.extra).value;
+      const tDex = tChar.stats.dex - (tChar.armor_penalty ?? 0);
+      const ev = tChar.skills[skillNameToKey('evasion')] ?? 0;
+      const def2 = tDex + ev + woundPenalty(woundState(tChar.hp, tChar.hp_max)) + resolveD10(d!.first, d!.extra).value;
+      formula = `エアハイポ: DEX ${actorDex} + 近接武器 ${atkSkill}${luckText} + 出目 = ${atk} vs ${tPart.name} 回避 ${def2} -> ${atk > def2 ? '命中' : '外れ'}`;
+      if (atk <= def2) return { action_key: 'use_drug', actor_id: actorPart.id, actor_name: actorPart.name, target_id: tPart.id, target_name: tPart.name, success: false, formula, breakdown: {}, changes };
+      formula += '。';
+    }
+    const byMedtech = (actorChar.skills.medical_tech ?? 0) > 0;
+    const res = useDrug(
+      { id: tChar.id, name: tChar.name, stats: tChar.stats as unknown as Record<string, number>, skills: tChar.skills, hp: tChar.hp, hp_max: tChar.hp_max, humanity: 0, cyberware: tChar.cyberware ?? [], crit_injuries: (tChar.crit_injuries ?? []) as Array<Record<string, any>>, status: tChar.status ?? [], extra: tChar.extra ?? {} },
+      def.key,
+      { dice: input.damage_dice, byMedtech },
+    );
+    if (!res.ok) return fail(res.missing!);
+    formula += res.formula;
+    const a = res.after!;
+    if (a.extra) changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'extra', before: tChar.extra ?? {}, after: a.extra, desc: `${tChar.name} ${def.name} が効く` });
+    if (a.hp !== undefined && a.hp !== tChar.hp) {
+      changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'hp', before: tChar.hp, after: a.hp, desc: `${tChar.name} HP ${tChar.hp} → ${a.hp}` });
+      const sc = woundStatusChange(tChar, tChar.status ?? [], tChar.hp, a.hp);
+      if (sc) changes.push(sc);
+    }
+    if (a.status) changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'status', before: tChar.status, after: a.status, desc: `${tChar.name} 状態が変わる` });
+    if (def.key === 'black_lace') {
+      const loss = (input.damage_dice ?? []).reduce((x, y) => x + y, 0);
+      changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'humanity', before: null, after: -loss, desc: `${tChar.name} 人間性 −${loss}（ブラック・レース）` });
+    }
+    changes.push({
+      target_id: actorChar.id,
+      target_name: actorChar.name,
+      field: 'inventory',
+      before: inv,
+      after: entry.qty > 1 ? inv.map((i) => (i === entry ? { ...i, qty: i.qty - 1 } : i)) : inv.filter((i) => i !== entry),
+      desc: `${actorChar.name} ${def.name} を 1 回分使った`,
+    });
+    return { action_key: 'use_drug', actor_id: actorPart.id, actor_name: actorPart.name, target_id: tPart.id, target_name: tPart.name, success: true, formula, breakdown: {}, changes };
+  }
+
   // Check brawl distance if on board
   if (input.action_key === 'brawl' && boardId && actorPart.character_id && targetPart?.character_id) {
     const actorToken = db
@@ -1522,6 +1597,8 @@ function resolveCombatActionInner(
       } else {
         formula += '。安定し、自然に治り始める';
       }
+      // 安定化すると自然治癒が始まる（1 日休むごとに【体格】ぶん。p.222。Phase 5w）
+      changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'extra', before: tChar.extra ?? {}, after: { ...(tChar.extra ?? {}), healing: true }, desc: `${tChar.name} 自然治癒が始まる` });
     }
     return {
       action_key: 'first_aid',
@@ -2502,7 +2579,7 @@ function resolveCombatActionInner(
 }
 
 /** 【運命】点を使える行動（自分が振る判定のあるもの） */
-const LUCK_ACTIONS = ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts', 'grab', 'martial_technique', 'stand', 'first_aid', 'throw_object'];
+const LUCK_ACTIONS = ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts', 'grab', 'martial_technique', 'stand', 'first_aid', 'throw_object', 'use_drug'];
 
 /**
  * 行動の結果を出す。【運命】点を使ったら、残りを確かめて、使った分を記録する変化を足す（Phase 5v。日本語版 p.130）

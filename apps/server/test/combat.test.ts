@@ -695,7 +695,7 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
     expect(critChange).toBeDefined();
     // HTML tags stripped
     expect(critChange.desc).not.toContain('<p>');
-    expect(critChange.desc).toContain('Foreign Object');
+    expect(critChange.desc).toContain('外傷異物'); // 日本語版の名前（Phase 5w）
   });
 
   // 11.9: プレイヤーに敵の HP/SP 数値を送らないテスト
@@ -1597,7 +1597,7 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       const n2 = combat2.participants.find((p: any) => p.name === 'ニクス');
       const r = await resolve(combat2.id, { ...body, actor_id: v2.id, target_id: n2.id });
       expect(r.success).toBe(true);
-      expect(r.changes.find((ch: any) => ch.field === 'crit_injuries').after.at(-1).name).toBe('Broken Ribs');
+      expect(r.changes.find((ch: any) => ch.field === 'crit_injuries').after.at(-1).name).toBe('肋骨損傷');
       expect(r.changes.some((ch: any) => ch.field === 'hp')).toBe(true);
     });
 
@@ -1665,7 +1665,7 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       expect(needDice.missing_inputs.join()).toContain('4d6');
       const r = await resolve(combat.id, { action_key: 'hazard', actor_id: viper.id, target_id: nyx.id, hazard: 'fall', fall_m: 20, attack_roll: { first: 2 }, damage_dice: [6, 6, 6, 6] });
       expect(r.formula).toContain('片脚損傷');
-      expect(r.changes.find((ch: any) => ch.field === 'crit_injuries').after.at(-1).name).toBe('Broken Leg');
+      expect(r.changes.find((ch: any) => ch.field === 'crit_injuries').after.at(-1).name).toBe('片脚損傷');
     });
 
     it('poison: resisted or direct HP damage', async () => {

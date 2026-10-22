@@ -292,6 +292,10 @@ export interface CharacterSheet extends Character {
   woundState: 'ok' | 'seriously' | 'mortally' | 'dead';
   woundPenalty: number;
   skillsList: CharacterSheetSkillItem[];
+  /** サイバーサイコシスの段階（Phase 5w。p.232）。level 0 は症状なし */
+  psychosis?: { level: number; label: string };
+  /** ドラッグ・依存症の効果（Phase 5w） */
+  effectNotes?: string[];
 }
 
 export interface DeviceInfo {

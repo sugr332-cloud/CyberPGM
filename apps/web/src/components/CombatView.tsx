@@ -14,6 +14,7 @@ import {
   MARTIAL_TECHNIQUES,
   HAZARDS,
   isHazardStatus,
+  DRUGS,
 } from '@cyberpgm/shared';
 import {
   initiativeTotal,
@@ -126,6 +127,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [fallM, setFallM] = useState('');
   const [hazardEndStatus, setHazardEndStatus] = useState('');
   const [throwEntryId, setThrowEntryId] = useState('');
+  // ドラッグ・薬品（Phase 5w）
+  const [drugEntryId, setDrugEntryId] = useState('');
+  const [drugUnwilling, setDrugUnwilling] = useState(false);
   
   // 出目を入れる前の計算式と成功ライン（仕様 §5.0.1。Phase 5n）
   const [attackLineText, setAttackLineText] = useState<string | null>(null);
@@ -789,6 +793,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
         fall_m: selectedActionKey === 'hazard' && hazardKey === 'fall' && fallM !== '' ? Number(fallM) : undefined,
         hazard_status: selectedActionKey === 'hazard_end' ? hazardEndStatus || undefined : undefined,
         throw_entry_id: selectedActionKey === 'throw_object' ? throwEntryId || undefined : undefined,
+        drug_entry_id: selectedActionKey === 'use_drug' ? drugEntryId || undefined : undefined,
+        unwilling: selectedActionKey === 'use_drug' ? drugUnwilling : undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
         defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
@@ -890,6 +896,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
         fall_m: selectedActionKey === 'hazard' && hazardKey === 'fall' && fallM !== '' ? Number(fallM) : undefined,
         hazard_status: selectedActionKey === 'hazard_end' ? hazardEndStatus || undefined : undefined,
         throw_entry_id: selectedActionKey === 'throw_object' ? throwEntryId || undefined : undefined,
+        drug_entry_id: selectedActionKey === 'use_drug' ? drugEntryId || undefined : undefined,
+        unwilling: selectedActionKey === 'use_drug' ? drugUnwilling : undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
         defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
@@ -2104,6 +2112,29 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     </div>
                   )}
 
+                  {/* ドラッグ・薬品を使う（Phase 5w。日本語版 p.150・227） */}
+                  {selectedActionKey === 'use_drug' && (() => {
+                    const inv = ((activePart.character?.inventory as Array<{ entry_id: string; name: string; kind?: string; qty?: number }>) ?? []).filter((i) => i.kind === 'drug' || DRUGS.some((d) => d.name === i.name));
+                    return (
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.85rem' }}>
+                        <select aria-label="使うドラッグ・薬品" value={drugEntryId} onChange={(e) => setDrugEntryId(e.target.value)} style={{ padding: '4px 6px', fontSize: '0.85rem', borderRadius: '4px', border: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}>
+                          <option value="">ドラッグ・薬品を選ぶ</option>
+                          {inv.map((i) => (
+                            <option key={i.entry_id} value={i.entry_id}>
+                              {i.name}
+                              {i.qty && i.qty > 1 ? ` ×${i.qty}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <label>
+                          <input type="checkbox" checked={drugUnwilling} onChange={(e) => setDrugUnwilling(e.target.checked)} /> 同意しない相手（エアハイポで近接攻撃。攻撃と回避の出目を入れる）
+                        </label>
+                        {inv.length === 0 && <span style={{ color: 'var(--color-text-muted)' }}>所持品にドラッグ・薬品がありません</span>}
+                        <span style={{ color: 'var(--color-text-muted)' }}>ブラック・レースは人間性喪失 2d6 を「ダメージ出目」に入れます</span>
+                      </div>
+                    );
+                  })()}
+
                   {/* 投げる・環境ダメージ（Phase 5v。日本語版 p.177〜181） */}
                   {['throw_object', 'hazard', 'hazard_end'].includes(selectedActionKey) && (() => {
                     const field: React.CSSProperties = { padding: '4px 6px', fontSize: '0.85rem', borderRadius: '4px', border: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' };
@@ -2351,12 +2382,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   )}
 
                   {/* Target & Distance Selection (for ranged / melee / brawl) */}
-                  {['ranged', 'aimed', 'autofire', ...MELEE_LIKE, 'choke', 'throw', 'throw_object', 'first_aid', 'hazard', 'hazard_end'].includes(selectedActionKey) && (
+                  {['ranged', 'aimed', 'autofire', ...MELEE_LIKE, 'choke', 'throw', 'throw_object', 'first_aid', 'hazard', 'hazard_end', 'use_drug'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{selectedActionKey === 'first_aid' ? '手当てする相手（自分も可）:' : '対象を選択:'}</span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         {combat.participants
-                          .filter((p) => (['first_aid', 'hazard', 'hazard_end'].includes(selectedActionKey) || p.id !== activePart.id) && !p.out)
+                          .filter((p) => (['first_aid', 'hazard', 'hazard_end', 'use_drug'].includes(selectedActionKey) || p.id !== activePart.id) && !p.out)
                           .map((p) => (
                             <button
                               key={p.id}
@@ -2576,7 +2607,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                       )}
 
                       {/* Dodge mode if applicable（近接攻撃・格闘はいつも回避で受けるので出さない。Phase 5l） */}
-                      {!MELEE_LIKE.includes(selectedActionKey) && !['choke', 'throw', 'hazard', 'hazard_end'].includes(selectedActionKey) && (
+                      {!MELEE_LIKE.includes(selectedActionKey) && !['choke', 'throw', 'hazard', 'hazard_end', 'use_drug'].includes(selectedActionKey) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
                         <span style={{ fontSize: '0.85rem' }}>受け方:</span>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', cursor: 'pointer' }}>

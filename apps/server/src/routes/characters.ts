@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and, notLike } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { characters, images, money_log, char_log } from '../db/schema.js';
 import { requireAuth, requireGm } from '../auth.js';
@@ -48,7 +48,8 @@ charactersRoutes.get('/me', requireAuth, async (c) => {
   const logs = db
     .select()
     .from(char_log)
-    .where(eq(char_log.character_id, charId))
+    // 医療の「戻す」用の記録はスマホに出さない（Phase 5w）
+    .where(and(eq(char_log.character_id, charId), notLike(char_log.text, '[medical-undo]%')))
     .orderBy(desc(char_log.at))
     .limit(50)
     .all();
