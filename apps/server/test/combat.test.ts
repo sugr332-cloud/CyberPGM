@@ -11,6 +11,7 @@ import { generateUlid } from '@cyberpgm/shared';
 import { registerDevice } from '../src/auth.js';
 import { sessionManager } from '../src/session.js';
 import { saveInitiativeRoll } from '../src/routes/combat.js';
+import { maskAmmoForPlayer } from '../src/character-helper.js';
 
 describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
   let authGm: { Authorization: string };
@@ -1401,6 +1402,102 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
         attacks: [{ target_id: nyx.id, attack_roll: { first: 9 }, defense_roll: { first: 2 }, damage_dice: [1, 1] }],
       });
       expect(r.formula).toContain('格闘 (2d6)');
+    });
+  });
+
+  // Phase 5r: 告知・気絶の時間・2 つ目の致命傷・弾の扱い
+  describe('Phase 5r: notices, unconscious timer, second injury, ammo', () => {
+    const H = () => ({ ...authGm, 'Content-Type': 'application/json' });
+    const resolve = async (combatId: string, body: Record<string, unknown>) =>
+      (await (await app.request(`/api/combats/${combatId}/resolve`, { method: 'POST', headers: H(), body: JSON.stringify(body) })).json()).result;
+    const setViperInventory = (extra: unknown[], pistolAmmo = 8) => {
+      db.update(characters)
+        .set({
+          inventory: JSON.stringify([
+            { entry_id: 'e1', item_id: weaponIdPistol, name: 'ヘビーピストル', qty: 1, equipped: true, ammo: pistolAmmo },
+            { entry_id: 'e_ammo', name: '大型拳銃用弾薬', kind: 'ammo', qty: 5 },
+            ...extra,
+          ]),
+        })
+        .where(eq(characters.id, pcId1))
+        .run();
+    };
+
+    it('asks for a second injury roll when a crit lands on a mortally wounded target, and applies both', async () => {
+      db.update(characters).set({ hp: 0, status: JSON.stringify(['mortally']) }).where(eq(characters.id, pcId2)).run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const shot = { action_key: 'ranged', actor_id: viper.id, target_id: nyx.id, weapon_id: weaponIdPistol, distance_m: 5, attack_roll: { first: 9 }, damage_dice: [6, 6, 4], crit_injury_roll: 7 };
+      const one = await resolve(combat.id, shot);
+      expect(one.missing_inputs.join()).toContain('2 つ目');
+      const both = await resolve(combat.id, { ...shot, extra_crit_injury_roll: 7 });
+      expect(both.changes.filter((ch: any) => ch.field === 'crit_injuries')).toHaveLength(2);
+    });
+
+    it('keeps a stabilized target unconscious for 20 rounds, then clears it (undo restores it)', async () => {
+      db.update(characters).set({ hp: 0, status: JSON.stringify(['mortally']) }).where(eq(characters.id, pcId2)).run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const ok = await resolve(combat.id, { action_key: 'first_aid', actor_id: viper.id, target_id: nyx.id, attack_roll: { first: 10, extra: 9 } });
+      const timer = ok.changes.find((ch: any) => ch.field === 'state' && ch.after?.statusRounds);
+      expect(timer.after.statusRounds['気絶']).toBe(20);
+
+      // 残り 1 ラウンドの気絶が、ラウンドが変わると外れる
+      db.update(characters).set({ hp: 1, status: JSON.stringify(['seriously', '気絶']) }).where(eq(characters.id, pcId2)).run();
+      sqlite.prepare('UPDATE combat_participants SET state = ? WHERE id = ?').run(JSON.stringify({ statusRounds: { 気絶: 1 } }), nyx.id);
+      await app.request(`/api/combats/${combat.id}`, { method: 'PATCH', headers: H(), body: JSON.stringify({ action: 'start' }) });
+      for (let i = 0; i < combat.participants.length; i++) {
+        await app.request(`/api/combats/${combat.id}`, { method: 'PATCH', headers: H(), body: JSON.stringify({ action: 'next_turn' }) });
+      }
+      const cleared = db.select().from(characters).where(eq(characters.id, pcId2)).get()!;
+      expect(JSON.parse(cleared.status)).toEqual(['seriously']);
+      await app.request(`/api/combats/${combat.id}/undo`, { method: 'POST', headers: authGm });
+      const back = db.select().from(characters).where(eq(characters.id, pcId2)).get()!;
+      expect(JSON.parse(back.status)).toContain('気絶');
+    });
+
+    it('fires only the rounds left, and refuses with an empty magazine', async () => {
+      setViperInventory([], 1);
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const hit = { target_id: ganger.id, distance_m: 5, attack_roll: { first: 2 }, damage_dice: [1, 1, 1] };
+      const r = await resolve(combat.id, { action_key: 'ranged', actor_id: viper.id, weapon_entry_id: 'e1', attacks: [hit, hit] });
+      expect(r.formula).toContain('残弾 1 発なので 1 回だけ撃つ');
+      expect(r.changes.find((ch: any) => ch.field === 'ammo').after).toBe(0);
+
+      setViperInventory([], 0);
+      const combat2 = await createTestCombat();
+      const v2 = combat2.participants.find((p: any) => p.name === 'ヴァイパー');
+      const g2 = combat2.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const empty = await resolve(combat2.id, { action_key: 'ranged', actor_id: v2.id, weapon_entry_id: 'e1', attacks: [{ ...hit, target_id: g2.id }] });
+      expect(empty.missing_inputs.join()).toContain('弾切れ');
+    });
+
+    it('suppressive fire spends 10 rounds and needs at least 10 (p.174)', async () => {
+      setViperInventory([{ entry_id: 'e_rifle', item_id: weaponIdRifle, name: 'アサルト・ライフル', qty: 1, equipped: true, ammo: 25 }]);
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ok = await resolve(combat.id, { action_key: 'suppressive', actor_id: viper.id, weapon_entry_id: 'e_rifle' });
+      expect(ok.changes.find((ch: any) => ch.field === 'ammo').after).toBe(15);
+      const noWeapon = await resolve(combat.id, { action_key: 'suppressive', actor_id: viper.id });
+      expect(noWeapon.missing_inputs.join()).toContain('武器を選択');
+
+      setViperInventory([{ entry_id: 'e_rifle', item_id: weaponIdRifle, name: 'アサルト・ライフル', qty: 1, equipped: true, ammo: 9 }]);
+      const combat2 = await createTestCombat();
+      const v2 = combat2.participants.find((p: any) => p.name === 'ヴァイパー');
+      const short = await resolve(combat2.id, { action_key: 'suppressive', actor_id: v2.id, weapon_entry_id: 'e_rifle' });
+      expect(short.missing_inputs.join()).toContain('10 発未満');
+    });
+
+    it('hides ammo from players only when the combat says so', () => {
+      const ch = { inventory: [{ entry_id: 'e1', name: 'ピストル', ammo: 3 }] };
+      expect(maskAmmoForPlayer(ch, false)).toEqual(ch);
+      const hidden = maskAmmoForPlayer(ch, true);
+      expect(hidden.inventory).toEqual([{ entry_id: 'e1', name: 'ピストル' }]);
+      expect(hidden.ammo_hidden).toBe(true);
     });
   });
 
