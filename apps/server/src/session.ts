@@ -348,6 +348,116 @@ export class SessionManager {
     return this.storyProvider?.()?.bgm ?? null;
   }
 
+  /**
+   * 戦闘の盤面を、TV 画面・プレイヤーのスマホに見せてよい形にする（GM だけのコマ・隠れている敵・霧の中を除く。敵の HP は出さない）。
+   * Phase 6a でプレイヤーのマップにも使うため、表示ウィンドウの組み立てから切り出した
+   */
+  public sanitizeCombatBoard(combat: any): any {
+    let sanitizedBoard: any = null;
+    if (combat.board_id && this.boardProvider) {
+      const b = this.boardProvider(combat.board_id);
+      if (b) {
+        // If background image visibility is 'gm', omit image path on TV!
+        const bgPath = b.background_image_visibility === 'gm' ? null : b.background_image_path;
+
+        // Build fog coordinate set for server-side fog filtering
+        const fogList: Array<{ x: number; y: number }> = b.fog || [];
+        const fogSet = new Set<string>();
+        for (const f of fogList) {
+          fogSet.add(`${f.x},${f.y}`);
+        }
+
+        // Collect hidden enemy character IDs
+        const hiddenEnemyCharIds = new Set<string>();
+        for (const p of combat.participants || []) {
+          if (p.side === 'enemy' && p.character?.status?.includes('隠れている') && p.character_id) {
+            hiddenEnemyCharIds.add(p.character_id);
+          }
+        }
+
+        // Filter tokens: omit gm_only, hidden enemies, and tokens inside fog
+        const filteredTokens = (b.tokens || [])
+          .filter((t: any) => {
+            if (t.gm_only) return false;
+            if (t.character_id && hiddenEnemyCharIds.has(t.character_id)) return false;
+            if (fogSet.has(`${t.x},${t.y}`)) return false;
+            return true;
+          })
+          .map((t: any) => {
+            const part = (combat.participants || []).find(
+              (p: any) =>
+                (p.character_id && p.character_id === t.character_id) ||
+                p.id === t.character_id,
+            );
+            if (!part) {
+              return {
+                ...t,
+                name: t.character_id ? '不明' : '—',
+                side: null,
+                wound_state: null,
+                hp: null,
+                hp_max: null,
+              };
+            }
+
+            let woundCode: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
+            if (part.character) {
+              const hp = part.character.hp;
+              const maxHp = part.character.hp_max;
+              if (hp <= 0) woundCode = 'dead';
+              else woundCode = woundState(hp, maxHp);
+            }
+
+            if (part.side === 'ally') {
+              return {
+                ...t,
+                character_id: part.character_id,
+                name: part.name,
+                side: 'ally',
+                wound_state: woundCode,
+                hp: part.character?.hp ?? null,
+                hp_max: part.character?.hp_max ?? null,
+              };
+            }
+
+            // Enemy token: ONLY name, side, wound_state (NO hp / hp_max!)
+            return {
+              ...t,
+              character_id: part.character_id,
+              name: part.name,
+              side: 'enemy',
+              wound_state: woundCode,
+              hp: null,
+              hp_max: null,
+            };
+          });
+
+        // Filter objects: omit objects inside fog
+        const filteredObjects = (b.objects || []).filter((o: any) => {
+          const w = o.w || 1;
+          const h = o.h || 1;
+          for (let dx = 0; dx < w; dx++) {
+            for (let dy = 0; dy < h; dy++) {
+              if (fogSet.has(`${o.x + dx},${o.y + dy}`)) {
+                return false;
+              }
+            }
+          }
+          return true;
+        });
+
+        sanitizedBoard = {
+          ...b,
+          background_image_path: bgPath,
+          fog: fogList,
+          tokens: filteredTokens,
+          objects: filteredObjects,
+        };
+      }
+    }
+    return sanitizedBoard;
+  }
+
   public buildScreenPayload(): Record<string, unknown> {
     const combat = this.combatProvider ? this.combatProvider() : null;
     const isCombatActive = combat && combat.status !== 'ended' && combat.settings?.broadcastToTv !== false;
@@ -425,108 +535,7 @@ export class SessionManager {
         };
       });
 
-      let sanitizedBoard: any = null;
-      if (combat.board_id && this.boardProvider) {
-        const b = this.boardProvider(combat.board_id);
-        if (b) {
-          // If background image visibility is 'gm', omit image path on TV!
-          const bgPath = b.background_image_visibility === 'gm' ? null : b.background_image_path;
-
-          // Build fog coordinate set for server-side fog filtering
-          const fogList: Array<{ x: number; y: number }> = b.fog || [];
-          const fogSet = new Set<string>();
-          for (const f of fogList) {
-            fogSet.add(`${f.x},${f.y}`);
-          }
-
-          // Collect hidden enemy character IDs
-          const hiddenEnemyCharIds = new Set<string>();
-          for (const p of combat.participants || []) {
-            if (p.side === 'enemy' && p.character?.status?.includes('隠れている') && p.character_id) {
-              hiddenEnemyCharIds.add(p.character_id);
-            }
-          }
-
-          // Filter tokens: omit gm_only, hidden enemies, and tokens inside fog
-          const filteredTokens = (b.tokens || [])
-            .filter((t: any) => {
-              if (t.gm_only) return false;
-              if (t.character_id && hiddenEnemyCharIds.has(t.character_id)) return false;
-              if (fogSet.has(`${t.x},${t.y}`)) return false;
-              return true;
-            })
-            .map((t: any) => {
-              const part = (combat.participants || []).find(
-                (p: any) =>
-                  (p.character_id && p.character_id === t.character_id) ||
-                  p.id === t.character_id,
-              );
-              if (!part) {
-                return {
-                  ...t,
-                  name: t.character_id ? '不明' : '—',
-                  side: null,
-                  wound_state: null,
-                  hp: null,
-                  hp_max: null,
-                };
-              }
-
-              let woundCode: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
-              if (part.character) {
-                const hp = part.character.hp;
-                const maxHp = part.character.hp_max;
-                if (hp <= 0) woundCode = 'dead';
-                else woundCode = woundState(hp, maxHp);
-              }
-
-              if (part.side === 'ally') {
-                return {
-                  ...t,
-                  character_id: part.character_id,
-                  name: part.name,
-                  side: 'ally',
-                  wound_state: woundCode,
-                  hp: part.character?.hp ?? null,
-                  hp_max: part.character?.hp_max ?? null,
-                };
-              }
-
-              // Enemy token: ONLY name, side, wound_state (NO hp / hp_max!)
-              return {
-                ...t,
-                character_id: part.character_id,
-                name: part.name,
-                side: 'enemy',
-                wound_state: woundCode,
-                hp: null,
-                hp_max: null,
-              };
-            });
-
-          // Filter objects: omit objects inside fog
-          const filteredObjects = (b.objects || []).filter((o: any) => {
-            const w = o.w || 1;
-            const h = o.h || 1;
-            for (let dx = 0; dx < w; dx++) {
-              for (let dy = 0; dy < h; dy++) {
-                if (fogSet.has(`${o.x + dx},${o.y + dy}`)) {
-                  return false;
-                }
-              }
-            }
-            return true;
-          });
-
-          sanitizedBoard = {
-            ...b,
-            background_image_path: bgPath,
-            fog: fogList,
-            tokens: filteredTokens,
-            objects: filteredObjects,
-          };
-        }
-      }
+      const sanitizedBoard = this.sanitizeCombatBoard(combat);
 
       return {
         active: true,

@@ -14,6 +14,7 @@ import {
   ItemPatchInput,
   CreationMethodConfig,
   RoleInfo,
+  SkillInfoResponse,
   CreationTemplates,
   CharacterDraft,
   CharacterSubmission,
@@ -382,8 +383,9 @@ export const api = {
       body: JSON.stringify({ categories }),
     }, getGmToken()),
 
-  // ロール特技の説明（Phase 5s）
+  // ロール特技の説明（Phase 5s）・技能の説明（Phase 6a）
   getRoleInfo: () => request<{ starting_rank: number; roles: RoleInfo[] }>('/api/role-info'),
+  getSkillInfo: () => request<SkillInfoResponse>('/api/skill-info'),
   getCreationTemplates: () => request<CreationTemplates>('/api/creation-templates'),
 
   // Character Creation & Submissions (Phase 3b)
@@ -527,6 +529,32 @@ export const api = {
   undoCombatAction: (combatId: string) =>
     request<{ success: boolean; undoneLogId: string; combat: any }>(`/api/combats/${combatId}/undo`, {
       method: 'POST',
+    }, getGmToken()),
+
+  // 行動ごとの「今できるか・できない理由」（Phase 6a）。GM は participantId の人、プレイヤーは自分
+  getCombatAvailability: (token?: string | null, participantId?: string | null) =>
+    request<{ participant_id: string | null; actions: Record<string, string | null> }>(
+      `/api/combat-availability${participantId ? `?participant_id=${encodeURIComponent(participantId)}` : ''}`,
+      {},
+      token !== undefined ? token : getGmToken(),
+    ),
+
+  // プレイヤーのスマホに出す戦闘の盤面（Phase 6a。TV 画面と同じく隠すものは隠す）
+  getPlayerCombatMap: (token: string) =>
+    request<{
+      board: any | null;
+      my_token_id?: string | null;
+      is_my_turn?: boolean;
+      move_used?: boolean;
+      max_moves?: number;
+      diagonal_rule?: 'chebyshev' | 'alternate';
+    }>('/api/player-combat-map', {}, token),
+
+  // 戦闘中に GM がコマの位置を直す（Phase 6a。戦闘ログに残り、一手戻るで戻せる）
+  moveCombatToken: (combatId: string, data: { token_id: string; x: number; y: number }) =>
+    request<{ combat: any }>(`/api/combats/${combatId}/move-token`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     }, getGmToken()),
 
   // Board API (Phase 4b)

@@ -4,6 +4,7 @@ import { RolePanel } from './RolePanel.js';
 import { MedicalPanel } from './MedicalPanel.js';
 import { AddSpecializedSkill } from './AddSpecializedSkill.js';
 import { RoleInfoPanel } from './RoleInfoPanel.js';
+import { SkillHelpButton, SkillInfoBox } from './SkillInfoBox.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CharacterSheet,
@@ -184,6 +185,7 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
 
   const [skillSearch, setSkillSearch] = useState('');
   const [onlyLearned, setOnlyLearned] = useState(false);
+  const [openSkillKey, setOpenSkillKey] = useState<string | null>(null);
 
   const open = (next: FormState) => {
     setForm(next);
@@ -604,31 +606,57 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
               </label>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '4px 12px', maxHeight: '320px', overflowY: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '4px 12px', maxHeight: '360px', overflowY: 'auto' }}>
             {skillRows.map((s) => {
               const lv = form.skills[s.key];
               const sv = s.stat ? stat(s.stat) : null;
+              const isOpen = openSkillKey === s.key;
               return (
-                <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}>
-                  <span style={{ flex: 1 }}>{s.name}</span>
-                  <span style={{ ...muted, width: '40px' }}>{s.stat ? s.stat.toUpperCase() : '—'}</span>
-                  <input
-                    aria-label={`${s.name} のレベル`}
-                    type="number"
-                    min={0}
-                    max={10}
-                    value={lv ?? ''}
-                    onChange={(e) =>
-                      setForm((f) => {
-                        const skills = { ...f.skills };
-                        if (e.target.value === '') delete skills[s.key];
-                        else skills[s.key] = Math.max(0, Number(e.target.value) || 0);
-                        return { ...f, skills };
-                      })
-                    }
-                    style={{ ...field, width: '52px', padding: '2px 4px', textAlign: 'center' }}
-                  />
-                  <span style={{ width: '28px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{lv !== undefined && sv !== null ? sv + lv : '—'}</span>
+                <div
+                  key={s.key}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    gridColumn: isOpen ? '1 / -1' : undefined,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}>
+                    <span style={{ flex: 1, display: 'inline-flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                      <SkillHelpButton
+                        skillKey={s.key}
+                        skillName={s.name}
+                        open={isOpen}
+                        onToggle={() => setOpenSkillKey((prev) => (prev === s.key ? null : s.key))}
+                      />
+                    </span>
+                    <span style={{ ...muted, width: '40px' }}>{s.stat ? s.stat.toUpperCase() : '—'}</span>
+                    <input
+                      aria-label={`${s.name} のレベル`}
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={lv ?? ''}
+                      onChange={(e) =>
+                        setForm((f) => {
+                          const skills = { ...f.skills };
+                          if (e.target.value === '') delete skills[s.key];
+                          else skills[s.key] = Math.max(0, Number(e.target.value) || 0);
+                          return { ...f, skills };
+                        })
+                      }
+                      style={{ ...field, width: '52px', padding: '2px 4px', textAlign: 'center' }}
+                    />
+                    <span style={{ width: '28px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{lv !== undefined && sv !== null ? sv + lv : '—'}</span>
+                  </div>
+                  {isOpen && (
+                    <SkillInfoBox
+                      skillKey={s.key}
+                      statValue={sv}
+                      skillLevel={lv ?? 0}
+                    />
+                  )}
                 </div>
               );
             })}

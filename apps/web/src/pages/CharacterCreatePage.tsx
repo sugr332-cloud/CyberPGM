@@ -1,5 +1,6 @@
 import { AddSpecializedSkill } from '../components/AddSpecializedSkill.js';
 import { RoleInfoPanel } from '../components/RoleInfoPanel.js';
+import { SkillHelpButton, SkillInfoBox } from '../components/SkillInfoBox.js';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -106,6 +107,7 @@ export const CharacterCreatePage: React.FC = () => {
   const [skillCategory, setSkillCategory] = useState<string>('all');
   const [skillSearch, setSkillSearch] = useState<string>('');
   const [selectedSkillDetail, setSelectedSkillDetail] = useState<SkillCatalogEntry | null>(null);
+  const [openSkillKey, setOpenSkillKey] = useState<string | null>(null);
   const [showFormulaExplanation, setShowFormulaExplanation] = useState<boolean>(false);
 
   // Square Image Cropping
@@ -1385,116 +1387,139 @@ export const CharacterCreatePage: React.FC = () => {
               const lvl = skills[s.key] ?? 0;
               const statVal = (stats as any)[s.stat] ?? 6;
               const baseVal = statVal + lvl;
+              const isOpen = openSkillKey === s.key;
 
               return (
                 <div
                   key={s.key}
                   style={{
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
+                    flexDirection: 'column',
+                    gap: '6px',
                     padding: '8px 4px',
                     borderBottom: '1px solid var(--color-border-light)',
                   }}
                 >
                   <div
-                    onClick={() => setSelectedSkillDetail(s)}
-                    style={{ cursor: 'pointer', flex: 1 }}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text)' }}>
-                        {s.name}
+                    <div
+                      onClick={() => setOpenSkillKey((prev) => (prev === s.key ? null : s.key))}
+                      style={{ cursor: 'pointer', flex: 1, minWidth: 0 }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text)' }}>
+                          {s.name}
+                        </span>
+                        <SkillHelpButton
+                          skillKey={s.key}
+                          skillName={s.name}
+                          open={isOpen}
+                          onToggle={() => setOpenSkillKey((prev) => (prev === s.key ? null : s.key))}
+                        />
+                        {s.basic && (
+                          <span
+                            style={{
+                              fontSize: '0.65rem',
+                              padding: '1px 4px',
+                              borderRadius: '3px',
+                              backgroundColor: 'rgba(46, 204, 113, 0.15)',
+                              color: 'var(--color-ally)',
+                            }}
+                          >
+                            基本
+                          </span>
+                        )}
+                        {s.multiplier > 1 && (
+                          <span
+                            style={{
+                              fontSize: '0.65rem',
+                              padding: '1px 4px',
+                              borderRadius: '3px',
+                              backgroundColor: 'rgba(235, 87, 87, 0.15)',
+                              color: 'var(--color-accent)',
+                            }}
+                          >
+                            ×2
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                        {s.stat.toUpperCase()} {statVal} + Lv {lvl} = <strong>基本値 {baseVal}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      <button
+                        onClick={() => handleSkillChange(s.key, -1)}
+                        disabled={lvl <= 0}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--color-border-light)',
+                          backgroundColor: 'var(--color-surface-elevated)',
+                          color: 'var(--color-text)',
+                          fontSize: '1.1rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        −
+                      </button>
+
+                      <span
+                        style={{
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '1.1rem',
+                          fontWeight: 700,
+                          width: '24px',
+                          textAlign: 'center',
+                          color: lvl > 0 ? 'var(--color-ally)' : 'var(--color-text-muted)',
+                        }}
+                      >
+                        {lvl}
                       </span>
-                      {s.basic && (
-                        <span
-                          style={{
-                            fontSize: '0.65rem',
-                            padding: '1px 4px',
-                            borderRadius: '3px',
-                            backgroundColor: 'rgba(46, 204, 113, 0.15)',
-                            color: 'var(--color-ally)',
-                          }}
-                        >
-                          基本
-                        </span>
-                      )}
-                      {s.multiplier > 1 && (
-                        <span
-                          style={{
-                            fontSize: '0.65rem',
-                            padding: '1px 4px',
-                            borderRadius: '3px',
-                            backgroundColor: 'rgba(235, 87, 87, 0.15)',
-                            color: 'var(--color-accent)',
-                          }}
-                        >
-                          ×2
-                        </span>
-                      )}
-                    </div>
 
-                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                      {s.stat.toUpperCase()} {statVal} + Lv {lvl} = <strong>基本値 {baseVal}</strong>
-                      <span style={{ color: 'var(--color-ally)', marginLeft: '6px' }}>解説</span>
+                      <button
+                        onClick={() => handleSkillChange(s.key, 1)}
+                        disabled={lvl >= 10}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--color-border-light)',
+                          backgroundColor: 'var(--color-surface-elevated)',
+                          color: 'var(--color-text)',
+                          fontSize: '1.1rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        ＋
+                      </button>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button
-                      onClick={() => handleSkillChange(s.key, -1)}
-                      disabled={lvl <= 0}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--color-border-light)',
-                        backgroundColor: 'var(--color-surface-elevated)',
-                        color: 'var(--color-text)',
-                        fontSize: '1.1rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      −
-                    </button>
-
-                    <span
-                      style={{
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: '1.1rem',
-                        fontWeight: 700,
-                        width: '24px',
-                        textAlign: 'center',
-                        color: lvl > 0 ? 'var(--color-ally)' : 'var(--color-text-muted)',
-                      }}
-                    >
-                      {lvl}
-                    </span>
-
-                    <button
-                      onClick={() => handleSkillChange(s.key, 1)}
-                      disabled={lvl >= 10}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--color-border-light)',
-                        backgroundColor: 'var(--color-surface-elevated)',
-                        color: 'var(--color-text)',
-                        fontSize: '1.1rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      ＋
-                    </button>
-                  </div>
+                  {isOpen && (
+                    <SkillInfoBox
+                      skillKey={s.key}
+                      statValue={statVal}
+                      skillLevel={lvl}
+                    />
+                  )}
                 </div>
               );
             })}

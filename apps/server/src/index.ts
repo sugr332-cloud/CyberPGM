@@ -16,7 +16,7 @@ import { shopsRoutes } from './routes/shops.js';
 import { commerceRoutes } from './routes/commerce.js';
 import { characterCreationRoutes } from './routes/character-creation.js';
 import { skillNotesRoutes } from './routes/skill-notes.js';
-import { combatRoutes, getCurrentCombat, saveInitiativeRoll } from './routes/combat.js';
+import { combatRoutes, getCurrentCombat, saveInitiativeRoll, validatePlayerMove } from './routes/combat.js';
 import { boardsRoutes, getHydratedBoard } from './routes/boards.js';
 import { scenariosRouter } from './routes/scenarios.js';
 import {
@@ -162,6 +162,23 @@ app.get(
                     character_id: characterId,
                   });
                 }
+              }
+            }
+          } else if (data && data.type === 'combat:move') {
+            // スマホのマップで選んだ移動先（Phase 6a）。本人の手番・本人のコマ・移動できるマスかを確かめて GM に送る。確定は GM
+            if (role === 'player' && characterId) {
+              const p = data.payload ?? {};
+              const checked = validatePlayerMove(characterId, String(p.action_key ?? 'move'), Number(p.x), Number(p.y));
+              if ('error' in checked) {
+                ws.send(JSON.stringify({ type: 'combat:move_result', payload: { ok: false, error: checked.error } }));
+              } else {
+                sessionManager.forwardCombatChooseToGm({
+                  action_key: checked.action_key,
+                  destination: checked.destination,
+                  from_player_map: true,
+                  character_id: characterId,
+                });
+                ws.send(JSON.stringify({ type: 'combat:move_result', payload: { ok: true, destination: checked.destination } }));
               }
             }
           } else if (data && data.type === 'combat:roll') {

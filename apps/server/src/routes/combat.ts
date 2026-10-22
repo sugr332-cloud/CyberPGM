@@ -11,6 +11,9 @@ import {
   weapons,
   rule_constants,
   scenario_sessions,
+  boards,
+  board_tokens,
+  board_objects,
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
@@ -33,7 +36,8 @@ import {
   soloEffects,
   roleRank,
 } from '@cyberpgm/shared';
-import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES } from '../services/combat-resolver.js';
+import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES, listActionAvailability } from '../services/combat-resolver.js';
+import { netActionBlockReason } from '../services/netrun-resolver.js';
 import { woundState, initiativeTotal, resolveDamage } from '@cyberpgm/rules';
 import { randomInt } from 'node:crypto';
 import { linkTextWeapons } from '../weapon-link.js';
@@ -1708,4 +1712,240 @@ combatRoutes.post('/combats/:id/squad', requireGm, async (c) => {
   const updated = getHydratedCombat(combatId);
   sessionManager.broadcastCombatUpdate(updated);
   return c.json({ combat: updated, added: names }, 201);
+});
+
+/**
+ * POST /api/combats/:id/move-token: 戦闘中に GM がコマの位置を直す（Phase 6a）。
+ * 移動力を消費せずにコマを動かし、戦闘ログに「GM がコマを動かした: 名前 (x1,y1)→(x2,y2)」を残す。
+ * 「一手戻る」（POST /api/combats/:id/undo）で元の位置に戻せる。
+ */
+combatRoutes.post('/combats/:id/move-token', requireGm, async (c) => {
+  const combatId = c.req.param('id');
+  if (!combatId) return c.json({ error: 'Missing combat ID' }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  const tokenId = typeof body.token_id === 'string' ? body.token_id : '';
+  const x = Number(body.x);
+  const y = Number(body.y);
+  if (!tokenId || !Number.isInteger(x) || !Number.isInteger(y)) {
+    return c.json({ error: 'token_id, x, y が必要です' }, 400);
+  }
+
+  const cb = db.select().from(combats).where(eq(combats.id, combatId)).get();
+  if (!cb) return c.json({ error: 'Combat not found' }, 404);
+  if (!cb.board_id) return c.json({ error: '盤面が設定されていません' }, 400);
+
+  const boardRow = db.select().from(boards).where(eq(boards.id, cb.board_id)).get();
+  if (!boardRow) return c.json({ error: 'Board not found' }, 404);
+
+  let cols = 20;
+  let rows = 15;
+  try {
+    const grid = JSON.parse(boardRow.grid || '{}');
+    if (typeof grid.cols === 'number') cols = grid.cols;
+    if (typeof grid.rows === 'number') rows = grid.rows;
+  } catch {
+    // ignore
+  }
+  if (x < 0 || x >= cols || y < 0 || y >= rows) {
+    return c.json({ error: 'そのマスへは移動できません（盤面の外です）' }, 400);
+  }
+
+  const tok = db
+    .select()
+    .from(board_tokens)
+    .where(and(eq(board_tokens.id, tokenId), eq(board_tokens.board_id, cb.board_id)))
+    .get();
+  if (!tok) return c.json({ error: 'コマが見つかりません' }, 404);
+
+  // 通れない置物（!obj.passable）があるマスには置けない
+  const objs = db.select().from(board_objects).where(eq(board_objects.board_id, cb.board_id)).all();
+  const blockingObj = objs.find(
+    (obj) => !obj.passable && x >= obj.x && x < obj.x + obj.w && y >= obj.y && y < obj.y + obj.h,
+  );
+  if (blockingObj) {
+    return c.json(
+      { error: `そのマスへは移動できません（通れない置物「${blockingObj.label || '障害物'}」があります）` },
+      400,
+    );
+  }
+
+  // ほかのコマがいるマスには置けない
+  const otherTok = db
+    .select()
+    .from(board_tokens)
+    .where(and(eq(board_tokens.board_id, cb.board_id), eq(board_tokens.x, x), eq(board_tokens.y, y)))
+    .all()
+    .find((t) => t.id !== tok.id);
+  if (otherTok) {
+    return c.json({ error: 'そのマスへは移動できません（ほかのコマがいます）' }, 400);
+  }
+
+  if (tok.x === x && tok.y === y) {
+    const updated = getHydratedCombat(combatId);
+    return c.json({ combat: updated });
+  }
+
+  const parts = db.select().from(combat_participants).where(eq(combat_participants.combat_id, combatId)).all();
+  const part = parts.find(
+    (p) => (p.character_id && p.character_id === tok.character_id) || p.id === tok.character_id,
+  );
+  const charRow =
+    !part && tok.character_id
+      ? db.select().from(characters).where(eq(characters.id, tok.character_id)).get()
+      : null;
+  const tokenName = part?.name || charRow?.name || (tok.gm_only ? 'GM' : 'コマ');
+  const desc = `GM がコマを動かした: ${tokenName} (${tok.x},${tok.y})→(${x},${y})`;
+
+  const change: CombatChange = {
+    target_id: tok.id,
+    target_name: tokenName,
+    field: 'token_position',
+    before: { x: tok.x, y: tok.y },
+    after: { x, y },
+    desc,
+  };
+
+  sqlite.transaction(() => {
+    db.update(board_tokens).set({ x, y }).where(eq(board_tokens.id, tok.id)).run();
+    sqlite
+      .prepare(
+        `INSERT INTO combat_log (id, combat_id, round, actor_id, action_key, input, breakdown, changes, undone, at)
+         VALUES (?, ?, ?, ?, 'gm_move', ?, ?, ?, 0, ?)`,
+      )
+      .run(
+        generateUlid(),
+        combatId,
+        cb.round,
+        part?.id ?? null,
+        JSON.stringify({ token_id: tok.id, x, y }),
+        JSON.stringify({ formula: desc }),
+        JSON.stringify([change]),
+        Date.now(),
+      );
+  })();
+
+  const updatedCombat = getHydratedCombat(combatId);
+  sessionManager.broadcastCombatUpdate(updatedCombat);
+  sessionManager.broadcastBoardUpdate({ id: cb.board_id });
+  sessionManager.broadcastScreenUpdate();
+
+  return c.json({ combat: updatedCombat });
+});
+
+/** 行動ボタンのキー（rule_constants の combat_actions。なければ空） */
+function combatActionKeys(): string[] {
+  const row = db.select().from(rule_constants).where(eq(rule_constants.key, 'combat_actions')).get();
+  try {
+    const v = JSON.parse(row?.value || '[]');
+    const list = Array.isArray(v) ? v : Array.isArray(v?.actions) ? v.actions : [];
+    return list.map((a: { key?: string }) => a.key).filter((k: unknown): k is string => typeof k === 'string');
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * GET /api/combat-availability: 行動ごとの「今できるか・できない理由」（Phase 6a）。
+ * - GM: ?participant_id= の人（なければ今の手番の人）
+ * - プレイヤー: 自分の参加者。手番でなければ、回避以外は「自分の手番ではありません」
+ * 理由は解決の処理（resolveCombatAction）が断るときと同じ文
+ */
+combatRoutes.get('/combat-availability', async (c) => {
+  const role = c.get('role');
+  const userCharId = c.get('characterId');
+  const current = getCurrentCombat();
+  if (!current || current.status !== 'active') return c.json({ participant_id: null, actions: {} });
+  const active = current.participants[current.turn_index];
+  let part: CombatParticipant | undefined;
+  if (role === 'gm') {
+    const pid = c.req.query('participant_id');
+    part = pid ? current.participants.find((p) => p.id === pid) : active;
+  } else if (role === 'player' && userCharId) {
+    part = current.participants.find((p) => p.character_id === userCharId);
+  } else {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  if (!part) return c.json({ participant_id: null, actions: {} });
+  // スマホのボタンにある行動は、行動の定義が読めなくても必ず入れる
+  const keys = [...new Set([...combatActionKeys(), 'move', 'run', 'ranged', 'aimed', 'autofire', 'suppressive', 'melee', 'brawl', 'martial_arts', 'reload', 'net_action', 'dodge', 'death_save'])];
+  const actions = listActionAvailability(db, part, keys, (p) => netActionBlockReason(p));
+  // 残弾を見せない設定では、プレイヤーに弾の理由を出さない（GM が反映するときに断る。Phase 5r）
+  if (role === 'player' && current.settings.playerAmmoVisible === false) {
+    for (const k of ['ranged', 'aimed', 'autofire', 'suppressive', 'reload']) {
+      if (actions[k] && /弾/.test(actions[k]!)) actions[k] = null;
+    }
+  }
+  if (active?.id !== part.id) {
+    for (const k of keys) {
+      if (k !== 'dodge') actions[k] = actions[k] ?? `${role === 'player' ? '自分' : part.name}の手番ではありません（今は ${active?.name ?? '—'} の手番です）`;
+    }
+  }
+  return c.json({ participant_id: part.id, actions });
+});
+
+/**
+ * プレイヤーがスマホのマップで選んだ移動先を確かめる（Phase 6a）。
+ * 本人のコマ・本人の手番・移動できるマスかを、解決の処理をそのまま使って確かめる（DB は変えない）
+ */
+export function validatePlayerMove(
+  characterId: string,
+  actionKey: string,
+  x: number,
+  y: number,
+): { error: string } | { participant_id: string; action_key: 'move' | 'run'; destination: { x: number; y: number } } {
+  if (actionKey !== 'move' && actionKey !== 'run') return { error: '移動先を選べるのは「移動」「走る」のときだけです' };
+  if (!Number.isInteger(x) || !Number.isInteger(y)) return { error: '移動先のマスがわかりません' };
+  const current = getCurrentCombat();
+  if (!current || current.status !== 'active') return { error: '戦闘中ではありません' };
+  const active = current.participants[current.turn_index];
+  if (!active || active.character_id !== characterId) {
+    return { error: `自分の手番ではありません（今は ${active?.name ?? '—'} の手番です）` };
+  }
+  if (!current.board_id) return { error: '盤面がありません' };
+  const tok = db
+    .select()
+    .from(board_tokens)
+    .where(and(eq(board_tokens.board_id, current.board_id), eq(board_tokens.character_id, characterId)))
+    .get();
+  if (!tok) return { error: '盤面に自分のコマがありません' };
+  const destination = { x, y };
+  const result = resolveCombatAction(
+    db,
+    { action_key: actionKey, actor_id: active.id, destination } as any,
+    active,
+    undefined,
+    current.participants,
+    current.board_id,
+    { ...current.settings, __round: current.round },
+  );
+  if (result.missing_inputs?.length) return { error: result.missing_inputs.join(' / ') };
+  return { participant_id: active.id, action_key: actionKey, destination };
+}
+
+/**
+ * GET /api/player-combat-map: プレイヤーのスマホに出す戦闘の盤面（Phase 6a）。
+ * TV 画面と同じく、GM だけのコマ・隠れている敵・霧の中は出さない。自分のコマと、移動に使う値も付ける
+ */
+combatRoutes.get('/player-combat-map', async (c) => {
+  const role = c.get('role');
+  const userCharId = c.get('characterId');
+  if (role !== 'player' || !userCharId) return c.json({ error: 'Unauthorized' }, 401);
+  const current = getCurrentCombat();
+  if (!current || current.status !== 'active' || !current.board_id) return c.json({ board: null });
+  const board = sessionManager.sanitizeCombatBoard(current);
+  if (!board) return c.json({ board: null });
+  const me = current.participants.find((p) => p.character_id === userCharId);
+  const myToken = (board.tokens ?? []).find((t: { character_id?: string | null }) => t.character_id === userCharId);
+  const ch = me?.character;
+  // 移動できるマス数: 【移動】− 重い防具。瀕死のあいだは −6（最低 1）。GM 画面・解決の処理と同じ（Phase 5m）
+  const move = ch ? (ch.stats?.move ?? 6) - (ch.armor_penalty ?? 0) : 0;
+  const maxMoves = ch ? Math.max(1, woundState(ch.hp, ch.hp_max) === 'mortally' ? move - 6 : move) : 0;
+  return c.json({
+    board,
+    my_token_id: myToken?.id ?? null,
+    is_my_turn: current.participants[current.turn_index]?.character_id === userCharId,
+    move_used: Boolean(me?.move_used),
+    max_moves: maxMoves,
+    diagonal_rule: (current.settings?.diagonalRule as string) || 'chebyshev',
+  });
 });

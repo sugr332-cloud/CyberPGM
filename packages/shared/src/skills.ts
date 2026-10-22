@@ -228,3 +228,29 @@ export function formatSkillName(key: string): string {
   return def ? def.name : key;
 }
 
+/** 手元のルール資料（data/sources/core-ja/skills.json）から読む技能1件の説明（Phase 6a） */
+export interface SkillInfoEntry {
+  summary: string;
+  uses: string[];
+  opposed: string[];
+  pages: number[];
+}
+
+export interface SkillInfoResponse {
+  skills: Record<string, SkillInfoEntry>;
+  hasSource: boolean;
+}
+
+/** 能力値の日本語名（Phase 6a） */
+export const STAT_NAMES_JA: Record<string, string> = {
+  int: '知力',
+  ref: '反応',
+  dex: '敏捷',
+  tech: '技術',
+  cool: '魅力',
+  will: '意志',
+  luck: '運命',
+  move: '移動',
+  body: '体格',
+  emp: '共感',
+};
