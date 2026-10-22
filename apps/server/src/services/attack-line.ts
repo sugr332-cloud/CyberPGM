@@ -83,10 +83,15 @@ export function attackLine(input: LineInput, actor: CombatParticipant, target?: 
     return { text: `${parts} + 1d10 vs 距離で決まる難易度`, bands };
   }
 
-  if (input.action_key === 'melee' || input.action_key === 'brawl') {
+  if (input.action_key === 'melee' || input.action_key === 'brawl' || input.action_key === 'martial_arts') {
     const w = input.action_key === 'melee' ? weaponOf(actor, input) : null;
     if (input.action_key === 'melee' && !w) return { text: '近接武器を選ぶと成功ラインが出ます' };
-    const skillKey = w ? skillNameToKey(w.skill) : 'brawling';
+    // 武術攻撃はいちばん高い〈武術〉（Phase 5u）
+    const martial = Object.entries(ch.skills)
+      .filter(([k, v]) => k.split(':')[0] === 'martial_arts' && v >= 1)
+      .sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (input.action_key === 'martial_arts' && !martial) return { text: '〈武術〉を持っていません' };
+    const skillKey = input.action_key === 'martial_arts' ? martial! : w ? skillNameToKey(w.skill) : 'brawling';
     const skill = ch.skills[skillKey] ?? 0;
     const dex = ch.stats.dex - armor;
     const base = dex + skill + wound;

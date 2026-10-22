@@ -2197,6 +2197,35 @@ export const PlayerPage: React.FC = () => {
                           </div>
                         </button>
 
+                        {/* 武術攻撃（〈武術〉を持っているときだけ。Phase 5u） */}
+                        {(() => {
+                          const style = Object.entries((sheet.skills ?? {}) as Record<string, number>)
+                            .filter(([k, v]) => k.split(':')[0] === 'martial_arts' && v >= 1)
+                            .sort((a, b) => b[1] - a[1])[0];
+                          if (!style) return null;
+                          return (
+                            <button
+                              data-testid="martial-arts-button"
+                              onClick={() => {
+                                setChosenActionLabel('武術攻撃');
+                                setPadRollType('attack');
+                                setShowDicePad(true);
+                                setPadFirstRoll(null);
+                                setPadExtraRoll(null);
+                                setNeedsExtraRoll(false);
+                                sendMessage({ type: 'combat:choose', payload: { action_key: 'martial_arts', target_id: attackTargetId ?? undefined } });
+                              }}
+                              style={{ padding: '12px 10px', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-light)', borderRadius: '6px', color: 'var(--color-text)', textAlign: 'left', cursor: 'pointer' }}
+                            >
+                              <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>武術攻撃</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                                DEX {dexVal} + {formatSkillName(style[0])} {style[1]}
+                                {woundPen !== 0 && ` ${woundPen}`} = {dexVal + style[1] + woundPen} + 1d10（SP半減）
+                              </div>
+                            </button>
+                          );
+                        })()}
+
                         <button
                           disabled={!rangedWeapon}
                           onClick={() => {

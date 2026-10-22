@@ -20,8 +20,20 @@ describe('disclaimer constants', () => {
 });
 
 describe('skills catalog and formatting', () => {
-  it('has 63 skills', () => {
-    expect(Object.keys(SKILL_CATALOG).length).toBe(63);
+  it('has 68 skills: 63 from FVTT and 5 skills with a chosen kind (p.132〜139)', () => {
+    expect(Object.keys(SKILL_CATALOG).length).toBe(68);
+    expect(getSkillDef('martial_arts')?.multiplier).toBe(2);
+    expect(getSkillDef('play_instrument')?.stat).toBe('tech');
+  });
+
+  it('reads skills with a chosen kind (Phase 5u)', () => {
+    expect(skillNameToKey('科学：化学')).toBe('science:化学');
+    expect(skillNameToKey('〈武術：空手〉')).toBe('martial_arts:空手');
+    expect(skillNameToKey('演奏：（1種類を選択）')).toBe('play_instrument');
+    expect(skillNameToKey('言語：ストリートスラング')).toBe('language_streetslang');
+    expect(skillNameToKey('土地鑑：（自分の居住地）')).toBe('local_expert_your_home');
+    expect(formatSkillName('language:日本語')).toBe('言語：日本語');
+    expect(getSkillDef('martial_arts:柔道')?.stat).toBe('dex');
   });
 
   it('formats skill names with the official Japanese names', () => {

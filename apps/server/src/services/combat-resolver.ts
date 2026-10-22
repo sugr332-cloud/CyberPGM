@@ -28,6 +28,10 @@ import {
   InventoryEntry,
   skillNameToKey,
   generateUlid,
+  MARTIAL_TECHNIQUES,
+  martialArtsDice,
+  splitSkillKey,
+  formatSkillName,
 } from '@cyberpgm/shared';
 import { z } from 'zod';
 import type { AppDatabase } from '../db/client.js';
@@ -87,6 +91,13 @@ const ACTION_LABEL: Record<string, string> = {
   first_aid: '応急手当',
   dodge: '回避',
   other: 'その他',
+  martial_arts: '武術攻撃',
+  martial_technique: '武術奥義',
+  grab: 'つかむ',
+  choke: '締め',
+  throw: '投げ',
+  release: '放す',
+  stand: '立ち上がる',
 };
 
 /**
@@ -116,6 +127,15 @@ function actionCountLabel(p: CombatParticipant): string {
   const allowed = actionsAllowed(p);
   return allowed > 1 ? ` ${actionsTaken(p) + 1}/${allowed} 回目` : '';
 }
+
+/** つかみ状態の −2（日本語版 p.177） */
+export function grapplePenalty(status: string[] | null | undefined): number {
+  return (status ?? []).includes(GRAPPLED) ? -2 : 0;
+}
+
+// 状態の名前（Phase 5u）
+export const GRAPPLED = 'つかみ';
+export const PRONE = '伏せ';
 
 /** サイバーアーム本体か（カヴァーリングなどの付属品は含めない） */
 function isCyberarm(c: { name?: string }): boolean {
@@ -190,7 +210,8 @@ export function resolveCombatAction(
 
   // 使い切った移動アクション・アクションは使えない（Phase 5j）
   const usesMove = MOVE_ACTION_KEYS.includes(input.action_key);
-  const usesAction = !usesMove && input.action_key !== 'death_save';
+  // つかみを放すのはアクションなしでできる（p.177）
+  const usesAction = !usesMove && input.action_key !== 'death_save' && input.action_key !== 'release';
   const spent =
     usesMove && actorPart.move_used
       ? '移動アクションは使用済みです（もう一度動くなら「走る」でアクションを使います）'
@@ -211,7 +232,8 @@ export function resolveCombatAction(
   }
 
   const actorWound = woundState(actorChar.hp, actorChar.hp_max);
-  const actorWoundPen = woundPenalty(actorWound);
+  // つかみ状態のあいだは、つかんでいる側もつかまれている側もすべての判定に −2（日本語版 p.177。Phase 5u）
+  const actorWoundPen = woundPenalty(actorWound) + grapplePenalty(actorChar.status);
   // 重い防具は REF・DEX・MOVE を下げる。瀕死のあいだは MOVE −6（どちらも最低 1）（Phase 5m）
   const actorArmorPen = actorChar.armor_penalty ?? 0;
   const actorRef = actorChar.stats.ref - actorArmorPen;
@@ -221,6 +243,19 @@ export function resolveCombatAction(
     effectiveMove !== actorChar.stats.move
       ? `（MOVE ${actorChar.stats.move}${actorArmorPen ? ` − 防具 ${actorArmorPen}` : ''}${actorWound === 'mortally' ? ' − 瀕死 6' : ''}）`
       : '';
+
+  // 伏せ状態では移動できない（先に立ち上がる）。つかまれているあいだも自分では移動できない（日本語版 p.169・177。Phase 5u）
+  if (['move', 'run', 'take_cover'].includes(input.action_key)) {
+    const st = actorChar.status ?? [];
+    const msg = st.includes(PRONE)
+      ? '伏せ状態です。先に「立ち上がる」をしてください'
+      : (actorPart.state as Record<string, unknown> | undefined)?.grappled_by
+        ? 'つかまれているので移動できません（「つかむ」で逃れるか、相手が放すまで）'
+        : null;
+    if (msg) {
+      return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: msg, breakdown: {}, changes: [], missing_inputs: [msg] };
+    }
+  }
 
   // 走る（速足）は、この手番の移動アクションを使ったあとだけ（Phase 5m）
   if (input.action_key === 'run' && !actorPart.move_used) {
@@ -261,6 +296,18 @@ export function resolveCombatAction(
     const critEntry = lookupCriticalInjury(critTable, roll);
     if (!critEntry) return null;
     return { ...critEntry, name: stripHtml(critEntry.name), summary: stripHtml(critEntry.summary || ''), table };
+  };
+
+  // いちばんレベルの高い〈武術〉（流派を指定すればその流派）。種類なしの martial_arts もあれば使う（Phase 5u）
+  const bestMartialStyle = (styleName?: string | null): { key: string; level: number } | null => {
+    let best: { key: string; level: number } | null = null;
+    for (const [key, level] of Object.entries(actorChar.skills)) {
+      const { base, spec } = splitSkillKey(key);
+      if (base !== 'martial_arts' || level < 1) continue;
+      if (styleName && spec && spec !== styleName) continue;
+      if (!best || level > best.level) best = { key, level };
+    }
+    return best;
   };
 
   // Helper to load weapon data
@@ -756,6 +803,386 @@ export function resolveCombatAction(
       breakdown: { drop_id: drop.id },
       changes,
     };
+  }
+
+  // ── つかむ・締め・投げ・放す・立ち上がる・武術奥義（Phase 5u。日本語版 p.177〜180） ──
+  const GRAPPLE_KEYS = ['grab', 'choke', 'throw', 'release', 'stand', 'martial_technique'];
+  if (GRAPPLE_KEYS.includes(input.action_key)) {
+    const fail = (msg: string | string[]): ResolveResult => {
+      const list = Array.isArray(msg) ? msg : [msg];
+      return {
+        action_key: input.action_key,
+        actor_id: actorPart.id,
+        actor_name: actorPart.name,
+        target_id: targetPart?.id,
+        target_name: targetPart?.name,
+        success: false,
+        formula: list.join(' / '),
+        breakdown: {},
+        changes: [],
+        missing_inputs: list,
+      };
+    };
+    const ok = (success: boolean, formula: string, changes: CombatChange[], breakdown: Record<string, unknown> = {}): ResolveResult => ({
+      action_key: input.action_key,
+      actor_id: actorPart.id,
+      actor_name: actorPart.name,
+      target_id: targetPart?.id,
+      target_name: targetPart?.name,
+      success,
+      formula,
+      breakdown,
+      changes,
+    });
+    const actorState = (actorPart.state ?? {}) as Record<string, unknown>;
+    const statusOf = (ch: { status?: string[] | null }) => ch.status ?? [];
+    const setStatus = (ch: { id: string; name: string; status?: string[] | null }, add: string[], remove: string[], desc: string): CombatChange => ({
+      target_id: ch.id,
+      target_name: ch.name,
+      field: 'status',
+      before: statusOf(ch),
+      after: [...statusOf(ch).filter((s) => !remove.includes(s) && !add.includes(s)), ...add],
+      desc,
+    });
+    const stateChange = (p: CombatParticipant, after: Record<string, unknown>, desc: string): CombatChange => {
+      const st = (p.state ?? {}) as Record<string, unknown>;
+      return {
+        target_id: p.id,
+        target_name: p.name,
+        field: 'state',
+        before: Object.fromEntries(Object.keys(after).map((k) => [k, st[k] ?? null])),
+        after,
+        desc,
+      };
+    };
+    const actionChange = (label: string): CombatChange => ({
+      target_id: actorPart.id,
+      target_name: actorPart.name,
+      field: 'state',
+      ...useAction(actorPart),
+      desc: `${actorPart.name} アクション使用 (${label})${actionCountLabel(actorPart)}`,
+    });
+    // 出目（10 と 1 は追加の出目が要る）
+    const rollOf = (roll: { first: number; extra?: number } | undefined, label: string): number | string => {
+      if (!roll) return `${label}の出目 (1d10) を入力してください`;
+      if ((roll.first === 10 || roll.first === 1) && roll.extra === undefined) {
+        return `${label}${roll.first === 10 ? 'クリティカル' : 'ファンブル'}: 追加出目 (1d10) を入力してください`;
+      }
+      return resolveD10(roll.first, roll.extra).value;
+    };
+    // HP に直接与えるダメージ（防具を無視し、損耗させない。締め・投げ）
+    const directDamage = (tChar: NonNullable<CombatParticipant['character']>, amount: number, label: string): CombatChange[] => {
+      const after = Math.max(0, tChar.hp - amount);
+      const changes: CombatChange[] = [
+        { target_id: tChar.id, target_name: tChar.name, field: 'hp', before: tChar.hp, after, desc: `${tChar.name} HP ${tChar.hp} → ${after} (${label} ${amount}、防具を無視)` },
+      ];
+      const sc = woundStatusChange(tChar, statusOf(tChar), tChar.hp, after);
+      if (sc) changes.push(sc);
+      return changes;
+    };
+    const inReach = (): string | null => {
+      if (!boardId || !actorPart.character_id || !targetPart?.character_id) return null;
+      const a = db.select().from(board_tokens).where(and(eq(board_tokens.board_id, boardId), eq(board_tokens.character_id, actorPart.character_id))).get();
+      const t = db.select().from(board_tokens).where(and(eq(board_tokens.board_id, boardId), eq(board_tokens.character_id, targetPart.character_id))).get();
+      if (!a || !t) return null;
+      const dist = gridDistance({ x: a.x, y: a.y }, { x: t.x, y: t.y }, rules);
+      return dist > 1 ? `相手が間合い（2m・隣のマス）の外です (現在: ${dist}マス)` : null;
+    };
+
+    // 放す: つかんでいる側はいつでもアクションなしで放せる
+    if (input.action_key === 'release') {
+      const heldId = actorState.grappling as string | undefined;
+      const held = allParticipants?.find((p) => p.id === heldId);
+      if (!heldId || !held?.character) return fail('いまは誰もつかんでいません');
+      return ok(true, `${actorPart.name} が ${held.name} を放した`, [
+        setStatus(actorChar, [], [GRAPPLED], `${actorChar.name} つかみ状態が終わる`),
+        setStatus(held.character, [], [GRAPPLED, '鋼のつかみ'], `${held.character.name} つかみ状態が終わる`),
+        stateChange(actorPart, { grappling: null, choke_count: null }, `${actorPart.name} つかみを終える`),
+        stateChange(held, { grappled_by: null }, `${held.name} つかまれていない`),
+      ]);
+    }
+
+    // 立ち上がる（伏せ状態から。武術家は「跳ね起き」に成功すればアクションを使わない）
+    if (input.action_key === 'stand') {
+      if (!statusOf(actorChar).includes(PRONE)) return fail('伏せ状態ではありません');
+      const changes: CombatChange[] = [setStatus(actorChar, [], [PRONE], `${actorChar.name} 立ち上がった`)];
+      let formula = `${actorPart.name} が立ち上がる`;
+      if (input.technique === 'kip_up') {
+        const style = bestMartialStyle();
+        if (!style) return fail('跳ね起きには〈武術〉が 1 レベル以上必要です');
+        const r = rollOf(input.attack_roll, '跳ね起き');
+        if (typeof r === 'string') return fail(r);
+        const total = actorDex + style.level + actorWoundPen + r;
+        const success = total > 13;
+        formula = `跳ね起き: DEX ${actorDex} + ${formatSkillName(style.key)} ${style.level}${actorWoundPen ? ` ${actorWoundPen}` : ''} + 出目 ${r} = ${total} vs 難易度 13 -> ${success ? '成功（アクションを使わずに立ち上がる）' : '失敗（立ち上がるのにアクションを使う）'}`;
+        if (!success) changes.unshift(actionChange('立ち上がる'));
+      } else {
+        changes.unshift(actionChange('立ち上がる'));
+      }
+      return ok(true, formula, changes);
+    }
+
+    const tChar = targetPart?.character;
+    if (!targetPart || !tChar) return fail('対象を選択してください');
+
+    // つかむ: 【敏捷】＋〈格闘〉＋1d10 の対抗判定。勝てば相手を拘束するか、持ち物を 1 つ奪う
+    if (input.action_key === 'grab') {
+      const reach = inReach();
+      if (reach) return fail(reach);
+      const iAmHeld = actorState.grappled_by === targetPart.id;
+      const missing: string[] = [];
+      const a = rollOf(input.attack_roll, '攻撃');
+      const d = rollOf(input.defense_roll, '回避');
+      if (typeof a === 'string') missing.push(a);
+      if (typeof d === 'string') missing.push(d.replace('回避', '相手の〈格闘〉'));
+      if (input.grab_mode === 'item' && !input.held_item_id && !iAmHeld) missing.push('奪う持ち物を選んでください');
+      if (missing.length) return fail(missing);
+      const brawl = actorChar.skills[skillNameToKey('brawling')] ?? 0;
+      const tBrawl = tChar.skills[skillNameToKey('brawling')] ?? 0;
+      const tDex = tChar.stats.dex - (tChar.armor_penalty ?? 0);
+      const tPen = woundPenalty(woundState(tChar.hp, tChar.hp_max)) + grapplePenalty(tChar.status);
+      // 鋼のつかみを受けていると、逃れる判定にさらに −2
+      const ironGrip = iAmHeld && statusOf(actorChar).includes('鋼のつかみ') ? -2 : 0;
+      const atk = actorDex + brawl + actorWoundPen + ironGrip + (a as number);
+      const def = tDex + tBrawl + tPen + (d as number);
+      const success = atk > def;
+      let formula = `つかむ: DEX ${actorDex} + 格闘 ${brawl}${actorWoundPen ? ` ${actorWoundPen}` : ''}${ironGrip ? ' −2（鋼のつかみ）' : ''} + 出目 ${a} = ${atk} vs ${targetPart.name} DEX ${tDex} + 格闘 ${tBrawl}${tPen ? ` ${tPen}` : ''} + 出目 ${d} = ${def} -> ${success ? '成功' : '失敗（同じなら相手の勝ち）'}`;
+      const changes: CombatChange[] = [actionChange('つかむ')];
+      if (success && iAmHeld) {
+        // つかまれている側が逃れる
+        formula += `。${actorPart.name} はつかみから逃れた`;
+        changes.push(
+          setStatus(actorChar, [], [GRAPPLED, '鋼のつかみ'], `${actorChar.name} つかみ状態が終わる`),
+          setStatus(tChar, [], [GRAPPLED], `${tChar.name} つかみ状態が終わる`),
+          stateChange(actorPart, { grappled_by: null }, `${actorPart.name} 逃れた`),
+          stateChange(targetPart, { grappling: null, choke_count: null }, `${targetPart.name} つかみが外れた`),
+        );
+      } else if (success && input.grab_mode === 'item') {
+        const inv = (tChar.inventory as InventoryEntry[]) ?? [];
+        const item = inv.find((i) => i.entry_id === input.held_item_id || i.item_id === input.held_item_id);
+        formula += `。${targetPart.name} の ${item?.name ?? '持ち物'} を奪った`;
+        if (item) {
+          changes.push(
+            { target_id: tChar.id, target_name: tChar.name, field: 'inventory', before: inv, after: inv.filter((i) => i !== item), desc: `${tChar.name} ${item.name} を奪われた` },
+            {
+              target_id: actorChar.id,
+              target_name: actorChar.name,
+              field: 'inventory',
+              before: actorChar.inventory,
+              after: [...((actorChar.inventory as InventoryEntry[]) ?? []), { ...item, equipped: true }],
+              desc: `${actorChar.name} ${item.name} を手に入れた`,
+            },
+          );
+        }
+      } else if (success) {
+        formula += `。${targetPart.name} をつかんだ（両者つかみ状態: すべての判定に −2、つかまれた側は移動できない）`;
+        changes.push(
+          setStatus(actorChar, [GRAPPLED], [], `${actorChar.name} 状態: つかみ（つかんでいる）`),
+          setStatus(tChar, [GRAPPLED], [], `${tChar.name} 状態: つかみ（つかまれている）`),
+          stateChange(actorPart, { grappling: targetPart.id, choke_count: 0 }, `${actorPart.name} が ${targetPart.name} をつかむ`),
+          stateChange(targetPart, { grappled_by: actorPart.id }, `${targetPart.name} がつかまれる`),
+        );
+      }
+      return ok(success, formula, changes);
+    }
+
+    const holding = actorState.grappling === targetPart.id;
+
+    // 締め: 【体格】ぶんのダメージを HP に直接。HP 2 以上なら 1 で止まって気絶。3 回続けて締めると気絶
+    if (input.action_key === 'choke') {
+      if (!holding) return fail(`${targetPart.name} をつかんでいません（締めるには先につかむ）`);
+      const body = actorChar.stats.body;
+      const count = Number(actorState.choke_count ?? 0) + 1;
+      let dmg = body;
+      let knockout = false;
+      if (tChar.hp >= 2 && tChar.hp - body < 1) {
+        dmg = tChar.hp - 1;
+        knockout = true;
+      }
+      if (count >= 3) knockout = true;
+      const changes: CombatChange[] = [actionChange('締め'), ...directDamage(tChar, dmg, '締め')];
+      const formula = `締め: ${targetPart.name} に BODY ${body} のダメージ（防具を無視）${dmg !== body ? `。HP は 1 で止まる` : ''}${knockout ? '。気絶した' : ''}（${count} 回目）`;
+      if (knockout) {
+        const hpAfter = tChar.hp - dmg;
+        const base = (changes.find((c) => c.field === 'status')?.after as string[] | undefined) ?? statusOf(tChar);
+        changes.push({
+          target_id: tChar.id,
+          target_name: tChar.name,
+          field: 'status',
+          before: base,
+          after: [...base.filter((s) => s !== '気絶'), '気絶'],
+          desc: `${tChar.name} 状態: 気絶（HP ${hpAfter}）`,
+        });
+        changes.push(stateChange(targetPart, { statusRounds: { ...((targetPart.state?.statusRounds as Record<string, number>) ?? {}), 気絶: UNCONSCIOUS_ROUNDS } }, `${targetPart.name} 気絶は ${UNCONSCIOUS_ROUNDS} ラウンド`));
+      }
+      changes.push(stateChange(actorPart, { choke_count: count }, `${actorPart.name} 締め ${count} 回目`));
+      return ok(true, formula, changes);
+    }
+
+    // 投げ: つかんでいる相手を投げる。【体格】ぶんのダメージを HP に直接、つかみは終わり、相手は伏せ状態
+    if (input.action_key === 'throw') {
+      if (!holding) return fail(`${targetPart.name} をつかんでいません（投げるには先につかむ）`);
+      const body = actorChar.stats.body;
+      const dmgChanges = directDamage(tChar, body, '投げ');
+      const afterStatus = (dmgChanges.find((c) => c.field === 'status')?.after as string[] | undefined) ?? statusOf(tChar);
+      return ok(true, `投げ: ${targetPart.name} に BODY ${body} のダメージ（防具を無視）。つかみが終わり、${targetPart.name} は伏せ状態`, [
+        actionChange('投げ'),
+        ...dmgChanges,
+        { target_id: tChar.id, target_name: tChar.name, field: 'status', before: afterStatus, after: [...afterStatus.filter((s) => s !== GRAPPLED && s !== '鋼のつかみ' && s !== PRONE), PRONE], desc: `${tChar.name} 状態: 伏せ（立ち上がるまで移動できない）` },
+        setStatus(actorChar, [], [GRAPPLED], `${actorChar.name} つかみ状態が終わる`),
+        stateChange(actorPart, { grappling: null, choke_count: null }, `${actorPart.name} 投げた`),
+        stateChange(targetPart, { grappled_by: null }, `${targetPart.name} 投げられた`),
+      ]);
+    }
+
+    // 武術奥義
+    const tech = MARTIAL_TECHNIQUES.find((t) => t.key === input.technique);
+    if (!tech) return fail('奥義を選んでください');
+    const style = input.martial_style ? { key: input.martial_style, level: actorChar.skills[input.martial_style] ?? 0 } : bestMartialStyle(tech.style);
+    if (!style || style.level < 1) return fail(`${tech.name} には〈武術${tech.style ? `：${tech.style}` : ''}〉が 1 レベル以上必要です`);
+    const styleName = splitSkillKey(style.key).spec;
+    if (tech.style && styleName && styleName !== tech.style) return fail(`${tech.name} は ${tech.style} の奥義です（選んだ流派: ${styleName}）`);
+    if (tech.statReq && actorChar.stats[tech.statReq.stat] < tech.statReq.min) {
+      return fail(`${tech.name} には【${tech.statReq.stat === 'will' ? '意志' : '移動'}】${tech.statReq.min} 以上が必要です`);
+    }
+    if (tech.key !== 'flying_kick') {
+      const reach = inReach();
+      if (reach) return fail(reach);
+    }
+    const missing: string[] = [];
+    const a = rollOf(input.attack_roll, '奥義');
+    if (typeof a === 'string') missing.push(a);
+    let d: number | string = 0;
+    if (tech.dv === null) {
+      d = rollOf(input.defense_roll, '回避');
+      if (typeof d === 'string') missing.push(d);
+    }
+    const body = actorChar.stats.body;
+    const dice = martialArtsDice(body);
+    if (tech.damage && (!input.damage_dice || input.damage_dice.length === 0)) missing.push(`ダメージの出目 (${dice}d6) を入力してください`);
+    else if (tech.damage) {
+      const err = damageDiceCountError(`${dice}d6`, input.damage_dice!);
+      if (err) missing.push(err);
+    }
+    if (tech.key === 'disarm' && !input.held_item_id) missing.push('落とさせる持ち物を選んでください');
+    if (missing.length) return fail(missing);
+
+    const aimHead = Boolean(input.aim_head && tech.canAimHead);
+    const atk = actorDex + style.level + actorWoundPen + (aimHead ? -8 : 0) + (a as number);
+    let success: boolean;
+    let vs: string;
+    if (tech.dv !== null) {
+      success = atk > tech.dv;
+      vs = `難易度 ${tech.dv}`;
+    } else {
+      const tDex = tChar.stats.dex - (tChar.armor_penalty ?? 0);
+      const ev = tChar.skills[skillNameToKey('evasion')] ?? 0;
+      const tPen = woundPenalty(woundState(tChar.hp, tChar.hp_max)) + grapplePenalty(tChar.status);
+      const def = tDex + ev + tPen + (d as number);
+      success = atk > def;
+      vs = `${targetPart.name} 回避 DEX ${tDex} + 回避 ${ev}${tPen ? ` ${tPen}` : ''} + 出目 ${d} = ${def}`;
+    }
+    let formula = `${tech.name}（${tech.style ?? '共通'}）: DEX ${actorDex} + ${formatSkillName(style.key)} ${style.level}${actorWoundPen ? ` ${actorWoundPen}` : ''}${aimHead ? ' −8（頭部）' : ''} + 出目 ${a} = ${atk} vs ${vs} -> ${success ? '成功' : '失敗'}`;
+    const changes: CombatChange[] = tech.usesAction ? [actionChange(tech.name)] : [];
+    if (!success) return ok(false, formula, changes);
+
+    const crits = (tChar.crit_injuries as Array<{ range?: [number, number]; table?: string; sources?: unknown }>) ?? [];
+    const hasInjury = (table: 'body' | 'head', n: number) => crits.some((c) => c.range?.[0] === n && (c.table ?? (JSON.stringify(c.sources ?? '').includes('188') ? 'head' : 'body')) === table);
+    const giveInjury = (table: 'body' | 'head', n: number, critsBefore: unknown[]): CombatChange | null => {
+      if (hasInjury(table, n)) {
+        formula += `（すでに受けている損傷なので追加しない）`;
+        return null;
+      }
+      const entry = rollInjury(table, n);
+      if (!entry) return null;
+      formula += ` [致命傷: ${entry.name}]`;
+      return { target_id: tChar.id, target_name: tChar.name, field: 'crit_injuries', before: critsBefore, after: [...critsBefore, entry], desc: `${tChar.name} 致命傷: ${entry.name}${entry.summary ? ` (${entry.summary})` : ''}` };
+    };
+    let status = statusOf(tChar);
+    let hp = tChar.hp;
+    let critList: unknown[] = crits;
+    // 武術攻撃のダメージ（防具は半分、端数切り上げ）
+    if (tech.damage) {
+      const location = aimHead ? 'head' : 'body';
+      const sp = location === 'head' ? tChar.sp_head : tChar.sp_body;
+      const dmg = resolveDamage({ dice: input.damage_dice!, location, sp, ignoreArmorPercent: 50, currentHp: hp, headMultiplier: hasCrackedSkull(crits as never) ? 3 : 2 });
+      const after = Math.max(0, hp - dmg.hpLoss);
+      changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'hp', before: hp, after, desc: `${tChar.name} HP ${hp} → ${after} (${dmg.hpLoss} ダメージ${dmg.critical ? `、クリティカル +${dmg.critBonus}` : ''})` });
+      if (dmg.spAfter !== sp) {
+        changes.push({ target_id: tChar.id, target_name: tChar.name, field: location === 'head' ? 'sp_head' : 'sp_body', before: sp, after: dmg.spAfter, desc: `${tChar.name} SP ${location === 'head' ? '頭' : '胴'} ${sp} → ${dmg.spAfter}` });
+      }
+      const sc = woundStatusChange(tChar, status, hp, after);
+      if (sc) {
+        changes.push(sc);
+        status = sc.after as string[];
+      }
+      formula += `。${dmg.hpLoss} ダメージ`;
+      if (dmg.critical) formula += '（6 が 2 個: 致命傷表は GM が振って足す）';
+      hp = after;
+    }
+    const pushInjury = (table: 'body' | 'head', n: number) => {
+      const ch = giveInjury(table, n, critList);
+      if (ch) {
+        changes.push(ch);
+        critList = ch.after as unknown[];
+      }
+    };
+    switch (tech.key) {
+      case 'disarm': {
+        const inv = (tChar.inventory as InventoryEntry[]) ?? [];
+        const item = inv.find((i) => i.entry_id === input.held_item_id || i.item_id === input.held_item_id);
+        changes.push({ target_id: targetPart.id, target_name: targetPart.name, field: 'dropped', before: null, after: input.held_item_id, desc: `${targetPart.name} の ${item?.name ?? '持ち物'} を落とさせた` });
+        formula += `。${item?.name ?? '持ち物'} を落とさせた（奪う場合は GM が所持品を移す）`;
+        break;
+      }
+      case 'iron_grip':
+        if (!holding) return fail(`${targetPart.name} をつかんでいません（鋼のつかみはつかんでいる相手に使う）`);
+        changes.push(setStatus(tChar, ['鋼のつかみ'], [], `${tChar.name} 状態: 鋼のつかみ（逃れる判定にさらに −2、遠隔攻撃できない）`));
+        formula += '。相手は逃れにくくなり、つかみが終わるまで遠隔攻撃できない';
+        break;
+      case 'armor_break': {
+        const head = Math.max(0, tChar.sp_head - 2);
+        const bodySp = Math.max(0, tChar.sp_body - 2);
+        changes.push(
+          { target_id: tChar.id, target_name: tChar.name, field: 'sp_head', before: tChar.sp_head, after: head, desc: `${tChar.name} SP 頭 ${tChar.sp_head} → ${head}（鎧砕き）` },
+          { target_id: tChar.id, target_name: tChar.name, field: 'sp_body', before: tChar.sp_body, after: bodySp, desc: `${tChar.name} SP 胴 ${tChar.sp_body} → ${bodySp}（鎧砕き）` },
+        );
+        formula += '。防具が 2 SP 減った';
+        break;
+      }
+      case 'bone_break':
+        pushInjury(aimHead ? 'head' : 'body', aimHead ? 9 : 5);
+        break;
+      case 'pressure_point':
+        pushInjury(aimHead ? 'head' : 'body', aimHead ? 3 : 10);
+        break;
+      case 'arm_counter':
+        if (actorState.grappled_by !== targetPart.id) return fail(`${targetPart.name} につかまれていません（腕捕り返しは自分をつかんでいる相手に使う）`);
+        changes.push(
+          setStatus(actorChar, [], [GRAPPLED, '鋼のつかみ'], `${actorChar.name} つかみ状態が終わる`),
+          setStatus(tChar, [], [GRAPPLED], `${tChar.name} つかみ状態が終わる`),
+          stateChange(actorPart, { grappled_by: null }, `${actorPart.name} つかみを外した`),
+          stateChange(targetPart, { grappling: null, choke_count: null }, `${targetPart.name} つかみが外れた`),
+        );
+        pushInjury('body', 6);
+        break;
+      case 'dodge_throw': {
+        const dmgChanges = directDamage({ ...tChar, hp, status }, body, '投げ');
+        changes.push(...dmgChanges);
+        status = (dmgChanges.find((c) => c.field === 'status')?.after as string[] | undefined) ?? status;
+        changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'status', before: status, after: [...status.filter((s) => s !== PRONE), PRONE], desc: `${tChar.name} 状態: 伏せ` });
+        formula += `。投げて BODY ${body} のダメージ（防具を無視）、相手は伏せ状態`;
+        break;
+      }
+      case 'flying_kick':
+        changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'status', before: status, after: [...status.filter((s) => s !== PRONE), PRONE], desc: `${tChar.name} 状態: 伏せ` });
+        changes.push(stateChange(actorPart, { move_used: true }, `${actorPart.name} 跳び蹴りのあとは移動できない`));
+        formula += '。相手は伏せ状態（このあと攻撃・移動はできない）';
+        break;
+      default:
+        break;
+    }
+    return ok(true, formula, changes);
   }
 
   // Check brawl distance if on board
@@ -1321,7 +1748,7 @@ export function resolveCombatAction(
         const defSkillKey = skillNameToKey('evasion');
         const defSkill = curTargetChar.skills[defSkillKey] ?? 0;
         const defWound = woundState(runningHp, curTargetChar.hp_max);
-        const defWoundPen = woundPenalty(defWound);
+        const defWoundPen = woundPenalty(defWound) + grapplePenalty(runningStatusMap.get(curTargetId) ?? curTargetChar.status);
         const defD10 = resolveD10(att.defense_roll.first, att.defense_roll.extra).value;
         const defTotal = defStat + defSkill + defWoundPen + defD10;
         isHit = attackTotal > defTotal;
@@ -1565,8 +1992,15 @@ export function resolveCombatAction(
   }
 
   // 7. Melee attack（格闘＝素手も同じ計算。ROF 2 なら 1 回のアクションで 2 回攻撃できる。Phase 5l/5m）
-  if (input.action_key === 'melee' || input.action_key === 'brawl') {
+  if (input.action_key === 'melee' || input.action_key === 'brawl' || input.action_key === 'martial_arts') {
     const isBrawl = input.action_key === 'brawl';
+    // 武術攻撃: 【敏捷】＋〈武術〉、ROF 2、ダメージは【体格】で決まり、防具は半分（端数切り上げ）（日本語版 p.178。Phase 5u）
+    const isMartial = input.action_key === 'martial_arts';
+    const martialStyle = isMartial
+      ? input.martial_style && (actorChar.skills[input.martial_style] ?? 0) >= 1
+        ? { key: input.martial_style, level: actorChar.skills[input.martial_style] }
+        : bestMartialStyle()
+      : null;
     const missing_inputs: string[] = [];
     const actorInventory: InventoryEntry[] = (actorChar.inventory as InventoryEntry[]) || [];
     const invWeapon = input.weapon_entry_id
@@ -1585,11 +2019,15 @@ export function resolveCombatAction(
     const body = actorChar.stats.body;
     const hasCyberarm = (actorChar.cyberware ?? []).some((c) => isCyberarm(c));
     const brawlDice = Math.max(body <= 4 ? 1 : body <= 6 ? 2 : body <= 10 ? 3 : 4, hasCyberarm ? 2 : 0);
-    const wData = isBrawl
-      ? { skill: 'Brawling', damage: `${brawlDice}d6`, ignore_armor_percent: 0, rof: 2 }
-      : getWeaponData(weaponItemId || invWeapon?.name);
+    const wData = isMartial
+      ? martialStyle
+        ? { skill: martialStyle.key, damage: `${martialArtsDice(body)}d6`, ignore_armor_percent: 50, rof: 2 }
+        : null
+      : isBrawl
+        ? { skill: 'Brawling', damage: `${brawlDice}d6`, ignore_armor_percent: 0, rof: 2 }
+        : getWeaponData(weaponItemId || invWeapon?.name);
     if (!wData) {
-      missing_inputs.push('武器を選択してください');
+      missing_inputs.push(isMartial ? '武術攻撃には〈武術〉が 1 レベル以上必要です' : '武器を選択してください');
     }
 
     const weaponIgnore = wData?.ignore_armor_percent;
@@ -1683,7 +2121,7 @@ export function resolveCombatAction(
     const skillKey = skillNameToKey(wData.skill);
     const skillLevel = actorChar.skills[skillKey] ?? 0;
     const base = attackBase({ stat, skillLevel, woundPenalty: actorWoundPen });
-    const label = isBrawl ? `格闘 (${wData.damage})` : '近接攻撃';
+    const label = isMartial ? `武術 (${formatSkillName(wData.skill ?? "")}、${wData.damage})` : isBrawl ? `格闘 (${wData.damage})` : '近接攻撃';
 
     const changes: CombatChange[] = [
       {
@@ -1691,7 +2129,7 @@ export function resolveCombatAction(
         target_name: actorPart.name,
         field: 'state',
         ...useAction(actorPart),
-        desc: `${actorPart.name} アクション使用 (${isBrawl ? '格闘' : '近接攻撃'})${actionCountLabel(actorPart)}`,
+        desc: `${actorPart.name} アクション使用 (${isMartial ? '武術攻撃' : isBrawl ? '格闘' : '近接攻撃'})${actionCountLabel(actorPart)}`,
       },
     ];
     // 同じ相手に 2 回当たったとき、2 回目は 1 回目のあとの HP・SP から計算する
@@ -1716,7 +2154,7 @@ export function resolveCombatAction(
       const attackTotal = base + attD10;
       const defStat = tChar.stats.dex - (tChar.armor_penalty ?? 0);
       const defSkill = tChar.skills[skillNameToKey('evasion')] ?? 0;
-      const defWoundPen = woundPenalty(woundState(cur.hp, tChar.hp_max));
+      const defWoundPen = woundPenalty(woundState(cur.hp, tChar.hp_max)) + grapplePenalty(cur.status);
       const defD10 = resolveD10(att.defense_roll!.first, att.defense_roll!.extra).value;
       const defTotal = defStat + defSkill + defWoundPen + defD10;
       const isHit = attackTotal > defTotal;

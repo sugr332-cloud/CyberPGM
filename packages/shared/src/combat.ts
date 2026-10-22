@@ -319,6 +319,11 @@ export const ResolveActionInputSchema = z.object({
   // 瀕死中の被弾と 6 が 2 個のクリティカルが重なったときの 2 つ目の致命傷表の出目（Phase 5r。日本語版 p.186・187）
   extra_crit_injury_roll: z.number().int().min(2).max(12).optional(),
   death_save_roll: z.number().int().min(1).max(10).optional(),
+  // 武術・つかみ（Phase 5u。日本語版 p.177〜180）
+  martial_style: z.string().optional(), // 使う〈武術〉の技能キー（例: martial_arts:空手）
+  technique: z.enum(['kip_up', 'disarm', 'iron_grip', 'armor_break', 'bone_break', 'dodge_throw', 'arm_counter', 'pressure_point', 'flying_kick']).optional(),
+  grab_mode: z.enum(['hold', 'item']).optional(), // つかむ: 相手を拘束する／持ち物を奪う
+  aim_head: z.boolean().optional(), // 骨砕き・点穴撃で頭部を狙う（−8）
   // Multi-attack for ROF > 1
   attacks: z.array(SingleAttackInputSchema).optional(),
   // Manual / unconfirmed adjustments

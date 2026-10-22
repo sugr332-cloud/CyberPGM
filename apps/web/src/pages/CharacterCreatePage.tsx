@@ -1,3 +1,4 @@
+import { AddSpecializedSkill } from '../components/AddSpecializedSkill.js';
 import { RoleInfoPanel } from '../components/RoleInfoPanel.js';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -13,6 +14,7 @@ import {
   CpgmCharacterFile,
   formatWeaponType,
   CreationTemplates,
+  getSkillDef,
 } from '@cyberpgm/shared';
 import {
   validateCharacterDraft,
@@ -442,7 +444,11 @@ export const CharacterCreatePage: React.FC = () => {
 
   // Filtered skills list
   const filteredSkills = useMemo(() => {
-    return Object.values(SKILL_CATALOG).filter((s) => {
+    // 種類つきの技能（科学：化学 など。Phase 5u）も一覧に出す
+    const specialized = Object.keys(skills)
+      .filter((k) => !SKILL_CATALOG[k] && getSkillDef(k))
+      .map((k) => getSkillDef(k)!);
+    return [...Object.values(SKILL_CATALOG), ...specialized].filter((s) => {
       if (skillCategory !== 'all' && s.category !== skillCategory) return false;
       if (skillSearch.trim()) {
         const q = skillSearch.toLowerCase();
@@ -451,7 +457,7 @@ export const CharacterCreatePage: React.FC = () => {
       }
       return true;
     });
-  }, [skillCategory, skillSearch, skillNotes]);
+  }, [skillCategory, skillSearch, skillNotes, skills]);
 
   // Filtered equipment list
   const filteredItems = useMemo(() => {
@@ -1363,6 +1369,7 @@ export const CharacterCreatePage: React.FC = () => {
           </div>
 
           {/* Skills List */}
+          <AddSpecializedSkill existing={Object.keys(skills)} onAdd={(key) => setSkills((prev) => ({ ...prev, [key]: prev[key] ?? 1 }))} />
           <div
             style={{
               backgroundColor: 'var(--color-surface)',

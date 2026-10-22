@@ -1501,6 +1501,116 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
     });
   });
 
+  // Phase 5u: 武術・つかむ・締め・投げ・立ち上がる・奥義（日本語版 p.177〜180）
+  describe('Phase 5u: martial arts and grappling', () => {
+    const H = () => ({ ...authGm, 'Content-Type': 'application/json' });
+    const resolve = async (combatId: string, body: Record<string, unknown>) =>
+      (await (await app.request(`/api/combats/${combatId}/resolve`, { method: 'POST', headers: H(), body: JSON.stringify(body) })).json()).result;
+    const apply = async (combatId: string, body: Record<string, unknown>) =>
+      (await (await app.request(`/api/combats/${combatId}/apply`, { method: 'POST', headers: H(), body: JSON.stringify(body) })).json());
+    const giveKarate = (stats: Record<string, number> = {}) => {
+      const row = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+      db.update(characters)
+        .set({ skills: JSON.stringify({ ...JSON.parse(row.skills), 'martial_arts:空手': 4 }), stats: JSON.stringify({ ...JSON.parse(row.stats), ...stats }) })
+        .where(eq(characters.id, pcId1))
+        .run();
+    };
+
+    it('resolves a martial arts attack: DEX + style, damage by BODY, armor halved', async () => {
+      giveKarate();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const r = await resolve(combat.id, {
+        action_key: 'martial_arts', actor_id: viper.id,
+        attacks: [{ target_id: nyx.id, attack_roll: { first: 9 }, defense_roll: { first: 2 }, damage_dice: [5, 5, 5] }],
+      });
+      expect(r.formula).toContain('武術 (武術：空手、3d6)');
+      const hp = r.changes.find((ch: any) => ch.field === 'hp');
+      expect(nyx.character.hp - hp.after).toBe(15 - Math.round(nyx.character.sp_body / 2));
+    });
+
+    it('refuses a martial arts attack without the skill', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const r = await resolve(combat.id, { action_key: 'martial_arts', actor_id: viper.id, attacks: [{ target_id: nyx.id, attack_roll: { first: 9 }, defense_roll: { first: 2 }, damage_dice: [1, 1, 1] }] });
+      expect(r.missing_inputs.join()).toContain('〈武術〉');
+    });
+
+    it('grabs, chokes (HP stops at 1 and knocks out), and the held target cannot move', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const grab = await apply(combat.id, { action_key: 'grab', actor_id: viper.id, target_id: nyx.id, attack_roll: { first: 9 }, defense_roll: { first: 2 } });
+      expect(grab.result.success).toBe(true);
+      let nyxRow = db.select().from(characters).where(eq(characters.id, pcId2)).get()!;
+      expect(JSON.parse(nyxRow.status)).toContain('つかみ');
+      const move = await resolve(combat.id, { action_key: 'move', actor_id: nyx.id });
+      expect(move.missing_inputs.join()).toContain('つかまれている');
+
+      db.update(characters).set({ hp: 5 }).where(eq(characters.id, pcId2)).run();
+      // 次の手番相当: アクションを戻してから締める
+      sqlite.prepare('UPDATE combat_participants SET action_used = 0 WHERE id = ?').run(viper.id);
+      sqlite.prepare("UPDATE combat_participants SET state = json_set(state, '$.actions_taken', 0) WHERE id = ?").run(viper.id);
+      const choke = await apply(combat.id, { action_key: 'choke', actor_id: viper.id, target_id: nyx.id });
+      expect(choke.result.formula).toContain('気絶');
+      nyxRow = db.select().from(characters).where(eq(characters.id, pcId2)).get()!;
+      expect(nyxRow.hp).toBe(1);
+      expect(JSON.parse(nyxRow.status)).toContain('気絶');
+    });
+
+    it('throws a held target (BODY direct damage, prone), and prone blocks movement until standing', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      await apply(combat.id, { action_key: 'grab', actor_id: viper.id, target_id: nyx.id, attack_roll: { first: 9 }, defense_roll: { first: 2 } });
+      sqlite.prepare('UPDATE combat_participants SET action_used = 0, state = ? WHERE id = ?').run(JSON.stringify({ grappling: nyx.id }), viper.id);
+      const before = db.select().from(characters).where(eq(characters.id, pcId2)).get()!;
+      const t = await apply(combat.id, { action_key: 'throw', actor_id: viper.id, target_id: nyx.id });
+      expect(t.result.success).toBe(true);
+      const after = db.select().from(characters).where(eq(characters.id, pcId2)).get()!;
+      expect(before.hp - after.hp).toBe(7); // ヴァイパーの BODY
+      expect(JSON.parse(after.status)).toEqual(['伏せ']);
+      const move = await resolve(combat.id, { action_key: 'move', actor_id: nyx.id });
+      expect(move.missing_inputs.join()).toContain('伏せ状態');
+      const stand = await resolve(combat.id, { action_key: 'stand', actor_id: nyx.id });
+      expect(stand.changes.find((ch: any) => ch.field === 'status').after).toEqual([]);
+    });
+
+    it('bone break (karate, WILL 8+) deals martial damage plus Broken Ribs', async () => {
+      sqlite.prepare('INSERT OR REPLACE INTO rule_constants (key, value, note) VALUES (?, ?, ?)').run(
+        'critical_injury.body',
+        JSON.stringify([{ range: [5, 5], name: 'Broken Ribs', summary: 'ribs' }, { range: [7, 7], name: 'Foreign Object', summary: '' }]),
+        'test',
+      );
+      giveKarate();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const body = { action_key: 'martial_technique', technique: 'bone_break', actor_id: viper.id, target_id: nyx.id, attack_roll: { first: 9 }, defense_roll: { first: 2 }, damage_dice: [4, 4, 4] };
+      const noWill = await resolve(combat.id, body);
+      expect(noWill.missing_inputs.join()).toContain('【意志】8');
+      giveKarate({ will: 8 });
+      const combat2 = await createTestCombat();
+      const v2 = combat2.participants.find((p: any) => p.name === 'ヴァイパー');
+      const n2 = combat2.participants.find((p: any) => p.name === 'ニクス');
+      const r = await resolve(combat2.id, { ...body, actor_id: v2.id, target_id: n2.id });
+      expect(r.success).toBe(true);
+      expect(r.changes.find((ch: any) => ch.field === 'crit_injuries').after.at(-1).name).toBe('Broken Ribs');
+      expect(r.changes.some((ch: any) => ch.field === 'hp')).toBe(true);
+    });
+
+    it('rejects a technique from another style', async () => {
+      giveKarate();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const r = await resolve(combat.id, { action_key: 'martial_technique', technique: 'dodge_throw', martial_style: 'martial_arts:空手', actor_id: viper.id, target_id: nyx.id, attack_roll: { first: 9 } });
+      expect(r.missing_inputs.join()).toContain('柔道 の奥義');
+    });
+  });
+
   // Phase 5n: 出目を入れる前の成功ライン
   describe('Phase 5n: attack line before the roll', () => {
     it('shows the success line for a ranged attack at a distance, and bands for the phone', async () => {
