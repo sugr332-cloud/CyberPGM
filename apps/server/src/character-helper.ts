@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray, desc } from 'drizzle-orm';
 import { db } from './db/client.js';
-import { characters, images, armors } from './db/schema.js';
+import { characters, images, armors, combats } from './db/schema.js';
 import {
   Character,
   CharacterSheet,
@@ -192,4 +192,32 @@ export function getCharacterSheetById(characterId: string): CharacterSheet | nul
 
   const char = formatCharacterRow(row, imagePath);
   return calculateCharacterSheet(char);
+}
+
+/**
+ * 進行中の戦闘で「プレイヤーに残弾を見せない」設定になっているか（Phase 5r）。GM にはいつも見える
+ */
+export function playerAmmoHidden(): boolean {
+  const cb = db
+    .select({ settings: combats.settings })
+    .from(combats)
+    .where(inArray(combats.status, ['setup', 'active']))
+    .orderBy(desc(combats.created_at))
+    .get();
+  if (!cb) return false;
+  try {
+    return JSON.parse(cb.settings || '{}').playerAmmoVisible === false;
+  } catch {
+    return false;
+  }
+}
+
+/** プレイヤーに渡す前に、所持品の残弾を消す（見せない設定のときだけ） */
+export function maskAmmoForPlayer<T extends { inventory?: unknown }>(c: T, hidden = playerAmmoHidden()): T & { ammo_hidden?: boolean } {
+  if (!hidden || !Array.isArray(c.inventory)) return c;
+  return {
+    ...c,
+    inventory: (c.inventory as Array<Record<string, unknown>>).map(({ ammo: _ammo, ...rest }) => rest),
+    ammo_hidden: true,
+  };
 }

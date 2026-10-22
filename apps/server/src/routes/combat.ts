@@ -14,7 +14,7 @@ import {
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
-import { formatCharacterRow } from '../character-helper.js';
+import { formatCharacterRow, maskAmmoForPlayer } from '../character-helper.js';
 import {
   CreateCombatInputSchema,
   AddParticipantInputSchema,
@@ -277,9 +277,10 @@ combatRoutes.get('/combats/current', async (c) => {
   // If player, filter out other participants' private stats
   if (role === 'player') {
     const hideEnemy = current.settings.hideEnemyStats ?? true;
+    const ammoHidden = current.settings.playerAmmoVisible === false;
     const sanitizedParticipants = current.participants.map((p) => {
       const isMine = p.character_id === userCharId;
-      if (isMine) return p;
+      if (isMine) return p.character ? { ...p, character: maskAmmoForPlayer(p.character, ammoHidden) } : p;
 
       // For others, mask detailed skills and stats if enemy or if settings dictate
       if (p.side === 'enemy' && hideEnemy) {
@@ -306,7 +307,7 @@ combatRoutes.get('/combats/current', async (c) => {
             : null,
         };
       }
-      return p;
+      return p.character ? { ...p, character: maskAmmoForPlayer(p.character, ammoHidden) } : p;
     });
 
     return c.json({
@@ -787,6 +788,8 @@ interface TurnSnapshot {
   turn_index: number;
   round: number;
   participants: Array<{ id: string; move_used: boolean; action_used: boolean; state: string }>;
+  // 時間切れで外した状態（気絶など）の元の状態。戻すときに使う（Phase 5r）
+  characters?: Array<{ id: string; status: string }>;
 }
 
 /**
@@ -832,22 +835,39 @@ function advanceTurn(combatId: string): CombatChange | null {
   }
 
   const updates: Record<string, unknown> = { turn_index: nextIndex };
+  const expired: Array<{ name: string; status: string }> = [];
   if (roundIncrement > 0) {
     updates.round = cb.round + roundIncrement;
-    // Decrement status rounds on participants
+    // Decrement status rounds on participants。0 になった状態（気絶など）はキャラから外して告知する（Phase 5r）
     for (const p of db.select().from(combat_participants).where(eq(combat_participants.combat_id, combatId)).all()) {
       try {
         const st = JSON.parse(p.state || '{}');
         if (st.statusRounds) {
           const updatedRounds: Record<string, number> = {};
+          const ended: string[] = [];
           for (const [sKey, rNum] of Object.entries(st.statusRounds as Record<string, number>)) {
-            if (rNum > 1) updatedRounds[sKey] = rNum - 1;
+            if (rNum > roundIncrement) updatedRounds[sKey] = rNum - roundIncrement;
+            else ended.push(sKey);
           }
           st.statusRounds = updatedRounds;
           db.update(combat_participants)
             .set({ state: JSON.stringify(st) })
             .where(eq(combat_participants.id, p.id))
             .run();
+          if (ended.length > 0 && p.character_id) {
+            const ch = db.select().from(characters).where(eq(characters.id, p.character_id)).get();
+            if (ch) {
+              const status = JSON.parse(ch.status || '[]') as string[];
+              if (status.some((s) => ended.includes(s))) {
+                (before.characters ??= []).push({ id: ch.id, status: ch.status || '[]' });
+                db.update(characters)
+                  .set({ status: JSON.stringify(status.filter((s) => !ended.includes(s))), updated_at: Date.now() })
+                  .where(eq(characters.id, ch.id))
+                  .run();
+                for (const s of ended) if (status.includes(s)) expired.push({ name: p.name, status: s });
+              }
+            }
+          }
         }
       } catch {
         // ignore
@@ -855,6 +875,7 @@ function advanceTurn(combatId: string): CombatChange | null {
     }
   }
   db.update(combats).set(updates).where(eq(combats.id, combatId)).run();
+  for (const e of expired) sessionManager.announceCombat('状態が解けた', `${e.name} の「${e.status}」が解けた（時間切れ）`);
 
   const next = parts[nextIndex];
   return {
@@ -865,6 +886,41 @@ function advanceTurn(combatId: string): CombatChange | null {
     after: { turn_index: nextIndex, round: (updates.round as number | undefined) ?? cb.round },
     desc: `手番終了 → ${next.name} の手番${roundIncrement > 0 ? `（ラウンド ${(updates.round as number)}）` : ''}`,
   };
+}
+
+const STATUS_NAMES: Record<string, string> = { seriously: '重傷（すべての行動に −2）', mortally: '瀕死（すべての行動に −4、毎ターン死亡セーブ）', dead: '死亡', 気絶: '気絶（1 分 = 20 ラウンド行動できない）' };
+
+/**
+ * 行動の結果を告知する（Phase 5r）。
+ * - 状態異常（重傷・瀕死・気絶・死亡）や致命的損傷を受けたら、GM と全員のスマホに知らせる
+ * - 弾が切れたら GM に知らせ、次にどうするか（リロードはアクション 1 回）を伝える。残弾を見せる設定なら本人のスマホにも
+ */
+function announceResult(
+  changes: CombatChange[],
+  actor: CombatParticipant,
+  actionUsed: boolean,
+  settings: Record<string, unknown>,
+) {
+  for (const ch of changes) {
+    if (ch.field === 'status') {
+      const before = (ch.before as string[] | undefined) ?? [];
+      for (const s of ((ch.after as string[] | undefined) ?? []).filter((x) => !before.includes(x))) {
+        if (STATUS_NAMES[s]) sessionManager.announceCombat('状態異常', `${ch.target_name} が ${STATUS_NAMES[s]} になった`);
+      }
+    } else if (ch.field === 'crit_injuries') {
+      const before = (ch.before as unknown[] | undefined) ?? [];
+      const added = ((ch.after as Array<{ name?: string; summary?: string }> | undefined) ?? []).slice(before.length);
+      for (const inj of added) {
+        sessionManager.announceCombat('致命的損傷', `${ch.target_name}: ${inj.name ?? ''}${inj.summary ? `（${inj.summary}）` : ''}`);
+      }
+    } else if (ch.field === 'ammo' && ch.after === 0 && typeof ch.before === 'number' && ch.before > 0) {
+      const next = actionUsed
+        ? '次の手番でリロード（アクション 1 回）するか、別の武器・行動を選ぶ'
+        : 'このターンにアクションが残っているので、今リロード（アクション 1 回）できる。別の武器・行動を選んでもよい';
+      const showPlayer = settings.playerAmmoVisible !== false && actor.character_id ? [actor.character_id] : [];
+      sessionManager.announceCombat('弾切れ', `${actor.name} の武器の弾が切れた。${next}`, showPlayer);
+    }
+  }
 }
 
 function broadcastTurn(combatId: string) {
@@ -983,6 +1039,8 @@ combatRoutes.patch('/combats/:id', requireGm, async (c) => {
 
   const updated = getHydratedCombat(combatId);
   sessionManager.broadcastCombatUpdate(updated);
+  // 残弾を見せるかを変えた・戦闘が終わったら、スマホのキャラシートを送り直す（Phase 5r）
+  if (body.settings?.playerAmmoVisible !== undefined || body.action === 'end') sessionManager.updateAllCharacterSheets();
 
   if (body.action === 'next_turn' && updated) broadcastTurn(combatId);
 
@@ -1114,6 +1172,7 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
           if (afterObj.move_used !== undefined) moveUsed = afterObj.move_used ? 1 : 0;
           if (afterObj.action_used !== undefined) actionUsed = afterObj.action_used ? 1 : 0;
           if (afterObj.deathSavePenalty !== undefined) newState.deathSavePenalty = afterObj.deathSavePenalty;
+          if (afterObj.statusRounds !== undefined) newState.statusRounds = afterObj.statusRounds ?? {};
           if (afterObj.actions_taken !== undefined) newState.actions_taken = afterObj.actions_taken;
 
           sqlite
@@ -1199,6 +1258,8 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
     sessionManager.broadcastScreenUpdate();
   }
 
+  announceResult(result.changes, actor, actorNow?.action_used ?? true, combat.settings);
+
   // 11.9: Notify players and GMs (filter enemy numeric hp/sp from player notification)
   if (target?.character_id) {
     sessionManager.updateCharacterSheet(target.character_id);
@@ -1216,8 +1277,11 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
 
     // Filter enemy HP/SP for attacker player
     const isEnemyTarget = target && target.side === 'enemy';
+    const ammoHidden = combat.settings.playerAmmoVisible === false;
     const playerChanges = result.changes
       .filter((ch) => {
+        // 残弾を見せない設定なら、弾数と所持品の変化は出さない（Phase 5r）
+        if (ammoHidden && (ch.field === 'ammo' || ch.field === 'inventory')) return false;
         // Do not leak enemy SP
         if (isEnemyTarget && ch.target_id === target.character_id) {
           if (ch.field === 'sp_head' || ch.field === 'sp_body') return false;
@@ -1336,6 +1400,7 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
           if (beforeObj.move_used !== undefined) moveUsed = beforeObj.move_used ? 1 : 0;
           if (beforeObj.action_used !== undefined) actionUsed = beforeObj.action_used ? 1 : 0;
           if (beforeObj.deathSavePenalty !== undefined) newState.deathSavePenalty = beforeObj.deathSavePenalty;
+          if (beforeObj.statusRounds !== undefined) newState.statusRounds = beforeObj.statusRounds ?? {};
           if (beforeObj.actions_taken !== undefined) newState.actions_taken = beforeObj.actions_taken;
 
           sqlite
@@ -1378,6 +1443,7 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
             .prepare('UPDATE combat_participants SET move_used = ?, action_used = ?, state = ? WHERE id = ?')
             .run(p.move_used ? 1 : 0, p.action_used ? 1 : 0, p.state, p.id);
         }
+        for (const ch of b.characters ?? []) sqlite.prepare('UPDATE characters SET status = ? WHERE id = ?').run(ch.status, ch.id);
       } else if (ch.field === 'board_drop') {
         sqlite.prepare('DELETE FROM board_drops WHERE id = ?').run(ch.target_id);
       } else if (ch.field === 'board_drop_remove') {

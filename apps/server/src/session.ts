@@ -10,7 +10,7 @@ import {
   WsNotifyKind,
 } from '@cyberpgm/shared';
 import { woundState } from '@cyberpgm/rules';
-import { getCharacterSheetById } from './character-helper.js';
+import { getCharacterSheetById, maskAmmoForPlayer } from './character-helper.js';
 
 export interface ConnectedClient {
   ws: WSContext;
@@ -167,6 +167,17 @@ export class SessionManager {
   }
 
   /**
+   * 戦闘の告知（Phase 5r）: 状態異常・弾切れなど。GM には 'combat:notice'、プレイヤーにはお知らせの帯で出す。
+   * players: 'all' は全員のスマホ、文字列の配列はそのキャラのスマホだけ、空なら GM だけ
+   */
+  public announceCombat(title: string, body: string, players: 'all' | string[] = 'all'): void {
+    this.sendToGm({ type: 'combat:notice', payload: { title, body, at: Date.now() } });
+    const msg = { type: 'notify', payload: { kind: 'info', title, body } };
+    if (players === 'all') this.broadcastToPlayers(msg);
+    else for (const id of players) this.sendToCharacter(id, msg);
+  }
+
+  /**
    * Sends updated character sheet to a character's clients.
    */
   public updateCharacterSheet(characterId: string): void {
@@ -175,7 +186,7 @@ export class SessionManager {
 
     this.sendToCharacter(characterId, {
       type: 'me:update',
-      payload: sheet,
+      payload: maskAmmoForPlayer(sheet),
     });
   }
 

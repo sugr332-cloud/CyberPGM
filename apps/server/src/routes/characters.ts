@@ -8,6 +8,7 @@ import {
   formatCharacterRow,
   calculateCharacterSheet,
   getCharacterSheetById,
+  maskAmmoForPlayer,
 } from '../character-helper.js';
 import {
   CharacterCreateInputSchema,
@@ -53,7 +54,8 @@ charactersRoutes.get('/me', requireAuth, async (c) => {
     .all();
 
   return c.json({
-    sheet,
+    // プレイヤーには、残弾を見せない設定なら残弾を消して渡す（Phase 5r）
+    sheet: role === 'gm' ? sheet : maskAmmoForPlayer(sheet),
     logs,
   });
 });
