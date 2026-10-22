@@ -417,7 +417,7 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
   });
 
   // 11.2: オートファイアの DV 表が dv_table.${weapon.dv_table_key} (Autofire) から正しく引かれるテスト
-  it('11.2: resolves autofire using dv_table.${dvTableKey} (Autofire) and GM specified ammo_spent', async () => {
+  it('11.2: resolves autofire using dv_table.${dvTableKey} (Autofire), always spending 10 rounds', async () => {
     const combat = await createTestCombat();
     const pViper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
     const pGanger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
@@ -448,7 +448,6 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
         target_id: pGanger.id,
         weapon_id: weaponIdRifle,
         distance_m: 15,
-        ammo_spent: 10,
         attack_roll: { first: 8 }, // REF 8 + shoulder_arms 5 + 8 = 21 (DV 17 exceeds by 4)
         damage_dice: [2, 2], // 4 * multiplier (cap 4) = 16 damage
       }),
@@ -1314,6 +1313,94 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       const move = await resolve(combat.id, { action_key: 'move', actor_id: viper.id });
       expect(move.formula).toContain('MOVE 1マス');
       expect(move.formula).toContain('瀕死 6');
+    });
+  });
+
+  // Phase 5q: 日本語版コアルールブックとの差（瀕死中の被弾、気絶、フルオート 10 発、死亡セーヴの基本値、頭蓋損傷、サイバーアーム）
+  describe('Phase 5q: rulebook fixes', () => {
+    const H = () => ({ ...authGm, 'Content-Type': 'application/json' });
+    const resolve = async (combatId: string, body: Record<string, unknown>) =>
+      (await (await app.request(`/api/combats/${combatId}/resolve`, { method: 'POST', headers: H(), body: JSON.stringify(body) })).json()).result;
+    const pistolShot = (targetId: string, extra: Record<string, unknown> = {}) => ({
+      action_key: 'ranged',
+      target_id: targetId,
+      weapon_id: weaponIdPistol,
+      distance_m: 5,
+      attack_roll: { first: 9 },
+      damage_dice: [5, 5, 4],
+      ...extra,
+    });
+
+    it('gives a critical injury and +1 death save penalty when a mortally wounded target takes damage (p.186・188)', async () => {
+      db.update(characters).set({ hp: 0, status: JSON.stringify(['mortally']) }).where(eq(characters.id, pcId2)).run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const noRoll = await resolve(combat.id, { ...pistolShot(nyx.id), actor_id: viper.id });
+      expect(noRoll.missing_inputs).toContain('致命傷表 (2d6) の出目を入力してください');
+      const r = await resolve(combat.id, { ...pistolShot(nyx.id, { crit_injury_roll: 7 }), actor_id: viper.id });
+      const crit = r.changes.find((ch: any) => ch.field === 'crit_injuries');
+      expect(crit.after[0].table).toBe('body');
+      const pen = r.changes.find((ch: any) => ch.field === 'state' && ch.target_id === nyx.id);
+      expect(pen.after).toEqual({ deathSavePenalty: 1 });
+      expect(r.formula).toContain('瀕死で被弾');
+    });
+
+    it('adds the death save base from critical injuries, and stabilizing leaves the target unconscious', async () => {
+      db.update(characters)
+        .set({ hp: 0, status: JSON.stringify(['mortally']), crit_injuries: JSON.stringify([{ range: [2, 2], table: 'body', name: 'Dismembered Arm' }]) })
+        .where(eq(characters.id, pcId2))
+        .run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const save = await resolve(combat.id, { action_key: 'death_save', actor_id: nyx.id, death_save_roll: 2 });
+      expect(save.breakdown.basePenalty).toBe(1);
+      expect(save.breakdown.penalty).toBe(1);
+      expect(save.formula).toContain('致命的損傷 1');
+      const ok = await resolve(combat.id, { action_key: 'first_aid', actor_id: viper.id, target_id: nyx.id, attack_roll: { first: 10, extra: 9 } });
+      const statuses = ok.changes.filter((ch: any) => ch.field === 'status');
+      expect(statuses[statuses.length - 1].after).toContain('気絶');
+      expect(ok.formula).toContain('気絶');
+    });
+
+    it('autofire always spends 10 rounds and cannot fire with fewer than 10 left (p.173)', async () => {
+      const viperChar = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+      const inv = JSON.parse(viperChar.inventory);
+      inv.push({ entry_id: 'e_rifle', item_id: weaponIdRifle, name: 'アサルト・ライフル', qty: 1, equipped: true, ammo: 9 });
+      db.update(characters).set({ inventory: JSON.stringify(inv) }).where(eq(characters.id, pcId1)).run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const r = await resolve(combat.id, {
+        action_key: 'autofire', actor_id: viper.id, target_id: ganger.id, weapon_entry_id: 'e_rifle', distance_m: 15, attack_roll: { first: 8 }, damage_dice: [2, 2],
+      });
+      expect(r.missing_inputs.join()).toContain('10 発未満');
+    });
+
+    it('triples head damage after a cracked skull (p.188)', async () => {
+      db.update(characters).set({ crit_injuries: JSON.stringify([{ range: [9, 9], table: 'head', name: 'Cracked Skull' }]) }).where(eq(characters.id, pcId2)).run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const n = nyx.character;
+      const r = await resolve(combat.id, { ...pistolShot(nyx.id, { action_key: 'aimed', aimed_location: 'head', attack_roll: { first: 10, extra: 9 } }), actor_id: viper.id });
+      const hp = r.changes.find((ch: any) => ch.field === 'hp');
+      expect(n.hp - hp.after).toBe(Math.min(n.hp, (14 - n.sp_head) * 3));
+    });
+
+    it('brawls for at least 2d6 with a cyberarm (p.176)', async () => {
+      const viperChar = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+      const stats = { ...JSON.parse(viperChar.stats), body: 3 };
+      db.update(characters).set({ stats: JSON.stringify(stats), cyberware: JSON.stringify([{ name: 'サイバーアーム' }]) }).where(eq(characters.id, pcId1)).run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const r = await resolve(combat.id, {
+        action_key: 'brawl', actor_id: viper.id,
+        attacks: [{ target_id: nyx.id, attack_roll: { first: 9 }, defense_roll: { first: 2 }, damage_dice: [1, 1] }],
+      });
+      expect(r.formula).toContain('格闘 (2d6)');
     });
   });
 

@@ -54,6 +54,12 @@ describe('damage module (RULES_CHECK §3, FVTT _applyDamage)', () => {
     expect(res.criticalInjuryTable).toBe('body');
   });
 
+  it('triples penetrating damage for headshots with headMultiplier 3 (cracked skull, p.188)', () => {
+    const res = resolveDamage({ dice: [5, 4, 2], location: 'head', headMultiplier: 3, sp: 7 });
+    expect(res.penetrating).toBe(12);
+    expect(res.hpLoss).toBe(12);
+  });
+
   it('doubles penetrating damage for headshots, but does not double critBonus', () => {
     // Headshot without critical: [5,4,2] vs head SP 7
     // rawTotal 11, penetrationRaw 4 * 2 = penetrating 8, hpLoss 8, spAfter 6

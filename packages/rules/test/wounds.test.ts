@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { woundState, woundPenalty, deathSave, hpMaxFromStats } from '../src/wounds.js';
+import { woundState, woundPenalty, deathSave, hpMaxFromStats, deathSaveBase, injuryTable, hasCrackedSkull } from '../src/wounds.js';
 import { DEFAULT_RULES } from '../src/constants.js';
 
 describe('wounds module (RULES_CHECK §3, FVTT _setWoundState, deathSave)', () => {
@@ -56,5 +56,28 @@ describe('hpMaxFromStats (FVTT cpr-actor.js)', () => {
     expect(hpMaxFromStats(6, 5)).toBe(40);
     expect(hpMaxFromStats(2, 2)).toBe(20);
     expect(hpMaxFromStats(8, 7)).toBe(50);
+  });
+});
+
+describe('death save base from critical injuries (p.187・188)', () => {
+  const body = (n: number) => ({ range: [n, n] as [number, number], table: 'body' as const });
+  const head = (n: number) => ({ range: [n, n] as [number, number], table: 'head' as const });
+
+  it('counts only injuries that raise the base', () => {
+    expect(deathSaveBase([])).toBe(0);
+    expect(deathSaveBase([body(2), body(5), head(8), head(5)])).toBe(2);
+    expect(deathSaveBase([body(10), body(12), head(11)])).toBe(3);
+  });
+
+  it('tells the table from the source page when table is missing', () => {
+    expect(injuryTable({ range: [9, 9], sources: [{ page: 188 }] })).toBe('head');
+    expect(injuryTable({ range: [9, 9], sources: [{ page: 187 }] })).toBe('body');
+    expect(deathSaveBase([{ range: [8, 8], sources: [{ page: 188 }] }])).toBe(1);
+    expect(deathSaveBase([{ range: [8, 8], sources: [{ page: 187 }] }])).toBe(0);
+  });
+
+  it('detects cracked skull', () => {
+    expect(hasCrackedSkull([head(9)])).toBe(true);
+    expect(hasCrackedSkull([body(9)])).toBe(false);
   });
 });
