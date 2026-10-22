@@ -8,7 +8,18 @@ import {
   board_tokens,
   combats,
   combat_participants,
+  items,
+  weapons,
 } from '../apps/server/src/db/schema.js';
+import { joinAsPlayer } from './join.js';
+
+// このファイルは戦闘を DB に直接作るので、終わったら消す（後のテストが戦闘中の画面にならないように）
+test.afterAll(() => {
+  const { sqlite } = createDb(process.env.DATABASE_URL || 'data/test-e2e.db');
+  for (const t of ['combat_log', 'combat_participants', 'combats']) sqlite.prepare(`DELETE FROM ${t}`).run();
+  // スマホで選んだキャラが残ると、後のテストの「キャラクターを選択」が出なくなる
+  sqlite.prepare("DELETE FROM characters WHERE id IN ('char-luna-6c', 'char-ganger-6c', 'char-viper-6a', 'char-ganger-6a')").run();
+});
 
 test('Phase 6a E2E: GM combat token drag (move action, invalid cell, GM reposition + undo) and skill info (?) toggle in GM editor & mobile player creation', async ({
   browser,
@@ -25,11 +36,11 @@ test('Phase 6a E2E: GM combat token drag (move action, invalid cell, GM repositi
     'board_tokens',
     'board_objects',
     'boards',
-    'char_log',
-    'characters',
   ]) {
     sqlite.prepare(`DELETE FROM ${t}`).run();
   }
+  // ほかのテストが使うキャラ（デモのヴァイパーなど）は消さず、このテストのキャラだけ作り直す
+  sqlite.prepare("DELETE FROM characters WHERE id IN ('char-viper-6a', 'char-ganger-6a')").run();
 
   // 1. Seed PC and Enemy + Board + Active Combat
   const viperId = 'char-viper-6a';
@@ -42,7 +53,7 @@ test('Phase 6a E2E: GM combat token drag (move action, invalid cell, GM repositi
       {
         id: viperId,
         kind: 'pc',
-        name: 'ヴァイパー',
+        name: 'ヴァイパー6a',
         role: 'Solo',
         stats: JSON.stringify({
           int: 6,
@@ -69,7 +80,7 @@ test('Phase 6a E2E: GM combat token drag (move action, invalid cell, GM repositi
       {
         id: gangerId,
         kind: 'npc',
-        name: 'ガンガー',
+        name: 'ガンガー6a',
         role: 'Solo',
         stats: JSON.stringify({
           int: 4,
@@ -294,7 +305,7 @@ test('Phase 6a E2E: GM combat token drag (move action, invalid cell, GM repositi
   // --- Part B (1): GM CharacterEditorView skill (?) toggle ---
   await gmPage.getByRole('button', { name: 'キャラ作成' }).click();
   const editor = gmPage.getByTestId('character-editor');
-  await editor.getByRole('button', { name: 'ヴァイパー' }).click();
+  await editor.getByRole('button', { name: 'ヴァイパー6a' }).click();
   const handgunHelpBtn = editor.getByTestId('skill-info-btn-handgun');
   await expect(handgunHelpBtn).toBeVisible();
   await handgunHelpBtn.click();
@@ -348,4 +359,130 @@ test('Phase 6a E2E: GM combat token drag (move action, invalid cell, GM repositi
   await expect(playerSkillPanel).not.toBeVisible();
 
   await playerContext.close();
+});
+
+test('Phase 6a E2E (C): player moves own token on the phone map, GM sees the destination; blocked actions are grey and explain why', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
+  const { db, sqlite } = createDb(dbPath);
+  const now = Date.now();
+  for (const t of ['combat_log', 'combat_participants', 'combats', 'board_drops', 'board_tokens', 'board_objects', 'boards']) {
+    sqlite.prepare(`DELETE FROM ${t}`).run();
+  }
+  sqlite.prepare("DELETE FROM characters WHERE id IN ('char-luna-6c', 'char-ganger-6c')").run();
+  sqlite.prepare("DELETE FROM weapons WHERE item_id = 'item-pistol-6c'").run();
+  sqlite.prepare("DELETE FROM items WHERE id = 'item-pistol-6c'").run();
+  db.insert(items).values({ id: 'item-pistol-6c', kind: 'weapon', name_en: 'Heavy Pistol 6c', name_ja: '大型拳銃6c', origin: 'official_verified', verify_status: 'official_verified', created_at: now, updated_at: now } as any).run();
+  db.insert(weapons).values({ item_id: 'item-pistol-6c', weapon_type: 'heavy_pistol', skill: 'Handgun', damage: '3d6', rof: 2, magazine_max: 8, dv_table_key: 'Pistol', is_ranged: true, autofire: null, suppressive: false } as any).run();
+  const stats = { int: 6, ref: 8, dex: 6, tech: 5, cool: 6, will: 6, luck: 5, move: 3, body: 6, emp: 6 };
+  db.insert(characters).values([
+    {
+      id: 'char-luna-6c', kind: 'pc', name: 'ルナ6c', role: 'Solo', stats: JSON.stringify(stats), skills: JSON.stringify({ handgun: 4, evasion: 2 }),
+      inventory: JSON.stringify([{ entry_id: 'luna-gun', item_id: 'item-pistol-6c', name: '大型拳銃6c', kind: 'weapon', qty: 1, equipped: true, ammo: 0, is_ranged: true }]),
+      hp: 40, hp_max: 40, sp_head: 0, sp_body: 0, humanity: 60, emp_max: 6, created_at: now, updated_at: now,
+    },
+    {
+      id: 'char-ganger-6c', kind: 'npc', name: 'ガンガー6c', role: 'Solo', stats: JSON.stringify(stats), skills: JSON.stringify({ handgun: 2 }),
+      hp: 30, hp_max: 30, sp_head: 0, sp_body: 0, humanity: 40, emp_max: 4, created_at: now, updated_at: now,
+    },
+  ] as any).run();
+  db.insert(boards).values({ id: 'board-6c', name: '6c 盤面', grid: JSON.stringify({ show: true, cell_m: 2, origin_x: 0, origin_y: 0, cell_px: 40, cols: 10, rows: 8 }), created_at: now, updated_at: now } as any).run();
+  db.insert(board_tokens).values([
+    { id: 'tok-luna-6c', board_id: 'board-6c', character_id: 'char-luna-6c', x: 1, y: 1, gm_only: false },
+    { id: 'tok-ganger-6c', board_id: 'board-6c', character_id: 'char-ganger-6c', x: 7, y: 5, gm_only: false },
+  ] as any).run();
+  db.insert(combats).values({ id: 'combat-6c', status: 'active', round: 1, turn_index: 0, board_id: 'board-6c', settings: JSON.stringify({ board_id: 'board-6c' }), created_at: now } as any).run();
+  db.insert(combat_participants).values([
+    { id: 'part-luna-6c', combat_id: 'combat-6c', character_id: 'char-luna-6c', side: 'ally', name: 'ルナ6c', initiative: 15, order_index: 0, active: true, out: false, move_used: false, action_used: false, state: '{}' },
+    { id: 'part-ganger-6c', combat_id: 'combat-6c', character_id: 'char-ganger-6c', side: 'enemy', name: 'ガンガー6c', initiative: 10, order_index: 1, active: true, out: false, move_used: false, action_used: false, state: '{}' },
+  ] as any).run();
+
+  // GM: 弾 0 の射撃はグレーで、押すと理由が出る
+  const gmContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const gmPage = await gmContext.newPage();
+  await gmPage.goto('/gm');
+  await gmPage.getByRole('button', { name: '戦闘' }).click();
+  const gmShoot = gmPage.getByTestId('action-btn-ranged');
+  await expect(gmShoot).toHaveAttribute('aria-disabled', 'true');
+  await gmShoot.click({ force: true }); // aria-disabled は Playwright では押せない扱いなので force
+  await expect(gmPage.getByTestId('action-blocked-message')).toContainText('「射撃」はできません: 弾切れです');
+  await expect(gmPage.getByTestId('action-btn-move')).not.toHaveAttribute('aria-disabled', 'true');
+
+  // プレイヤー: 同じく射撃はグレー、押すと理由
+  const sessionCode = (await (await gmPage.request.get('/api/health')).json()).session;
+  const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  const phone = await phoneContext.newPage();
+  await joinAsPlayer(phone, sessionCode, 'ルナ6c', 'E2E-6c'); // 前のテストの「E2E」さんはほかのキャラを持っている
+  await phone.getByRole('button', { name: '行動' }).click();
+  const phoneShoot = phone.getByTestId('player-action-ranged');
+  await expect(phoneShoot).toHaveAttribute('aria-disabled', 'true');
+  await phoneShoot.click({ force: true });
+  await expect(phone.getByTestId('player-action-blocked')).toContainText('「射撃」はできません: 弾切れです');
+  await phone.getByTestId('player-action-blocked').scrollIntoViewIfNeeded();
+  await phone.screenshot({ path: 'docs/agy/reports/img/phase6a-player-blocked-390.png' });
+
+  // プレイヤー: 「移動」でマップが出る。自分のコマを緑のマスへドラッグすると、GM の移動先に入る
+  await phone.getByTestId('player-action-move').click();
+  const map = phone.getByTestId('player-move-map');
+  await expect(map).toBeVisible();
+  const svg = map.locator('svg').first();
+  await svg.scrollIntoViewIfNeeded();
+  // マスの位置は自分のコマ（1,1）の中心から数える（盤面の SVG は高さに余白があるため）
+  const cell = async (cx: number, cy: number) => {
+    const box = (await svg.boundingBox())!;
+    const tok = (await map.getByTestId('token-tok-luna-6c').locator('circle').last().boundingBox())!;
+    const size = box.width / 10;
+    const ox = tok.x + tok.width / 2 - 1.5 * size;
+    const oy = tok.y + tok.height / 2 - 1.5 * size;
+    return { x: ox + (cx + 0.5) * size, y: oy + (cy + 0.5) * size };
+  };
+
+  // 他人のコマはつかめない
+  const ganger = await cell(7, 5);
+  await phone.mouse.move(ganger.x, ganger.y);
+  await phone.mouse.down();
+  const near = await cell(6, 5);
+  await phone.mouse.move(near.x, near.y, { steps: 3 });
+  await expect(map.getByTestId('token-tok-ganger-6c')).not.toHaveAttribute('data-dragging', 'true');
+  await phone.mouse.up();
+
+  // 届かないマス（移動力 3）に落とすと理由が出て、移動先にならない
+  const from = await cell(1, 1);
+  const far = await cell(8, 1);
+  await phone.mouse.move(from.x, from.y);
+  await phone.mouse.down();
+  await phone.mouse.move(far.x, far.y, { steps: 5 });
+  await expect(map.getByTestId('token-tok-luna-6c')).toHaveAttribute('data-dragging', 'true');
+  await phone.mouse.up();
+  await expect(map.getByTestId('board-drag-message')).toContainText('そのマスへは移動できません（移動力 3 マス）');
+
+  // 届くマス
+  const to = await cell(3, 2);
+  await phone.mouse.move(from.x, from.y);
+  await phone.mouse.down();
+  await phone.mouse.move(to.x, to.y, { steps: 5 });
+  await expect(map.getByTestId('drag-hover-cell')).toHaveAttribute('data-valid', 'true');
+  await phone.mouse.up();
+  await expect(phone.getByTestId('player-move-sent')).toContainText('(3, 2)');
+  await phone.screenshot({ path: 'docs/agy/reports/img/phase6a-player-map-390.png' });
+
+  await expect(gmPage.getByTestId('player-destination-label')).toContainText('ルナ6c');
+  await expect(gmPage.getByText('(3, 2)', { exact: true })).toBeVisible();
+  await gmPage.getByRole('button', { name: '移動を確定して反映' }).click();
+  await expect
+    .poll(() => {
+      const t = db.select().from(board_tokens).where(eq(board_tokens.id, 'tok-luna-6c')).get();
+      return t ? `${t.x},${t.y}` : '';
+    })
+    .toBe('3,2');
+
+  // 移動したあとは「移動」もグレーになり、押すと理由が出る
+  await expect(phone.getByTestId('player-action-move')).toHaveAttribute('aria-disabled', 'true');
+  await phone.getByTestId('player-action-move').click({ force: true });
+  await expect(phone.getByTestId('player-action-blocked')).toContainText('「移動」はできません: 移動アクションは使用済みです');
+
+  await phoneContext.close();
+  await gmContext.close();
 });

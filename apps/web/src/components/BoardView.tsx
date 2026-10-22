@@ -42,6 +42,10 @@ export interface BoardViewProps {
   onUpdateFog?: (fog: { x: number; y: number }[]) => void;
   // 盤面の設定（背景マップ・マスの大きさ・マス数。Phase 5n）。渡すと GM に「盤面の設定」を出す
   onUpdateBoard?: (patch: { background_image_id?: string | null; grid?: Partial<BoardGrid> }) => void;
+  // プレイヤーのスマホ: 「移動」を選んだとき自分のコマだけ動かせる（Phase 6a）。落としたマスは onSelectDestination へ
+  ownTokenId?: string | null;
+  // 移動できるマス数（届かないマスで離したときの理由に出す）
+  moveLimit?: number;
   style?: React.CSSProperties;
   className?: string;
 }
@@ -69,6 +73,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
   onSelectParticipant,
   onUpdateFog,
   onUpdateBoard,
+  ownTokenId = null,
+  moveLimit,
   style,
   className = '',
 }) => {
@@ -235,10 +241,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
       if (!tok) return { valid: false, isMoveAction: false };
       const part = getParticipantForToken(tok);
       const isActiveTurnMove =
-        combat?.status === 'active' &&
-        mode === 'move' &&
-        Boolean(activeParticipantId) &&
-        part?.id === activeParticipantId;
+        (combat?.status === 'active' &&
+          mode === 'move' &&
+          Boolean(activeParticipantId) &&
+          part?.id === activeParticipantId) ||
+        (mode === 'move' && Boolean(ownTokenId) && tok.id === ownTokenId);
 
       if (isActiveTurnMove) {
         const inReach = Boolean(reachableCells?.has(`${cx},${cy}`));
@@ -247,7 +254,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
         }
         const charMove = (part?.character?.stats?.move ?? 6) - (part?.character?.armor_penalty ?? 0);
         const dying = (part?.character?.hp ?? 1) < 1;
-        const maxMoves = Math.max(1, dying ? charMove - 6 : charMove);
+        const maxMoves = moveLimit ?? Math.max(1, dying ? charMove - 6 : charMove);
         return {
           valid: false,
           isMoveAction: true,
@@ -277,7 +284,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
       return { valid: true, isMoveAction: false };
     },
-    [tokens, objects, combat?.status, mode, activeParticipantId, reachableCells, getParticipantForToken],
+    [tokens, objects, combat?.status, mode, activeParticipantId, reachableCells, getParticipantForToken, ownTokenId, moveLimit],
   );
 
   const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -319,8 +326,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
   };
 
   // Token drag handling in setup & active combat for GM (Phase 6a, Pointer Events)
+  // プレイヤーは「移動」を選んでいるときに自分のコマだけ
+  const canDragToken = (tokenId: string) =>
+    !isScreen && !isFogMode && (isGm || (mode === 'move' && Boolean(ownTokenId) && tokenId === ownTokenId));
   const handleTokenPointerDown = (tokenId: string, e: React.PointerEvent) => {
-    if (isScreen || !isGm || isFogMode) return;
+    if (!canDragToken(tokenId)) return;
     e.preventDefault();
     e.stopPropagation();
     const tok = tokens.find((t) => t.id === tokenId);
@@ -856,7 +866,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
             height: isScreen ? '100%' : undefined,
             display: 'block',
             cursor: mode === 'move' ? 'crosshair' : 'default',
-            touchAction: isGm && !isScreen ? 'none' : undefined,
+            touchAction: (isGm || ownTokenId) && !isScreen ? 'none' : undefined,
             userSelect: 'none',
             WebkitUserSelect: 'none',
           }}
@@ -1171,7 +1181,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                   data-character-id={tok.character_id || ''}
                   data-dragging={draggingTokenId === tok.id ? 'true' : undefined}
                   className={`token-group ${
-                    isGm && !isScreen ? 'cursor-move' : 'cursor-pointer'
+                    canDragToken(tok.id) ? 'cursor-move' : 'cursor-pointer'
                   }`}
                   onClick={(e) => {
                     e.stopPropagation();

@@ -95,6 +95,31 @@ export const WEAPON_NAME_ALIASES: Record<string, string> = {
   '超大型拳銃': 'ベリー・ヘビー・ピストル',
 };
 
+/** 武器のデータを品目 ID・日本語名・英語名から引く（Phase 6a で行動の可否の判定と共通化） */
+export function lookupWeaponData(db: AppDatabase, itemId?: string) {
+  if (!itemId) return null;
+  let w = db.select().from(weapons).where(eq(weapons.item_id, itemId)).get();
+  let it = db.select().from(items).where(eq(items.id, itemId)).get();
+  if (!w) {
+    const alias = WEAPON_NAME_ALIASES[itemId];
+    it =
+      db.select().from(items).where(eq(items.name_ja, itemId)).get() ||
+      db.select().from(items).where(eq(items.name_ja_override, itemId)).get() ||
+      db.select().from(items).where(eq(items.name_en, itemId)).get() ||
+      (alias ? db.select().from(items).where(eq(items.name_ja, alias)).get() : undefined) ||
+      (alias ? db.select().from(items).where(eq(items.name_en, alias)).get() : undefined);
+    if (it) {
+      w = db.select().from(weapons).where(eq(weapons.item_id, it.id)).get();
+    }
+  }
+  return w
+    ? {
+        ...w,
+        name_ja: it?.name_ja || it?.name_ja_override || it?.name_en || '武器',
+      }
+    : null;
+}
+
 const MOVE_ACTION_KEYS = ['move', 'take_cover'];
 
 // フルオート射撃・制圧射撃で使う弾数（日本語版 p.173・174）
@@ -230,6 +255,149 @@ function deathSavePenaltyOf(part: CombatParticipant): { base: number; added: num
   };
 }
 
+/**
+ * 行動を始める前に断る理由（Phase 6a）。解決の処理（resolveCombatAction）と、画面のグレー表示（listActionAvailability）の両方で使う。
+ * 対象や出目などの入力が足りないことは、ここでは理由にしない
+ */
+export function actionBlockReason(
+  actorPart: CombatParticipant,
+  actionKey: string,
+  opts: { subAction?: string } = {},
+): string | null {
+  const actorChar = actorPart.character;
+  if (!actorChar) return null;
+  const status = actorChar.status ?? [];
+  const st = (actorPart.state ?? {}) as Record<string, any>;
+  // 死亡・気絶のあいだは行動できない。死亡セーヴと、GM が与える環境ダメージは別（日本語版 p.186）
+  if (status.includes('dead') && !['hazard', 'hazard_end'].includes(actionKey)) {
+    return '死亡しています';
+  }
+  if (status.includes('気絶') && !['death_save', 'hazard', 'hazard_end', 'release'].includes(actionKey)) {
+    const left = Number(st.statusRounds?.['気絶'] ?? 0);
+    return `気絶しています${left > 0 ? `（あと ${left} ラウンド）` : ''}`;
+  }
+
+  // 使い切った移動アクション・アクションは使えない（Phase 5j）
+  const usesMove = MOVE_ACTION_KEYS.includes(actionKey);
+  // つかみを放すのはアクションなしでできる（p.177）
+  // 環境ダメージ（GM が与える）と、その終わり（火を消すときは中でアクションを使う）もアクションの残りに関係なく使える
+  // NET アクションのうち移動（descend）と安全でないジャックアウト（unsafe_jack_out）、およびブラック ICE の攻撃はアクション残りに関係なく使える（Phase 5z）
+  const isNetFreeSub = actionKey === 'net_action' && ['descend', 'unsafe_jack_out'].includes(opts.subAction ?? '');
+  const usesAction =
+    !usesMove &&
+    !['death_save', 'release', 'hazard', 'hazard_end', 'vehicle_exit', 'net_ice_attack'].includes(actionKey) &&
+    !isNetFreeSub;
+  const actorNet = st.net;
+  const isOngoingNetTurn = actionKey === 'net_action' && (actorNet?.net_used ?? 0) > 0;
+  const spent =
+    actorNet?.jacked_in && !hasVirtualityGoggles(actorChar as any) && (usesMove || actionKey === 'run')
+      ? 'ヴァーチャリティ・ゴーグルを着用していないため、ネットラン中は肉体を移動できません'
+      : (actorNet?.net_used ?? 0) > 0 && usesAction && actionKey !== 'net_action'
+        ? 'このターンはすでに NET アクションを使っているため、肉体のアクションは使えません'
+        : usesMove && actorPart.move_used
+          ? '移動アクションは使用済みです（もう一度動くなら「走る」でアクションを使います）'
+          : usesAction && actorPart.action_used && !isOngoingNetTurn
+            ? 'このターンのアクションは使い切っています（GM は「+1 アクション」で追加できます）'
+            : null;
+  if (spent) return spent;
+
+  // 伏せ状態では移動できない（先に立ち上がる）。つかまれているあいだも自分では移動できない（日本語版 p.169・177。Phase 5u）
+  // 始動したヴィークルの操縦者は「走る」ができない（p.192。Phase 5y）
+  if (['move', 'run', 'take_cover'].includes(actionKey)) {
+    const driving = Boolean(st.in_vehicle?.driver && st.in_vehicle?.started);
+    const msg = actionKey === 'run' && driving
+      ? 'ヴィークルを操縦しているあいだは「走る」ができません（p.192）'
+      : status.includes(PRONE) && !driving
+      ? '伏せ状態です。先に「立ち上がる」をしてください'
+      : st.grappled_by
+        ? 'つかまれているので移動できません（「つかむ」で逃れるか、相手が放すまで）'
+        : null;
+    if (msg) return msg;
+  }
+
+  // 走る（速足）は、この手番の移動アクションを使ったあとだけ（Phase 5m）
+  if (actionKey === 'run' && !actorPart.move_used) {
+    return '走るのは移動アクションを使ったあとだけです。先に「移動」をしてください';
+  }
+  return null;
+}
+
+/** 持ち物の中の予備の弾薬の位置。なければ −1（Phase 6a で行動の可否の判定と共通化） */
+export function findSpareAmmoIndex(db: AppDatabase, inventory: InventoryEntry[]): number {
+  return inventory.findIndex((i) => {
+    if (i.qty <= 0) return false;
+    if (i.kind === 'ammo') return true;
+    if (i.item_id) {
+      const it = db.select({ kind: items.kind }).from(items).where(eq(items.id, i.item_id)).get();
+      if (it?.kind === 'ammo') return true;
+    }
+    const itByName =
+      db.select({ kind: items.kind }).from(items).where(eq(items.name_ja, i.name)).get() ||
+      db.select({ kind: items.kind }).from(items).where(eq(items.name_en, i.name)).get();
+    return itByName?.kind === 'ammo';
+  });
+}
+
+/**
+ * 行動ごとの「今できるか・できない理由」の一覧（Phase 6a）。null ならできる。
+ * 画面で行動のボタンをグレーにして、押したときに理由を出すのに使う。理由は解決の処理が返すものと同じ文
+ * - 手番の前に断る理由（actionBlockReason）と NET アクションの理由（netActionBlockReason）
+ * - 持っている武器の弾（武器を選ぶ前なので、撃てる武器が 1 つもないときだけ断る）
+ */
+export function listActionAvailability(
+  db: AppDatabase,
+  actorPart: CombatParticipant,
+  actionKeys: string[],
+  netBlock: (p: CombatParticipant) => string | null,
+): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  const ch = actorPart.character;
+  const inv: InventoryEntry[] = ((ch?.inventory as InventoryEntry[]) || []).filter((i) => i.qty > 0);
+  const guns = inv
+    .map((i) => ({ entry: i, w: lookupWeaponData(db, i.item_id || i.name) }))
+    .filter((g): g is { entry: InventoryEntry; w: NonNullable<ReturnType<typeof lookupWeaponData>> } => Boolean(g.w?.is_ranged));
+  const ammoOf = (g: (typeof guns)[number]): number | null =>
+    typeof g.w.magazine_max === 'number' ? (typeof g.entry.ammo === 'number' ? g.entry.ammo : g.w.magazine_max) : null;
+  const bestAmmo = (list: typeof guns) => Math.max(...list.map((g) => ammoOf(g) ?? Infinity));
+
+  for (const key of actionKeys) {
+    let reason = actionBlockReason(actorPart, key);
+    if (!reason && key === 'net_action') reason = netBlock(actorPart);
+    if (!reason && ch) {
+      if (key === 'ranged' || key === 'aimed') {
+        reason = guns.length === 0
+          ? '射撃武器を持っていません'
+          : bestAmmo(guns) <= 0
+            ? '弾切れです。リロード（アクション 1 回）するか、別の武器・行動を選んでください'
+            : null;
+      } else if (key === 'autofire') {
+        const af = guns.filter((g) => typeof g.w.autofire === 'number' && g.w.autofire > 0);
+        reason = af.length === 0
+          ? 'フルオート射撃ができる武器を持っていません'
+          : bestAmmo(af) < AUTOFIRE_ROUNDS
+            ? `フルオート射撃は 10 発使います。弾倉の残りが 10 発未満なので撃てません (残弾 ${bestAmmo(af)})`
+            : null;
+      } else if (key === 'suppressive') {
+        const sp = guns.filter((g) => g.w.suppressive);
+        reason = sp.length === 0
+          ? '制圧射撃ができる武器を持っていません'
+          : bestAmmo(sp) < AUTOFIRE_ROUNDS
+            ? `制圧射撃は 10 発使います。弾倉の残りが 10 発未満なので撃てません (残弾 ${bestAmmo(sp)})`
+            : null;
+      } else if (key === 'reload') {
+        const reloadable = guns.filter((g) => typeof g.w.magazine_max === 'number');
+        reason = reloadable.length === 0
+          ? 'リロードする武器を持っていません'
+          : findSpareAmmoIndex(db, inv) < 0
+            ? '予備の弾薬がありません'
+            : null;
+      }
+    }
+    out[key] = reason;
+  }
+  return out;
+}
+
 function resolveCombatActionInner(
   db: AppDatabase,
   input: ResolveInput,
@@ -252,38 +420,18 @@ function resolveCombatActionInner(
     throw new Error(`Actor character data missing for participant ${actorPart.id}`);
   }
 
-  // 使い切った移動アクション・アクションは使えない（Phase 5j）
-  const usesMove = MOVE_ACTION_KEYS.includes(input.action_key);
-  // つかみを放すのはアクションなしでできる（p.177）
-  // 環境ダメージ（GM が与える）と、その終わり（火を消すときは中でアクションを使う）もアクションの残りに関係なく使える
-  // NET アクションのうち移動（descend）と安全でないジャックアウト（unsafe_jack_out）、およびブラック ICE の攻撃はアクション残りに関係なく使える（Phase 5z）
-  const isNetFreeSub = input.action_key === 'net_action' && ['descend', 'unsafe_jack_out'].includes(input.net?.sub_action ?? '');
-  const usesAction =
-    !usesMove &&
-    !['death_save', 'release', 'hazard', 'hazard_end', 'vehicle_exit', 'net_ice_attack'].includes(input.action_key) &&
-    !isNetFreeSub;
-  const actorNet = (actorPart.state as any)?.net;
-  const isOngoingNetTurn = input.action_key === 'net_action' && (actorNet?.net_used ?? 0) > 0;
-  const spent =
-    actorNet?.jacked_in && !hasVirtualityGoggles(actorChar as any) && (usesMove || input.action_key === 'run')
-      ? 'ヴァーチャリティ・ゴーグルを着用していないため、ネットラン中は肉体を移動できません'
-      : (actorNet?.net_used ?? 0) > 0 && usesAction && input.action_key !== 'net_action'
-        ? 'このターンはすでに NET アクションを使っているため、肉体のアクションは使えません'
-        : usesMove && actorPart.move_used
-          ? '移動アクションは使用済みです（もう一度動くなら「走る」でアクションを使います）'
-          : usesAction && actorPart.action_used && !isOngoingNetTurn
-            ? 'このターンのアクションは使い切っています（GM は「+1 アクション」で追加できます）'
-            : null;
-  if (spent) {
+  // 手番の前に断る理由（使い切ったアクション・気絶・伏せなど）。画面のグレー表示と同じ判定（Phase 6a）
+  const blocked = actionBlockReason(actorPart, input.action_key, { subAction: input.net?.sub_action });
+  if (blocked) {
     return {
       action_key: input.action_key,
       actor_id: actorPart.id,
       actor_name: actorPart.name,
       success: false,
-      formula: spent,
+      formula: blocked,
       breakdown: {},
       changes: [],
-      missing_inputs: [spent],
+      missing_inputs: [blocked],
     };
   }
 
@@ -350,36 +498,6 @@ function resolveCombatActionInner(
       ? `（MOVE ${actorChar.stats.move}${actorArmorPen ? ` − 防具 ${actorArmorPen}` : ''}${actorWound === 'mortally' ? ' − 瀕死 6' : ''}）`
       : '';
 
-  // 伏せ状態では移動できない（先に立ち上がる）。つかまれているあいだも自分では移動できない（日本語版 p.169・177。Phase 5u）
-  if (['move', 'run', 'take_cover'].includes(input.action_key)) {
-    const st = actorChar.status ?? [];
-    const msg = input.action_key === 'run' && drivenVehicle
-      ? 'ヴィークルを操縦しているあいだは「走る」ができません（p.192）'
-      : st.includes(PRONE) && !drivenVehicle
-      ? '伏せ状態です。先に「立ち上がる」をしてください'
-      : (actorPart.state as Record<string, unknown> | undefined)?.grappled_by
-        ? 'つかまれているので移動できません（「つかむ」で逃れるか、相手が放すまで）'
-        : null;
-    if (msg) {
-      return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: msg, breakdown: {}, changes: [], missing_inputs: [msg] };
-    }
-  }
-
-  // 走る（速足）は、この手番の移動アクションを使ったあとだけ（Phase 5m）
-  if (input.action_key === 'run' && !actorPart.move_used) {
-    const msg = '走るのは移動アクションを使ったあとだけです。先に「移動」をしてください';
-    return {
-      action_key: 'run',
-      actor_id: actorPart.id,
-      actor_name: actorPart.name,
-      success: false,
-      formula: msg,
-      breakdown: {},
-      changes: [],
-      missing_inputs: [msg],
-    };
-  }
-
   const rules = {
     ...DEFAULT_RULES,
     diagonalRule: (combatSettings?.diagonalRule as 'chebyshev' | 'alternate') || 'chebyshev',
@@ -421,29 +539,7 @@ function resolveCombatActionInner(
   };
 
   // Helper to load weapon data
-  const getWeaponData = (itemId?: string) => {
-    if (!itemId) return null;
-    let w = db.select().from(weapons).where(eq(weapons.item_id, itemId)).get();
-    let it = db.select().from(items).where(eq(items.id, itemId)).get();
-    if (!w) {
-      const alias = WEAPON_NAME_ALIASES[itemId];
-      it =
-        db.select().from(items).where(eq(items.name_ja, itemId)).get() ||
-        db.select().from(items).where(eq(items.name_ja_override, itemId)).get() ||
-        db.select().from(items).where(eq(items.name_en, itemId)).get() ||
-        (alias ? db.select().from(items).where(eq(items.name_ja, alias)).get() : undefined) ||
-        (alias ? db.select().from(items).where(eq(items.name_en, alias)).get() : undefined);
-      if (it) {
-        w = db.select().from(weapons).where(eq(weapons.item_id, it.id)).get();
-      }
-    }
-    return w
-      ? {
-          ...w,
-          name_ja: it?.name_ja || it?.name_ja_override || it?.name_en || '武器',
-        }
-      : null;
-  };
+  const getWeaponData = (itemId?: string) => lookupWeaponData(db, itemId);
 
   // Helper for board movement verification
   const resolveBoardMovement = (actionKey: 'move' | 'run'): { error?: string; change?: CombatChange } => {
@@ -756,18 +852,7 @@ function resolveCombatActionInner(
     const newInventory = [...actorInventory];
 
     // Find spare ammo in inventory with kind === 'ammo'
-    const ammoItemIdx = newInventory.findIndex((i) => {
-      if (i.qty <= 0) return false;
-      if (i.kind === 'ammo') return true;
-      if (i.item_id) {
-        const it = db.select({ kind: items.kind }).from(items).where(eq(items.id, i.item_id)).get();
-        if (it?.kind === 'ammo') return true;
-      }
-      const itByName =
-        db.select({ kind: items.kind }).from(items).where(eq(items.name_ja, i.name)).get() ||
-        db.select({ kind: items.kind }).from(items).where(eq(items.name_en, i.name)).get();
-      return itByName?.kind === 'ammo';
-    });
+    const ammoItemIdx = findSpareAmmoIndex(db, newInventory);
 
     if (ammoItemIdx < 0) {
       return {

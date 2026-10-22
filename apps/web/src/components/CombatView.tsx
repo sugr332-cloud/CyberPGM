@@ -41,6 +41,7 @@ import {
 import { BoardView } from './BoardView.js';
 import { ItemDetailPopup } from './ItemDetail.js';
 import { JoinCombatDialog } from './JoinCombatDialog.js';
+import { useActionAvailability, blockedButtonStyle } from '../hooks/useActionAvailability.js';
 
 interface CombatViewProps {
   characters: CharacterSheet[];
@@ -82,6 +83,13 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [itemPopup, setItemPopup] = useState<{ name: string; itemId?: string | null } | null>(null);
   const openItemPopup = (name: string, itemId?: string | null) => setItemPopup({ name, itemId });
   const activePart = combat?.participants?.[combat.turn_index];
+  // 行動ごとの「今できるか・できない理由」（Phase 6a）。戦闘が変わるたびに読み直す
+  const { blockedMessage } = useActionAvailability({
+    enabled: combat?.status === 'active' && Boolean(activePart),
+    token,
+    participantId: activePart?.id ?? null,
+    refreshKey: combat,
+  });
   const [actions, setActions] = useState<CombatActionDef[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -98,6 +106,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
   // Board Interaction & Movements
   const [destination, setDestination] = useState<{ x: number; y: number } | null>(null);
+  // スマホのマップでプレイヤーが選んだ移動先なら、その人の名前（Phase 6a）
+  const [destinationFrom, setDestinationFrom] = useState<string | null>(null);
+  // できない行動のボタンを押したときの理由（Phase 6a）
+  const [blockedActionMsg, setBlockedActionMsg] = useState<string | null>(null);
   const [forceMove, setForceMove] = useState<boolean>(false);
 
   // Line of Sight & Cover State
@@ -592,8 +604,14 @@ export const CombatView: React.FC<CombatViewProps> = ({
       refreshCombat();
     } else if (wsMessage.type === 'combat:choose') {
       // Player selected an action
-      const { action_key, weapon_id, target_id, distance_m, aimed_location } = wsMessage.payload;
+      const { action_key, weapon_id, target_id, distance_m, aimed_location, destination: dest, from_player_map } = wsMessage.payload;
       if (action_key) setSelectedActionKey(action_key);
+      // スマホのマップで選んだ移動先（Phase 6a）。サーバーで本人・手番・届くマスを確かめ済み。確定は GM
+      if (from_player_map && dest && typeof dest.x === 'number' && typeof dest.y === 'number') {
+        setDestination({ x: dest.x, y: dest.y });
+        const fromPart = combat?.participants.find((p) => p.character_id === wsMessage.payload.character_id);
+        setDestinationFrom(fromPart?.name ?? 'プレイヤー');
+      }
       if (weapon_id) setSelectedWeaponId(weapon_id);
       if (target_id) setTargetParticipantId(target_id);
       if (distance_m) setDistanceM(distance_m);
@@ -1059,6 +1077,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         refreshNetArchs();
       }
       setDestination(null);
+      setDestinationFrom(null);
       setHitCover(false);
       setCoverDamageInput('');
       setPickupDropId(null);
@@ -1091,6 +1110,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       setCombat(res.combat);
       if (combat.board_id) refreshBoard(combat.board_id);
       setDestination(null);
+      setDestinationFrom(null);
       setSelectedActionKey(null);
       onRefreshCharacters();
     } catch (err: any) {
@@ -1920,7 +1940,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
             mode={selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}
             reachableCells={reachableCells}
             destination={destination}
-            onSelectDestination={(dest) => setDestination(dest)}
+            onSelectDestination={(dest) => {
+              setDestination(dest);
+              setDestinationFrom(null);
+            }}
             losLine={
               losInfo
                 ? {
@@ -2124,14 +2147,25 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {actions.map((act) => {
                     const isSelected = selectedActionKey === act.key;
+                    const blocked = blockedMessage(act.key, act.label);
                     return (
                       <button
                         key={act.key}
+                        data-testid={`action-btn-${act.key}`}
+                        aria-disabled={blocked ? 'true' : undefined}
+                        title={blocked ?? undefined}
                         onClick={() => {
+                          // できない行動は選ばずに理由を出す（Phase 6a）
+                          if (blocked) {
+                            setBlockedActionMsg(blocked);
+                            return;
+                          }
+                          setBlockedActionMsg(null);
                           setSelectedActionKey(act.key);
                           setPreviewResult(null);
                         }}
                         style={{
+                          ...(blocked ? blockedButtonStyle : {}),
                           backgroundColor: isSelected ? 'var(--color-ally)' : 'var(--color-surface-elevated)',
                           color: isSelected ? '#000' : 'var(--color-text)',
                           border: isSelected ? 'none' : '1px solid var(--color-border-light)',
@@ -2139,7 +2173,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           borderRadius: '4px',
                           fontSize: '0.85rem',
                           fontWeight: isSelected ? 800 : 500,
-                          cursor: 'pointer',
+                          cursor: blocked ? 'not-allowed' : 'pointer',
                         }}
                       >
                         {act.label}
@@ -2147,6 +2181,34 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     );
                   })}
                 </div>
+                {blockedActionMsg && (
+                  <div
+                    data-testid="action-blocked-message"
+                    role="alert"
+                    style={{
+                      marginTop: '8px',
+                      padding: '8px 10px',
+                      border: '1px solid var(--color-enemy)',
+                      borderRadius: '4px',
+                      color: 'var(--color-enemy)',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
+                  >
+                    <span>{blockedActionMsg}</span>
+                    <button
+                      type="button"
+                      aria-label="閉じる"
+                      onClick={() => setBlockedActionMsg(null)}
+                      style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Action Guide Details */}
@@ -2198,6 +2260,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.9rem' }}>
                         <span>
                           移動先: <strong>{destination ? `(${destination.x}, ${destination.y})` : '未選択'}</strong>
+                          {destination && destinationFrom && (
+                            <span data-testid="player-destination-label" style={{ marginLeft: '6px', color: 'var(--color-ally)', fontSize: '0.8rem' }}>
+                              （プレイヤーが選んだ移動先: {destinationFrom}）
+                            </span>
+                          )}
                         </span>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.85rem' }}>
                           <input

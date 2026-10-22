@@ -46,6 +46,31 @@ export function interfaceRankOf(ch: { role: string; extra?: Record<string, any>;
   return Number(ch.extra?.role_ranks?.Netrunner ?? ch.skills?.interface ?? ch.skills?.Interface ?? 0);
 }
 
+/**
+ * NET アクションを断る理由（Phase 6a）。解決の処理と、画面のグレー表示の両方で使う
+ */
+export function netActionBlockReason(actorPart: CombatParticipant, sub?: string): string | null {
+  const actorChar = actorPart.character;
+  if (!actorChar) return null;
+  const rank = interfaceRankOf(actorChar);
+  if (rank < 1) {
+    return '《インタフェース》（ネットランナーのロール特技）がランク 1 以上必要です';
+  }
+  const curNet = defaultNetState((actorPart.state as any)?.net);
+  const maxNet = netActionsForRank(rank, Boolean(curNet.slowed));
+  // 肉体アクションを既に使っていたら NET アクションは使えない（安全でないジャックアウトを除く）
+  const meatActionsTaken = Number(((actorPart.state ?? {}) as Record<string, unknown>).actions_taken ?? 0);
+  if (sub !== 'unsafe_jack_out' && meatActionsTaken > 0 && curNet.net_used === 0) {
+    return 'このターンは既に肉体のアクションを使用しているため、NET アクションは使えません';
+  }
+  // 階層移動と安全でないジャックアウトは回数を使わない。sub を決める前（画面の一覧）は回数だけで判断する
+  const usesNetAction = !['descend', 'unsafe_jack_out'].includes(sub ?? '');
+  if (usesNetAction && curNet.net_used >= maxNet) {
+    return `このターンの NET アクション（最大 ${maxNet} 回）はすべて使い切っています`;
+  }
+  return null;
+}
+
 export function defaultNetState(cur?: Partial<NetRunState> | null): NetRunState {
   return {
     arch_id: cur?.arch_id ?? null,
@@ -831,26 +856,14 @@ export function resolveNetCombatAction(
 
   // ── 3. NET アクション（net_action） ──
   const sub: string = input.net?.sub_action || 'pathfinder';
+  const blocked = netActionBlockReason(actorPart, sub);
+  if (blocked) return fail(blocked);
   const rank = interfaceRankOf(actorChar);
-  if (rank < 1) {
-    return fail('《インタフェース》（ネットランナーのロール特技）がランク 1 以上必要です');
-  }
 
   const actorCtx = makeTargetContext(actorPart);
   const curNet = actorCtx.net;
   const maxNet = netActionsForRank(rank, Boolean(curNet.slowed));
-
-  // 肉体アクションを既に使っていたら NET アクションは使えない（安全でないジャックアウトを除く）
-  const actorSt = (actorPart.state ?? {}) as Record<string, unknown>;
-  const meatActionsTaken = Number(actorSt.actions_taken ?? 0);
-  if (sub !== 'unsafe_jack_out' && meatActionsTaken > 0 && curNet.net_used === 0) {
-    return fail('このターンは既に肉体のアクションを使用しているため、NET アクションは使えません');
-  }
-
   const usesNetAction = !['descend', 'unsafe_jack_out'].includes(sub);
-  if (usesNetAction && curNet.net_used >= maxNet) {
-    return fail(`このターンの NET アクション（最大 ${maxNet} 回）はすべて使い切っています`);
-  }
 
   const getArch = (archId?: string | null): NetArchitecture | null => {
     const id = archId || input.net?.arch_id || curNet.arch_id;

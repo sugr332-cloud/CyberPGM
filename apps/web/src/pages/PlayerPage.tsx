@@ -26,6 +26,8 @@ import { PlayerEquipmentView } from '../components/PlayerEquipmentView.js';
 import { PlayerSkillsView } from '../components/PlayerSkillsView.js';
 import { PlayerShopView } from '../components/PlayerShopView.js';
 import { PlayerActionSkills } from '../components/PlayerActionSkills.js';
+import { PlayerMoveMap, type PlayerMoveResult } from '../components/PlayerMoveMap.js';
+import { useActionAvailability, blockedButtonStyle } from '../hooks/useActionAvailability.js';
 import '../player-theme.css';
 
 export const PlayerPage: React.FC = () => {
@@ -96,6 +98,23 @@ export const PlayerPage: React.FC = () => {
 
   // Combat state for player
   const [currentCombat, setCurrentCombat] = useState<any | null>(null);
+  // 行動ごとの「今できるか・できない理由」（Phase 6a）。できない行動のボタンはグレーにし、押したら理由を出す
+  const { reasons: actionReasons, blockedMessage } = useActionAvailability({
+    enabled: Boolean(token && currentCombat?.status === 'active'),
+    token,
+    refreshKey: currentCombat,
+  });
+  const [actionBlockedMsg, setActionBlockedMsg] = useState<string | null>(null);
+  /** clientReason: 画面で選んでいる武器などによる理由（サーバーに聞く前にわかるもの） */
+  const actionBlocked = (key: string, clientReason: string | null) => Boolean(clientReason || actionReasons[key]);
+  const guardAction = (key: string, label: string, clientReason: string | null): boolean => {
+    const msg = clientReason ? `「${label}」はできません: ${clientReason}` : blockedMessage(key, label);
+    setActionBlockedMsg(msg);
+    return Boolean(msg);
+  };
+  // 「移動」「走る」を押したときのマップ（Phase 6a）
+  const [moveMapAction, setMoveMapAction] = useState<'move' | 'run' | null>(null);
+  const [moveResult, setMoveResult] = useState<PlayerMoveResult | null>(null);
   const [combatTurnInfo, setCombatTurnInfo] = useState<{
     combat_id: string;
     round: number;
@@ -175,6 +194,9 @@ export const PlayerPage: React.FC = () => {
       setSheet(payload as CharacterSheet);
     } else if (type === 'player-shop:update' || type === 'purchase-request:update') {
       setShopRefreshKey((k) => k + 1);
+    } else if (type === 'combat:move_result') {
+      // スマホのマップで選んだ移動先の結果（Phase 6a）
+      setMoveResult(payload as PlayerMoveResult);
     } else if (type === 'combat:changed') {
       // 戦闘の準備・HP・参加者の変化（Phase 5l）
       api.getCurrentCombat(token).then((res) => setCurrentCombat(res.combat)).catch(() => {});
@@ -2192,14 +2214,40 @@ export const PlayerPage: React.FC = () => {
                       </div>
                     )}
 
+                    {actionBlockedMsg && (
+                      <div
+                        data-testid="player-action-blocked"
+                        role="alert"
+                        style={{ padding: '8px 10px', border: '1px solid var(--color-enemy)', borderRadius: '6px', color: 'var(--color-enemy)', fontSize: '0.85rem', fontWeight: 600, display: 'flex', justifyContent: 'space-between', gap: '8px' }}
+                      >
+                        <span>{actionBlockedMsg}</span>
+                        <button type="button" aria-label="閉じる" onClick={() => setActionBlockedMsg(null)} style={{ background: 'none', border: 'none', color: 'inherit' }}>
+                          ✕
+                        </button>
+                      </div>
+                    )}
+                    {isMyTurn && moveMapAction && token && (
+                      <PlayerMoveMap
+                        token={token}
+                        actionKey={moveMapAction}
+                        refreshKey={currentCombat}
+                        result={moveResult}
+                        onSend={(dest) => sendMessage({ type: 'combat:move', payload: { action_key: moveMapAction, x: dest.x, y: dest.y } })}
+                        onClose={() => setMoveMapAction(null)}
+                      />
+                    )}
                     {isMyTurn && (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <button
+                        <button data-testid="player-action-move" aria-disabled={actionBlocked('move', null) ? 'true' : undefined}
                           onClick={() => {
+                            if (guardAction('move', '移動', null)) return;
+                            setMoveMapAction('move');
+                            setMoveResult(null);
                             setChosenActionLabel('移動');
                             sendMessage({ type: 'combat:choose', payload: { action_key: 'move' } });
                           }}
                           style={{
+                              ...(actionBlocked('move', null) ? blockedButtonStyle : {}),
                             padding: '12px 10px',
                             backgroundColor: 'var(--color-surface)',
                             border: '1px solid var(--color-border-light)',
@@ -2215,9 +2263,9 @@ export const PlayerPage: React.FC = () => {
                           </div>
                         </button>
 
-                        <button
-                          disabled={!rangedWeapon}
+                        <button data-testid="player-action-ranged" aria-disabled={actionBlocked('ranged', !rangedWeapon ? '射撃武器を選んでください' : null) ? 'true' : undefined}
                           onClick={() => {
+                            if (guardAction('ranged', '射撃', !rangedWeapon ? '射撃武器を選んでください' : null)) return;
                             setChosenActionLabel('射撃');
                             setPadRollType('attack');
                             setShowDicePad(true);
@@ -2227,6 +2275,7 @@ export const PlayerPage: React.FC = () => {
                             sendMessage({ type: 'combat:choose', payload: { action_key: 'ranged', target_id: attackTargetId ?? undefined, weapon_id: weaponId } });
                           }}
                           style={{
+                              ...(actionBlocked('ranged', !rangedWeapon ? '射撃武器を選んでください' : null) ? blockedButtonStyle : {}),
                             padding: '12px 10px',
                             backgroundColor: 'var(--color-surface)',
                             border: '1px solid var(--color-border-light)',
@@ -2250,9 +2299,9 @@ export const PlayerPage: React.FC = () => {
                           {rangedWeapon && bandsText('ranged')}
                         </button>
 
-                        <button
-                          disabled={!rangedWeapon}
+                        <button data-testid="player-action-aimed" aria-disabled={actionBlocked('aimed', !rangedWeapon ? '射撃武器を選んでください' : null) ? 'true' : undefined}
                           onClick={() => {
+                            if (guardAction('aimed', '照準射撃', !rangedWeapon ? '射撃武器を選んでください' : null)) return;
                             setChosenActionLabel('照準射撃');
                             setPadRollType('attack');
                             setShowDicePad(true);
@@ -2262,6 +2311,7 @@ export const PlayerPage: React.FC = () => {
                             sendMessage({ type: 'combat:choose', payload: { action_key: 'aimed', target_id: attackTargetId ?? undefined, weapon_id: weaponId } });
                           }}
                           style={{
+                              ...(actionBlocked('aimed', !rangedWeapon ? '射撃武器を選んでください' : null) ? blockedButtonStyle : {}),
                             padding: '12px 10px',
                             backgroundColor: 'var(--color-surface)',
                             border: '1px solid var(--color-border-light)',
@@ -2278,9 +2328,9 @@ export const PlayerPage: React.FC = () => {
                           {rangedWeapon && bandsText('aimed')}
                         </button>
 
-                        <button
-                          disabled={!canAutofire}
+                        <button data-testid="player-action-autofire" aria-disabled={actionBlocked('autofire', !canAutofire ? 'この武器ではフルオート射撃ができません' : null) ? 'true' : undefined}
                           onClick={() => {
+                            if (guardAction('autofire', 'フルオート射撃', !canAutofire ? 'この武器ではフルオート射撃ができません' : null)) return;
                             setChosenActionLabel('フルオート射撃');
                             setPadRollType('attack');
                             setShowDicePad(true);
@@ -2290,6 +2340,7 @@ export const PlayerPage: React.FC = () => {
                             sendMessage({ type: 'combat:choose', payload: { action_key: 'autofire', target_id: attackTargetId ?? undefined, weapon_id: weaponId } });
                           }}
                           style={{
+                              ...(actionBlocked('autofire', !canAutofire ? 'この武器ではフルオート射撃ができません' : null) ? blockedButtonStyle : {}),
                             padding: '12px 10px',
                             backgroundColor: 'var(--color-surface)',
                             border: '1px solid var(--color-border-light)',
@@ -2307,8 +2358,9 @@ export const PlayerPage: React.FC = () => {
                           </div>
                         </button>
 
-                        <button
+                        <button aria-disabled={actionBlocked(meleeWeapon ? 'melee' : 'brawl', null) ? 'true' : undefined}
                           onClick={() => {
+                            if (guardAction(meleeWeapon ? 'melee' : 'brawl', meleeWeapon ? '近接攻撃' : '格闘', null)) return;
                             setChosenActionLabel(meleeWeapon ? '近接攻撃' : '格闘');
                             setPadRollType('attack');
                             setShowDicePad(true);
@@ -2318,6 +2370,7 @@ export const PlayerPage: React.FC = () => {
                             sendMessage({ type: 'combat:choose', payload: { action_key: meleeWeapon ? 'melee' : 'brawl', target_id: attackTargetId ?? undefined, weapon_id: meleeWeapon ? weaponId : undefined } });
                           }}
                           style={{
+                              ...(actionBlocked(meleeWeapon ? 'melee' : 'brawl', null) ? blockedButtonStyle : {}),
                             padding: '12px 10px',
                             backgroundColor: 'var(--color-surface)',
                             border: '1px solid var(--color-border-light)',
@@ -2342,9 +2395,10 @@ export const PlayerPage: React.FC = () => {
                             .sort((a, b) => b[1] - a[1])[0];
                           if (!style) return null;
                           return (
-                            <button
+                            <button aria-disabled={actionBlocked('martial_arts', null) ? 'true' : undefined}
                               data-testid="martial-arts-button"
                               onClick={() => {
+                                if (guardAction('martial_arts', '武術攻撃', null)) return;
                                 setChosenActionLabel('武術攻撃');
                                 setPadRollType('attack');
                                 setShowDicePad(true);
@@ -2353,7 +2407,8 @@ export const PlayerPage: React.FC = () => {
                                 setNeedsExtraRoll(false);
                                 sendMessage({ type: 'combat:choose', payload: { action_key: 'martial_arts', target_id: attackTargetId ?? undefined } });
                               }}
-                              style={{ padding: '12px 10px', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-light)', borderRadius: '6px', color: 'var(--color-text)', textAlign: 'left', cursor: 'pointer' }}
+                              style={{
+                                  ...(actionBlocked('martial_arts', null) ? blockedButtonStyle : {}), padding: '12px 10px', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-light)', borderRadius: '6px', color: 'var(--color-text)', textAlign: 'left', cursor: 'pointer' }}
                             >
                               <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>武術攻撃</div>
                               <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
@@ -2364,13 +2419,14 @@ export const PlayerPage: React.FC = () => {
                           );
                         })()}
 
-                        <button
-                          disabled={!rangedWeapon}
+                        <button data-testid="player-action-reload" aria-disabled={actionBlocked('reload', !rangedWeapon ? 'リロードする射撃武器を選んでください' : null) ? 'true' : undefined}
                           onClick={() => {
+                            if (guardAction('reload', 'リロード', !rangedWeapon ? 'リロードする射撃武器を選んでください' : null)) return;
                             setChosenActionLabel('リロード');
                             sendMessage({ type: 'combat:choose', payload: { action_key: 'reload' } });
                           }}
                           style={{
+                              ...(actionBlocked('reload', !rangedWeapon ? 'リロードする射撃武器を選んでください' : null) ? blockedButtonStyle : {}),
                             padding: '12px 10px',
                             backgroundColor: 'var(--color-surface)',
                             border: '1px solid var(--color-border-light)',
@@ -2386,12 +2442,16 @@ export const PlayerPage: React.FC = () => {
                           </div>
                         </button>
 
-                        <button
+                        <button data-testid="player-action-run" aria-disabled={actionBlocked('run', null) ? 'true' : undefined}
                           onClick={() => {
+                            if (guardAction('run', '走る', null)) return;
+                            setMoveMapAction('run');
+                            setMoveResult(null);
                             setChosenActionLabel('走る');
                             sendMessage({ type: 'combat:choose', payload: { action_key: 'run' } });
                           }}
                           style={{
+                              ...(actionBlocked('run', null) ? blockedButtonStyle : {}),
                             padding: '12px 10px',
                             backgroundColor: 'var(--color-surface)',
                             border: '1px solid var(--color-border-light)',
@@ -2408,9 +2468,10 @@ export const PlayerPage: React.FC = () => {
                         </button>
 
                         {netrunnerRank > 0 && (
-                          <button
+                          <button aria-disabled={actionBlocked('net_action', null) ? 'true' : undefined}
                             data-testid="player-net-action-btn"
                             onClick={() => {
+                              if (guardAction('net_action', 'NET アクション', null)) return;
                               setChosenActionLabel('NET アクション');
                               setPadRollType('attack');
                               setShowDicePad(true);
@@ -2420,6 +2481,7 @@ export const PlayerPage: React.FC = () => {
                               sendMessage({ type: 'combat:choose', payload: { action_key: 'net_action', target_id: attackTargetId ?? undefined } });
                             }}
                             style={{
+                                ...(actionBlocked('net_action', null) ? blockedButtonStyle : {}),
                               padding: '12px 10px',
                               backgroundColor: 'var(--color-surface)',
                               border: '1px solid var(--color-ally)',
@@ -2437,8 +2499,9 @@ export const PlayerPage: React.FC = () => {
                         )}
 
                         {sheet.woundState === 'mortally' && (
-                          <button
+                          <button data-testid="player-action-death_save" aria-disabled={actionBlocked('death_save', null) ? 'true' : undefined}
                             onClick={() => {
+                              if (guardAction('death_save', '死亡セーブ', null)) return;
                               setChosenActionLabel('死亡セーブ');
                               setPadRollType('death_save'); // GM の死亡セーブ欄に入る（Phase 5l。前は回避の欄に入っていた）
                               setShowDicePad(true);
@@ -2448,6 +2511,7 @@ export const PlayerPage: React.FC = () => {
                               sendMessage({ type: 'combat:choose', payload: { action_key: 'death_save' } });
                             }}
                             style={{
+                                ...(actionBlocked('death_save', null) ? blockedButtonStyle : {}),
                               padding: '12px 10px',
                               backgroundColor: 'rgba(235, 75, 75, 0.2)',
                               border: '1px solid var(--color-danger)',
@@ -2469,8 +2533,9 @@ export const PlayerPage: React.FC = () => {
 
                     {/* Dodge Button (always accessible) */}
                     <div style={{ marginTop: '8px' }}>
-                      <button
+                      <button data-testid="player-action-dodge" aria-disabled={actionBlocked('dodge', null) ? 'true' : undefined}
                         onClick={() => {
+                          if (guardAction('dodge', '回避', null)) return;
                           setChosenActionLabel('回避');
                           setPadRollType('defense');
                           setShowDicePad(true);
@@ -2480,6 +2545,7 @@ export const PlayerPage: React.FC = () => {
                           sendMessage({ type: 'combat:choose', payload: { action_key: 'dodge' } });
                         }}
                         style={{
+                            ...(actionBlocked('dodge', null) ? blockedButtonStyle : {}),
                           width: '100%',
                           padding: '12px',
                           backgroundColor: 'var(--color-surface)',
