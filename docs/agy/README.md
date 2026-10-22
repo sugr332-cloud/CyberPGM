@@ -17,10 +17,10 @@ Claude（仕様・指示書・レビュー担当）と agy（実装担当）が�
 LivingPC で、リポジトリのルートから次のように起動する。シェルの `agy` エイリアスには `--dangerously-skip-permissions` が付いているので、`command agy` でエイリアスを回避する。
 
 ```
-command agy --mode accept-edits --model gemini-3.8-flash-high
+command agy --mode accept-edits --model gemini-4-argon-high
 ```
 
-起動前に `agy models` を確認し、より新しい `gemini-*-flash-high` があればそれを使う。`claude-*` モデルは使わない。
+2026-10-22 から実装は Gemini 4 Argon（High）が行い、Claude は指示と監査だけ（ユーザー決定）。`claude-*` モデルは使わない。
 
 ## agy が止まる場面（この 3 つだけ）
 
