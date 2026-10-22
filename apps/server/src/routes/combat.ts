@@ -15,6 +15,7 @@ import {
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
 import { formatCharacterRow, maskAmmoForPlayer, effectiveForChecks } from '../character-helper.js';
+import { loadRoleData } from './character-creation.js';
 import {
   CreateCombatInputSchema,
   AddParticipantInputSchema,
@@ -29,6 +30,7 @@ import {
   CombatChange,
   skillNameToKey,
   burnDamage,
+  soloEffects,
 } from '@cyberpgm/shared';
 import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES } from '../services/combat-resolver.js';
 import { woundState, initiativeTotal, resolveDamage } from '@cyberpgm/rules';
@@ -121,8 +123,8 @@ export function getHydratedCombat(combatId: string): Combat | null {
           role: formatted.role,
           image_path: formatted.image_path,
           // 判定にはドラッグ・依存症の修正を入れた値を使う（Phase 5w）
-          stats: effectiveForChecks(formatted.stats, formatted.skills, formatted.extra).stats,
-          skills: effectiveForChecks(formatted.stats, formatted.skills, formatted.extra).skills,
+          stats: effectiveForChecks(formatted.stats, formatted.skills, formatted.extra, formatted.role).stats,
+          skills: effectiveForChecks(formatted.stats, formatted.skills, formatted.extra, formatted.role).skills,
           hp: formatted.hp,
           hp_max: formatted.hp_max,
           sp_head: formatted.sp_head,
@@ -609,7 +611,7 @@ combatRoutes.post('/combats/:id/join', requireGm, async (c) => {
 
     added.forEach((p, i) => {
       const ch = p.character_id ? db.select().from(characters).where(eq(characters.id, p.character_id)).get() : null;
-      const ref = ch ? (JSON.parse(ch.stats).ref as number) : 0;
+      const ref = ch ? (JSON.parse(ch.stats).ref as number) + soloEffects(ch.role, JSON.parse(ch.extra || '{}')).initiative : 0;
       const given = rolls[i];
       const first = given?.first ?? roll();
       let extra = given?.extra;
@@ -1148,7 +1150,8 @@ combatRoutes.post('/combats/:id/resolve', requireGm, async (c) => {
     ? combat.participants.find((p) => p.id === targetId)
     : undefined;
 
-  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants, combat.board_id, combat.settings);
+  // ラウンドも渡す（ソロのダメージ軽減・弱点看破は各ラウンドの最初の 1 回。Phase 5x）
+  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants, combat.board_id, { ...combat.settings, __round: combat.round });
   return c.json({ result });
 });
 
@@ -1176,7 +1179,8 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
     : undefined;
 
   // Re-resolve calculation on server
-  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants, combat.board_id, combat.settings);
+  // ラウンドも渡す（ソロのダメージ軽減・弱点看破は各ラウンドの最初の 1 回。Phase 5x）
+  const result = resolveCombatAction(db, parsed.data, actor, target, combat.participants, combat.board_id, { ...combat.settings, __round: combat.round });
   if (result.missing_inputs?.length && result.changes.length === 0) {
     return c.json({ error: result.missing_inputs.join(' / '), result }, 400);
   }
@@ -1569,4 +1573,95 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
   }
 
   return c.json({ success: true, undoneLogId: latestLog.id, combat: updatedCombat });
+});
+
+/**
+ * 支援要員・トラウマ・チームを戦闘に入れる（Phase 5x。日本語版 p.158〜159・224）。
+ * 戦闘値（能力値＋技能）で攻撃も防御もし、弾丸は回避できない。トラウマ・チームは行動順の先頭に入る
+ */
+export const NO_BULLET_DODGE = '弾丸を回避できない';
+combatRoutes.post('/combats/:id/squad', requireGm, async (c) => {
+  const combatId = c.req.param('id')!;
+  const body = await c.req.json();
+  const cb = db.select().from(combats).where(eq(combats.id, combatId)).get();
+  if (!cb) return c.json({ error: 'Combat not found' }, 404);
+  const data = loadRoleData().squads ?? {};
+  const type = body.type === 'trauma' ? 'trauma' : 'lawman';
+  const list = type === 'trauma' ? (data.trauma ?? []) : (data.lawman ?? []).filter((s: any) => s.ranks === body.tier);
+  if (list.length === 0) return c.json({ error: '支援要員のデータがありません（手元のルール資料 roles.json）' }, 400);
+  const side = body.side === 'enemy' ? 'enemy' : 'ally';
+  const before = db.select().from(combat_participants).where(eq(combat_participants.combat_id, combatId)).all();
+  const currentActorId = before.slice().sort((a, b) => a.order_index - b.order_index)[cb.turn_index]?.id ?? null;
+  const now = Date.now();
+  const result = sqlite.transaction(() => {
+    const createdIds: string[] = [];
+    for (const m of list) {
+      // 戦闘値 = 能力値 + 技能。技能を 6 にそろえ、能力値を戦闘値 − 6 にする
+      const stat = Math.max(0, m.combat - 6);
+      const skills = Object.fromEntries(['handgun', 'shoulder_arms', 'heavy_weapons', 'autofire', 'melee_weapon', 'brawling', 'evasion', 'first_aid', 'paramedic', 'perception'].map((k) => [k, 6]));
+      const inventory = (m.weapons as string[]).map((en) => {
+        const it = db.select().from(items).where(eq(items.name_en, en)).get();
+        const w = it ? db.select().from(weapons).where(eq(weapons.item_id, it.id)).get() : null;
+        return { entry_id: generateUlid(), item_id: it?.id, name: it?.name_ja || en, kind: 'weapon', qty: 1, equipped: true, ...(w?.magazine_max ? { ammo: w.magazine_max } : {}) };
+      });
+      const tmplId = generateUlid();
+      db.insert(characters)
+        .values({
+          id: tmplId,
+          kind: 'mook',
+          name: m.name,
+          role: type === 'trauma' ? 'Medtech' : 'Lawman',
+          stats: JSON.stringify({ int: stat, ref: stat, dex: stat, tech: stat, cool: stat, will: stat, luck: 0, move: m.move_body, body: m.move_body, emp: 4 }),
+          skills: JSON.stringify(skills),
+          hp: m.hp,
+          hp_max: m.hp,
+          sp_head: m.sp,
+          sp_body: m.sp,
+          humanity: 40,
+          emp_max: 4,
+          inventory: JSON.stringify(inventory),
+          status: JSON.stringify([NO_BULLET_DODGE]),
+          notes_gm: `戦闘値 ${m.combat}（${type === 'trauma' ? 'トラウマ・チーム p.224' : 'ローマンの支援要員 p.158'}）`,
+          created_at: now,
+          updated_at: now,
+        })
+        .run();
+      const ids = addCombatParticipants(combatId, { character_id: tmplId, name: m.name, side, count: m.count });
+      createdIds.push(...ids.filter((x): x is string => !!x && x !== tmplId));
+      db.delete(characters).where(eq(characters.id, tmplId)).run();
+    }
+    const after = db.select().from(combat_participants).where(eq(combat_participants.combat_id, combatId)).all();
+    const added = after.filter((p) => !before.some((b) => b.id === p.id));
+    // トラウマ・チームは行動順の先頭（p.224）。支援要員は 1d10 + 能力値
+    const top = Math.max(0, ...before.map((p) => p.initiative)) + 1;
+    for (const p of added) {
+      const ch = p.character_id ? db.select().from(characters).where(eq(characters.id, p.character_id)).get() : null;
+      const ref = ch ? JSON.parse(ch.stats).ref : 0;
+      const first = randomInt(1, 11);
+      const total = type === 'trauma' ? top : initiativeTotal(ref, first, first === 10 || first === 1 ? randomInt(1, 11) : undefined).total;
+      sqlite.prepare('UPDATE combat_participants SET initiative = ?, initiative_roll = ? WHERE id = ?').run(total, JSON.stringify({ first, total, auto: true }), p.id);
+    }
+    const all = db.select().from(combat_participants).where(eq(combat_participants.combat_id, combatId)).all();
+    const sorted = all.slice().sort((a, b) => b.initiative - a.initiative || a.order_index - b.order_index);
+    sorted.forEach((p, idx) => sqlite.prepare('UPDATE combat_participants SET order_index = ? WHERE id = ?').run(idx, p.id));
+    const newTurnIndex = currentActorId ? sorted.findIndex((p) => p.id === currentActorId) : cb.turn_index;
+    sqlite.prepare('UPDATE combats SET turn_index = ? WHERE id = ?').run(Math.max(0, newTurnIndex), combatId);
+    const change: CombatChange = {
+      target_id: combatId,
+      target_name: type === 'trauma' ? 'トラウマ・チーム' : '支援要員',
+      field: 'participant_join',
+      before: { order: before.map((p) => ({ id: p.id, order_index: p.order_index })), turn_index: cb.turn_index },
+      after: { participant_ids: added.map((p) => p.id), created_character_ids: createdIds, token_ids: [] },
+      desc: `到着: ${added.map((p) => p.name).join('、')}`,
+    };
+    sqlite
+      .prepare(`INSERT INTO combat_log (id, combat_id, round, actor_id, action_key, input, breakdown, changes, undone, at) VALUES (?, ?, ?, ?, 'join', ?, '{}', ?, 0, ?)`)
+      .run(generateUlid(), combatId, cb.round, added[0]?.id ?? combatId, JSON.stringify(body), JSON.stringify([change]), Date.now());
+    return added.map((p) => p.name);
+  });
+  const names = result();
+  sessionManager.announceCombat(type === 'trauma' ? 'トラウマ・チーム到着' : '支援要員到着', `${names.join('、')}（戦闘値で判定、弾丸は回避できない）`);
+  const updated = getHydratedCombat(combatId);
+  sessionManager.broadcastCombatUpdate(updated);
+  return c.json({ combat: updated, added: names }, 201);
 });

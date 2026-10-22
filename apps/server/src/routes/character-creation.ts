@@ -200,15 +200,19 @@ export function saveBase64Image(dataUrl: string): { imageId: string; imagePath: 
 // 1. Creation Methods & Active Settings APIs
 // ==========================================
 
+/** 手元のロールのデータ（説明・支援要員・エグゼクのチーム・メンバー）。なければ空（Phase 5s・5x） */
+export function loadRoleData(): { startingRank?: number; roles?: RoleInfo[]; squads?: Record<string, any[]>; execTeam?: { order: string[]; jobs: any[] } } {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(getProjectRoot(), 'data', 'sources', 'core-ja', 'roles.json'), 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
 // GET /api/role-info: ロール特技の説明（Phase 5s）。ルールブックの要約は手元のファイルにだけあり、なければ空で返す
 characterCreationRoutes.get('/role-info', async (c) => {
-  const file = path.join(getProjectRoot(), 'data', 'sources', 'core-ja', 'roles.json');
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf-8')) as { startingRank?: number; roles?: RoleInfo[] };
-    return c.json({ starting_rank: parsed.startingRank ?? 4, roles: parsed.roles ?? [] });
-  } catch {
-    return c.json({ starting_rank: 4, roles: [] });
-  }
+  const d = loadRoleData();
+  return c.json({ starting_rank: d.startingRank ?? 4, roles: d.roles ?? [], squads: d.squads ?? {}, exec_team: d.execTeam ?? null });
 });
 
 // GET /api/creation-methods

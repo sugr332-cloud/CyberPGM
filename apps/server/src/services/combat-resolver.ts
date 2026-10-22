@@ -43,6 +43,13 @@ import {
   CRIT_INJURIES_JA,
   drugModifiers,
   DRUGS,
+  soloEffects,
+  roleRank,
+  backupTier,
+  BACKUP_TIERS,
+  SoloAbility,
+  soloAllocError,
+  SOLO_ABILITIES,
 } from '@cyberpgm/shared';
 import { useDrug } from './medical.js';
 import { z } from 'zod';
@@ -114,6 +121,8 @@ const ACTION_LABEL: Record<string, string> = {
   hazard: '環境ダメージ',
   hazard_end: '環境の状態を終える',
   use_drug: 'ドラッグ・薬品を使う',
+  call_backup: '支援を呼ぶ',
+  solo_realloc: 'コンバット・アウェアネスを割り振り直す',
 };
 
 /**
@@ -149,8 +158,9 @@ export function grapplePenalty(status: string[] | null | undefined): number {
   return (status ?? []).includes(GRAPPLED) ? -2 : 0;
 }
 
-// 状態の名前（Phase 5u）
+// 状態の名前（Phase 5u・5x）
 export const GRAPPLED = 'つかみ';
+export const NO_BULLET_DODGE = '弾丸を回避できない';
 export const PRONE = '伏せ';
 
 /** サイバーアーム本体か（カヴァーリングなどの付属品は含めない） */
@@ -255,6 +265,41 @@ function resolveCombatActionInner(
   // 【運命】点: 振る前に使うと 1 点につき +1（日本語版 p.130。Phase 5v）。ROF 2 などで 2 回振るときは 1 回目だけ
   const luck = Math.max(0, input.luck_spent ?? 0);
   const luckText = luck ? ` +${luck}（運命）` : '';
+  // ソロ《コンバット・アウェアネス》（日本語版 p.146。Phase 5x）
+  const solo = soloEffects(actorChar.role, actorChar.extra);
+  const round = Number(combatSettings?.__round ?? 0);
+  const precisionText = solo.precision ? ` +${solo.precision}（精密攻撃）` : '';
+  // 決定的失敗無効なら、攻撃の出目 1 はそのまま 1（追加の出目は要らない）
+  const atkNeedsExtra = (roll: { first: number; extra?: number }) => roll.extra === undefined && (roll.first === 10 || (roll.first === 1 && !solo.fumbleImmune));
+  const atkD10 = (roll: { first: number; extra?: number }) => (solo.fumbleImmune && roll.first === 1 ? 1 : resolveD10(roll.first, roll.extra).value);
+  const actorState = (actorPart.state ?? {}) as Record<string, unknown>;
+  let spotWeaknessLeft = solo.spotWeakness > 0 && actorState.sw_round !== round ? solo.spotWeakness : 0;
+  const drUsed = new Set<string>();
+  // 相手がソロでダメージ軽減を割り振っていれば、各ラウンドで最初に受けるダメージを減らす
+  /** 弱点看破とダメージ軽減を 1 回の命中に入れる。使ったらこのラウンドはもう使えない記録を足す */
+  const applySoloDamage = (dmg: { hpLoss: number }, target: CombatParticipant | undefined, changes: CombatChange[]): string => {
+    let note = '';
+    if (spotWeaknessLeft > 0) {
+      note += ` (弱点看破 +${spotWeaknessLeft})`;
+      changes.push({ target_id: actorPart.id, target_name: actorPart.name, field: 'state', before: { sw_round: actorState.sw_round ?? null }, after: { sw_round: round }, desc: `${actorPart.name} 弱点看破を使った（このラウンド）` });
+      spotWeaknessLeft = 0;
+    }
+    const dr = target ? damageReductionFor(target) : 0;
+    if (dr > 0 && target && dmg.hpLoss > 0) {
+      dmg.hpLoss = Math.max(0, dmg.hpLoss - dr);
+      note += ` (${target.name} のダメージ軽減 −${dr})`;
+      changes.push({ target_id: target.id, target_name: target.name, field: 'state', before: { dr_round: (target.state as Record<string, unknown> | undefined)?.dr_round ?? null }, after: { dr_round: round }, desc: `${target.name} ダメージ軽減を使った（このラウンド）` });
+    }
+    return note;
+  };
+  const damageReductionFor = (p: CombatParticipant): number => {
+    const ch = p.character;
+    if (!ch || drUsed.has(p.id)) return 0;
+    const dr = soloEffects(ch.role, ch.extra).damageReduction;
+    if (dr <= 0 || (p.state as Record<string, unknown> | undefined)?.dr_round === round) return 0;
+    drUsed.add(p.id);
+    return dr;
+  };
   // 重い防具は REF・DEX・MOVE を下げる。瀕死のあいだは MOVE −6（どちらも最低 1）（Phase 5m）
   const actorArmorPen = actorChar.armor_penalty ?? 0;
   const actorRef = actorChar.stats.ref - actorArmorPen;
@@ -1242,7 +1287,7 @@ function resolveCombatActionInner(
       const diceCount = w && w.damage && /^\d+d6$/.test(w.damage) ? Number(w.damage.split('d')[0]) : null;
       if (!input.damage_dice || input.damage_dice.length === 0) missing.push(`ダメージの出目を入力してください${diceCount ? `（${diceCount}d6）` : '（GM が決めた個数）'}`);
       else if (diceCount && input.damage_dice.length !== diceCount) missing.push(`ダメージは ${diceCount}d6 なので、d6 の出目を ${diceCount} 個入れてください`);
-      const canDodge = tChar ? canDodgeRanged(tChar.stats.ref - (tChar.armor_penalty ?? 0)) : false;
+      const canDodge = tChar ? canDodgeRanged(tChar.stats.ref - (tChar.armor_penalty ?? 0)) && !(tChar.status ?? []).includes(NO_BULLET_DODGE) : false;
       let def: number | string = 0;
       if (canDodge && input.dodge_mode === 'dodge') {
         def = d10(input.defense_roll, '回避');
@@ -1407,6 +1452,61 @@ function resolveCombatActionInner(
     // 過酷な気候: 1 日の終わりに HP に直接 1d6
     if (!input.damage_dice || input.damage_dice.length !== 1) return fail('過酷な気候の 1d6 の出目を入れてください');
     return done(true, `過酷な気候: HP に直接 ${input.damage_dice[0]}（そのあいだは自然治癒しない）`, direct(input.damage_dice[0], '過酷な気候'));
+  }
+
+  // ── ソロ《コンバット・アウェアネス》を割り振り直す（戦闘中はアクション 1 回。p.146） ──
+  if (input.action_key === 'solo_realloc') {
+    const rank = roleRank(actorChar.role, actorChar.extra, 'Solo');
+    const alloc = (input.solo_alloc ?? {}) as Partial<Record<SoloAbility, number>>;
+    const err = rank < 1 ? '《コンバット・アウェアネス》（ソロのロール特技）がありません' : soloAllocError(rank, alloc);
+    if (err) return { action_key: 'solo_realloc', actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: err, breakdown: {}, changes: [], missing_inputs: [err] };
+    const text = SOLO_ABILITIES.filter((a) => (alloc[a.key] ?? 0) > 0).map((a) => `${a.name} ${alloc[a.key]}`).join('、') || 'なし';
+    return {
+      action_key: 'solo_realloc',
+      actor_id: actorPart.id,
+      actor_name: actorPart.name,
+      success: true,
+      formula: `《コンバット・アウェアネス》（ランク ${rank}）を割り振り直した: ${text}`,
+      breakdown: {},
+      changes: [
+        { target_id: actorPart.id, target_name: actorPart.name, field: 'state', ...useAction(actorPart), desc: `${actorPart.name} アクション使用 (割り振り直し)${actionCountLabel(actorPart)}` },
+        { target_id: actorChar.id, target_name: actorChar.name, field: 'extra', before: actorChar.extra ?? {}, after: { ...(actorChar.extra ?? {}), solo_alloc: alloc }, desc: `${actorChar.name} コンバット・アウェアネス: ${text}` },
+      ],
+    };
+  }
+
+  // ── ローマン《バックアップ》: 支援を呼ぶ（Phase 5x。日本語版 p.158） ──
+  // アクション 1 回で 1d10。ランク以下なら応じてもらえ、1d6 ラウンド後に支援要員が来る（6 なら 1 段階上、ランク 10 なら 2 グループ）
+  if (input.action_key === 'call_backup') {
+    const rank = roleRank(actorChar.role, actorChar.extra, 'Lawman');
+    const msg = (m: string): ResolveResult => ({ action_key: 'call_backup', actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: m, breakdown: {}, changes: [], missing_inputs: [m] });
+    if (rank < 1) return msg('《バックアップ》（ローマンのロール特技）がありません');
+    const r = input.attack_roll?.first;
+    if (!r) return msg('支援要請の出目 (1d10) を「攻撃」の欄に入れてください');
+    const changes: CombatChange[] = [{ target_id: actorPart.id, target_name: actorPart.name, field: 'state', ...useAction(actorPart), desc: `${actorPart.name} アクション使用 (支援要請)${actionCountLabel(actorPart)}` }];
+    if (r > rank) {
+      return { action_key: 'call_backup', actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: `支援要請: 出目 ${r} > ランク ${rank} -> 誰も応じない（次のターンにまた呼べる）`, breakdown: {}, changes };
+    }
+    const arrive = input.damage_dice?.[0];
+    if (!arrive) return msg('到着までの 1d6 の出目を「ダメージ出目」に入れてください');
+    let tier = backupTier(rank);
+    let extraNote = '';
+    if (arrive === 6) {
+      const i = BACKUP_TIERS.indexOf(tier);
+      if (i < BACKUP_TIERS.length - 1) {
+        tier = BACKUP_TIERS[i + 1];
+        extraNote = '（6 なので 1 段階上の支援要員）';
+      } else extraNote = '（6 でランク 10 なので 2 グループ）';
+    }
+    return {
+      action_key: 'call_backup',
+      actor_id: actorPart.id,
+      actor_name: actorPart.name,
+      success: true,
+      formula: `支援要請: 出目 ${r} ≤ ランク ${rank} -> 応じた。${arrive} ラウンド後にランク ${tier} の支援要員が到着${extraNote}。到着したら「支援要員を入れる」を押す`,
+      breakdown: { tier, rounds: arrive, groups: arrive === 6 && tier === '10' ? 2 : 1 },
+      changes,
+    };
   }
 
   // ── ドラッグ・薬品を使う（Phase 5w。日本語版 p.150・227） ──
@@ -1887,8 +1987,7 @@ function resolveCombatActionInner(
       if (!att.attack_roll) {
         missing_inputs.push(`${prefix}攻撃の出目 (1d10) を入力してください`);
       } else if (
-        (att.attack_roll.first === 10 || att.attack_roll.first === 1) &&
-        att.attack_roll.extra === undefined
+        atkNeedsExtra(att.attack_roll)
       ) {
         missing_inputs.push(
           att.attack_roll.first === 10
@@ -2007,17 +2106,18 @@ function resolveCombatActionInner(
       const base = attackBase({
         stat,
         skillLevel,
-        woundPenalty: actorWoundPen + (i === 0 ? luck : 0),
+        woundPenalty: actorWoundPen + (i === 0 ? luck : 0) + solo.precision,
         aimed: isAimed,
       });
 
-      const attD10 = resolveD10(att.attack_roll!.first, att.attack_roll!.extra).value;
+      const attD10 = atkD10(att.attack_roll!);
       const attackTotal = base + attD10;
 
       // Defense calculation
       let isHit = false;
       let defFormula = '';
-      const canDodge = curTargetChar ? canDodgeRanged(curTargetChar.stats.ref - (curTargetChar.armor_penalty ?? 0)) : false;
+      // 支援要員・トラウマ・チームは弾丸を回避できない（p.158・224）
+      const canDodge = curTargetChar ? canDodgeRanged(curTargetChar.stats.ref - (curTargetChar.armor_penalty ?? 0)) && !(curTargetChar.status ?? []).includes(NO_BULLET_DODGE) : false;
       const isDodging = canDodge && att.dodge_mode === 'dodge';
 
       if (isDodging && curTargetChar) {
@@ -2051,7 +2151,7 @@ function resolveCombatActionInner(
         defFormula = `難易度 ${dv}`;
       }
 
-      let subFormula = `${prefix}REF ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''}${isAimed ? ' −8' : ''} = ${attackTotal} vs ${defFormula} -> ${isHit ? '命中' : '外れ'}`;
+      let subFormula = `${prefix}REF ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''}${precisionText}${isAimed ? ' −8' : ''} = ${attackTotal} vs ${defFormula} -> ${isHit ? '命中' : '外れ'}`;
 
       if (!isHit) {
         allHit = false;
@@ -2143,10 +2243,14 @@ function resolveCombatActionInner(
             location,
             // 「頭蓋損傷」があると頭部は 3 倍（日本語版 p.188）
             headMultiplier: hasCrackedSkull(critsBefore as never) ? 3 : 2,
+            flatBonus: spotWeaknessLeft,
             sp: targetSp,
             ignoreArmorPercent: wData.ignore_armor_percent ?? 0,
             currentHp: runningHp,
           });
+          // ソロの弱点看破（ラウンドの最初の命中に +）と、相手のダメージ軽減（ラウンドの最初のダメージに −）（p.146）
+          const soloNotes = applySoloDamage(dmgRes, curTargetPart, changes);
+          if (soloNotes) subFormula += soloNotes;
           // 瀕死のあいだに攻撃でダメージを受けると、致命的損傷を 1 つ受け、死亡セーヴの修正値が 1 増える（日本語版 p.186・188）
           const mortalHit = woundState(runningHp, curTargetChar.hp_max) === 'mortally' && dmgRes.hpLoss > 0;
           const injuryTable = dmgRes.criticalInjuryTable ?? (mortalHit ? location : null);
@@ -2388,7 +2492,7 @@ function resolveCombatActionInner(
       ] as const) {
         if (!roll) {
           missing_inputs.push(`${prefix}${label === '攻撃' ? '攻撃の出目 (1d10)' : '回避の出目 (1d10)'}を入力してください`);
-        } else if ((roll.first === 10 || roll.first === 1) && roll.extra === undefined) {
+        } else if (label === '攻撃' ? atkNeedsExtra(roll) : (roll.first === 10 || roll.first === 1) && roll.extra === undefined) {
           missing_inputs.push(
             `${prefix}${label}${roll.first === 10 ? 'クリティカル' : 'ファンブル'}: 追加出目 (1d10) を入力してください`,
           );
@@ -2443,15 +2547,15 @@ function resolveCombatActionInner(
         penaltyAdded: deathSavePenaltyOf(tPart).added,
       };
 
-      const attD10 = resolveD10(att.attack_roll!.first, att.attack_roll!.extra).value;
-      const attackTotal = base + attD10 + (i === 0 ? luck : 0);
+      const attD10 = atkD10(att.attack_roll!);
+      const attackTotal = base + attD10 + (i === 0 ? luck : 0) + solo.precision;
       const defStat = tChar.stats.dex - (tChar.armor_penalty ?? 0);
       const defSkill = tChar.skills[skillNameToKey('evasion')] ?? 0;
       const defWoundPen = woundPenalty(woundState(cur.hp, tChar.hp_max)) + grapplePenalty(cur.status);
       const defD10 = resolveD10(att.defense_roll!.first, att.defense_roll!.extra).value;
       const defTotal = defStat + defSkill + defWoundPen + defD10;
       const isHit = attackTotal > defTotal;
-      let sub = `${prefix}${label}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''} = ${attackTotal} vs ${tPart.name} 回避 DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
+      let sub = `${prefix}${label}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''}${precisionText} = ${attackTotal} vs ${tPart.name} 回避 DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
       if (!isHit) {
         formulaParts.push(sub);
         continue;
@@ -2471,10 +2575,13 @@ function resolveCombatActionInner(
       const dmgRes = resolveDamage({
         dice: att.damage_dice,
         location: 'body',
+        flatBonus: spotWeaknessLeft,
         sp: cur.sp,
         ignoreArmorPercent: ignoreArmorPercent!,
         currentHp: cur.hp,
       });
+      const soloNotes = applySoloDamage(dmgRes, tPart, changes);
+      if (soloNotes) sub += soloNotes;
       // 瀕死のあいだに攻撃でダメージを受けると、致命的損傷を 1 つ受け、死亡セーヴの修正値が 1 増える（日本語版 p.186・188）
       const mortalHit = woundState(cur.hp, tChar.hp_max) === 'mortally' && dmgRes.hpLoss > 0;
       const injuryTable = dmgRes.criticalInjuryTable ?? (mortalHit ? 'body' : null);
