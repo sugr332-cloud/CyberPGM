@@ -247,6 +247,10 @@ export interface CharacterExtra {
   reputation?: import('./vehicles.js').Reputation;
   /** 真空にさらされて減った能力値（空気を吸えば戻る。p.180） */
   vacuum_loss?: Partial<Record<'int' | 'ref' | 'dex', number>>;
+  /** サイバーデッキ構成（Phase 5z。p.197〜203） */
+  deck?: import('./netrun.js').NetDeckConfig;
+  /** プログラム・ブラック ICE による能力値の一時低下（1 時間。Phase 5z） */
+  net_drain?: import('./netrun.js').NetStatDrain;
   [key: string]: unknown;
 }
 

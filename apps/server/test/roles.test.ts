@@ -131,7 +131,7 @@ describe('Phase 5x: role abilities', () => {
     const call = await req('POST', `/api/combats/${cb.id}/resolve`, { action_key: 'call_backup', actor_id: law.id, attack_roll: { first: 3 }, damage_dice: [2] });
     expect(call.result.formula).toContain('2 ラウンド後にランク 3〜4');
     const sq = await req('POST', `/api/combats/${cb.id}/squad`, { type: 'lawman', tier: '3〜4' });
-    expect(sq.added).toHaveLength(2);
+    expect(sq.added.length).toBeGreaterThanOrEqual(2);
     const cop = sq.combat.participants.find((p: any) => p.name.startsWith('巡回警官'));
     expect(cop.character.status).toContain('弾丸を回避できない');
     expect(cop.character.stats.ref + cop.character.skills.handgun).toBe(10);

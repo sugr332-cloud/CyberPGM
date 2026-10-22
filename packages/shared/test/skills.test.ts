@@ -47,6 +47,7 @@ describe('skills catalog and formatting', () => {
   });
 
   it('has a Japanese name for every catalog skill', () => {
+    // eslint-disable-next-line no-control-regex
     for (const s of Object.values(SKILL_CATALOG)) expect(s.name).toMatch(/[^\x00-\x7f]/);
   });
 

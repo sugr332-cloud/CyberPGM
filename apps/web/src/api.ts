@@ -976,6 +976,30 @@ export const api = {
     request<{ request: PurchaseRequest }>(`/api/purchase-requests/${id}/reject`, { method: 'POST', body: JSON.stringify({ comment }) }, getGmToken()),
   /** プレイヤーが品目の性能を見る（効果・フレーバーはサーバーが外す） */
   getItemForPlayer: (id: string) => request<any>(`/api/items/${id}`, {}, getPlayerToken()),
+
+  // ネットランニング（Phase 5z）
+  getNetrunData: () => request<any>('/api/netrun/data', {}, getGmToken() || getPlayerToken()),
+  listNetArchitectures: () => request<{ architectures: any[] }>('/api/netrun/architectures', {}, getGmToken() || getPlayerToken()),
+  getNetArchitecture: (id: string, player = false, revealed?: number[]) => {
+    const qs = player ? `?player=1${revealed?.length ? `&revealed=${revealed.join(',')}` : ''}` : '';
+    return request<{ architecture: any }>(`/api/netrun/architectures/${id}${qs}`, {}, player ? getPlayerToken() : getGmToken());
+  },
+  createNetArchitecture: (data: any) =>
+    request<{ architecture: any }>('/api/netrun/architectures', { method: 'POST', body: JSON.stringify(data) }, getGmToken()),
+  updateNetArchitecture: (id: string, data: any) =>
+    request<{ architecture: any }>(`/api/netrun/architectures/${id}`, { method: 'PUT', body: JSON.stringify(data) }, getGmToken()),
+  deleteNetArchitecture: (id: string) =>
+    request<{ ok: boolean }>(`/api/netrun/architectures/${id}`, { method: 'DELETE' }, getGmToken()),
+  updateCyberdeck: (charId: string, data: any) =>
+    request<{ ok: boolean; deck: any }>(`/api/netrun/deck/${charId}`, { method: 'POST', body: JSON.stringify(data) }, getGmToken()),
+  restoreNetDrain: (charId: string) =>
+    request<{ ok: boolean; stats: any }>(`/api/netrun/restore-drain/${charId}`, { method: 'POST', body: JSON.stringify({}) }, getGmToken()),
+  joinCombatNetEntity: (combatId: string, data: { kind: 'ice' | 'demon' | 'security'; key: string; side?: 'ally' | 'enemy'; custom_name?: string; arch_id?: string; floor?: number; target_participant_id?: string }) =>
+    request<{ combat: any; participant: any; participant_id: string; character_id: string }>(
+      `/api/combats/${combatId}/net-join`,
+      { method: 'POST', body: JSON.stringify(data) },
+      getGmToken(),
+    ),
 };
 
 export interface PlayerShopStock {

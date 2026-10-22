@@ -143,6 +143,7 @@ export interface CombatChange {
     | 'board_drop'
     | 'board_drop_remove'
     | 'participant_join'
+    | 'net_architecture'
     | 'turn'
     | 'custom';
   before?: unknown;
@@ -173,6 +174,7 @@ export const CombatChangeSchema = z.object({
     'board_drop',
     'board_drop_remove',
     'participant_join',
+    'net_architecture',
     'turn',
     'custom',
   ]),
@@ -351,6 +353,49 @@ export const ResolveActionInputSchema = z.object({
   target_vehicle: z.object({ owner_id: z.string(), vehicle_id: z.string() }).optional(),
   maneuver: z.string().optional(),
   as_driver: z.boolean().optional(),
+  // ネットランニング（Phase 5z。p.196〜218）
+  net: z.object({
+    sub_action: z.enum([
+      'jack_in',
+      'jack_out',
+      'unsafe_jack_out',
+      'descend',
+      'activate',
+      'rez',
+      'derez',
+      'deactivate',
+      'zap',
+      'program',
+      'attack',
+      'backdoor',
+      'cloak',
+      'control',
+      'operate_node',
+      'eyedee',
+      'eye_dee',
+      'pathfinder',
+      'slide',
+      'virus',
+    ]).optional(),
+    arch_id: z.string().optional(),
+    target_floor: z.number().int().optional(),
+    program_key: z.string().optional(),
+    copy_index: z.number().int().optional(),
+    deactivate: z.boolean().optional(),
+    target_ice_id: z.string().optional(),
+    target_program_key: z.string().optional(),
+    virus_desc: z.string().optional(),
+    virus_dv: z.number().int().optional(),
+    virus_actions: z.number().int().optional(),
+    scanner_dv: z.number().int().optional(),
+    ice_rolls: z.array(z.object({
+      ice_roll: z.object({ first: z.number().int().min(1).max(10), extra: z.number().int().optional() }).optional(),
+      runner_roll: z.object({ first: z.number().int().min(1).max(10), extra: z.number().int().optional() }).optional(),
+      attack_roll: z.object({ first: z.number().int().min(1).max(10), extra: z.number().int().optional() }).optional(),
+      defense_roll: z.object({ first: z.number().int().min(1).max(10), extra: z.number().int().optional() }).optional(),
+      damage_dice: z.array(z.number().int().min(1).max(6)).optional(),
+    })).optional(),
+  }).optional(),
   // Multi-attack for ROF > 1
   attacks: z.array(SingleAttackInputSchema).optional(),
   // Manual / unconfirmed adjustments

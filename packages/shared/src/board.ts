@@ -29,7 +29,7 @@ export const BoardGridSchema = z.object({
   bg_h: z.number().positive().optional(),
 });
 
-export type BoardObjectKind = 'wall' | 'crate' | 'container' | 'vehicle' | 'other';
+export type BoardObjectKind = 'wall' | 'crate' | 'container' | 'vehicle' | 'access_point' | 'other';
 export type BlocksLos = 'none' | 'partial' | 'full';
 
 export interface BoardObject {
@@ -46,12 +46,13 @@ export interface BoardObject {
   blocks_los: BlocksLos;
   cover_hp: number | null;
   cover_hp_max: number | null;
+  arch_id?: string | null;
 }
 
 export const BoardObjectSchema = z.object({
   id: z.string(),
   board_id: z.string(),
-  kind: z.enum(['wall', 'crate', 'container', 'vehicle', 'other']),
+  kind: z.enum(['wall', 'crate', 'container', 'vehicle', 'access_point', 'other']),
   label: z.string(),
   x: z.number().int(),
   y: z.number().int(),
@@ -62,6 +63,7 @@ export const BoardObjectSchema = z.object({
   blocks_los: z.enum(['none', 'partial', 'full']).default('none'),
   cover_hp: z.number().int().nullable().optional(),
   cover_hp_max: z.number().int().nullable().optional(),
+  arch_id: z.string().nullable().optional(),
 });
 
 export interface BoardToken {
@@ -149,7 +151,7 @@ export const BoardCreateInputSchema = z.object({
 export const BoardUpdateInputSchema = BoardCreateInputSchema.partial();
 
 export const BoardObjectCreateInputSchema = z.object({
-  kind: z.enum(['wall', 'crate', 'container', 'vehicle', 'other']),
+  kind: z.enum(['wall', 'crate', 'container', 'vehicle', 'access_point', 'other']),
   label: z.string().default(''),
   x: z.number().int().default(0),
   y: z.number().int().default(0),
@@ -160,6 +162,7 @@ export const BoardObjectCreateInputSchema = z.object({
   blocks_los: z.enum(['none', 'partial', 'full']).default('none'),
   cover_hp: z.number().int().nullable().optional(),
   cover_hp_max: z.number().int().nullable().optional(),
+  arch_id: z.string().nullable().optional(),
 });
 
 export const BoardObjectUpdateInputSchema = BoardObjectCreateInputSchema.partial();

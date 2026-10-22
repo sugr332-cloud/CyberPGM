@@ -10,7 +10,7 @@ import {
 } from '@cyberpgm/shared';
 import { woundState, LosStatus } from '@cyberpgm/rules';
 import { BoardSettingsPanel } from './BoardSettingsPanel.js';
-import { getGmToken } from '../api.js';
+import { api, getGmToken } from '../api.js';
 
 export interface BoardViewProps {
   board: Board;
@@ -98,6 +98,16 @@ export const BoardView: React.FC<BoardViewProps> = ({
   const [fogTool, setFogTool] = useState<'hide' | 'reveal'>('hide');
   const [fogCells, setFogCells] = useState<{ x: number; y: number }[]>(board.fog || []);
   const [isPaintingFog, setIsPaintingFog] = useState(false);
+  const [netArchs, setNetArchs] = useState<Array<{ id: string; name: string }>>([]);
+
+  React.useEffect(() => {
+    if (isGm && !isScreen) {
+      api
+        .listNetArchitectures()
+        .then((res) => setNetArchs(res.architectures || []))
+        .catch(() => undefined);
+    }
+  }, [isGm, isScreen]);
 
   React.useEffect(() => {
     setFogCells(board.fog || []);
@@ -470,6 +480,36 @@ export const BoardView: React.FC<BoardViewProps> = ({
               >
                 + 木箱追加
               </button>
+              <button
+                type="button"
+                data-testid="add-access-point-btn"
+                onClick={() =>
+                  onCreateObject?.({
+                    kind: 'access_point',
+                    label: 'アクセスポイント',
+                    x: Math.floor(cols / 2),
+                    y: Math.floor(rows / 2),
+                    w: 1,
+                    h: 1,
+                    rotation: 0,
+                    passable: true,
+                    blocks_los: 'none',
+                    cover_hp: null,
+                    cover_hp_max: null,
+                  })
+                }
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: 'rgba(34, 211, 238, 0.15)',
+                  border: '1px solid var(--color-ally)',
+                  borderRadius: '4px',
+                  color: 'var(--color-ally)',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                }}
+              >
+                + アクセスポイント追加
+              </button>
             </div>
           )}
 
@@ -610,6 +650,28 @@ export const BoardView: React.FC<BoardViewProps> = ({
             >
               通行: {selectedObject.passable ? '可能' : '不可'}
             </button>
+            {selectedObject.kind === 'access_point' && (
+              <label className="flex items-center gap-1">
+                <span>NET構造体:</span>
+                <select
+                  aria-label="アクセスポイントのNET構造体"
+                  value={(selectedObject as any).arch_id || ''}
+                  onChange={(e) =>
+                    onUpdateObject?.(selectedObject.id, {
+                      arch_id: e.target.value || null,
+                    } as any)
+                  }
+                  className="px-2 py-0.5 bg-slate-900 rounded border border-cyan-700 text-cyan-200"
+                >
+                  <option value="">（未指定 / 共通）</option>
+                  {netArchs.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -775,8 +837,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
               const isBroken = obj.cover_hp !== null && obj.cover_hp !== undefined && obj.cover_hp <= 0;
 
               const isWall = obj.kind === 'wall';
+              const isAp = obj.kind === 'access_point';
               const fillColor = isBroken
                 ? '#334155'
+                : isAp
+                ? '#0E7490'
                 : isWall
                 ? '#475569'
                 : '#78350F';
@@ -784,6 +849,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
                 ? '#F59E0B'
                 : isBroken
                 ? '#64748B'
+                : isAp
+                ? '#22D3EE'
                 : isWall
                 ? '#64748B'
                 : '#D97706';

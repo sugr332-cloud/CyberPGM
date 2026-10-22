@@ -1,4 +1,5 @@
 import { VehiclePanel } from './VehiclePanel.js';
+import { CyberdeckPanel } from './CyberdeckPanel.js';
 import { RolePanel } from './RolePanel.js';
 import { MedicalPanel } from './MedicalPanel.js';
 import { AddSpecializedSkill } from './AddSpecializedSkill.js';
@@ -657,6 +658,20 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
             <VehiclePanel
               character={characters.find((c) => c.id === form.id)!}
               characters={characters}
+              onChanged={() => {
+                reloadAfterMedical.current = form.id ?? null;
+                onSaved();
+              }}
+            />
+          </div>
+        )}
+
+        {/* サイバーデッキ（Phase 5z） */}
+        {form.id && characters.find((c) => c.id === form.id) && (
+          <div style={panel}>
+            <span style={heading}>サイバーデッキ・プログラム</span>
+            <CyberdeckPanel
+              character={characters.find((c) => c.id === form.id)!}
               onChanged={() => {
                 reloadAfterMedical.current = form.id ?? null;
                 onSaved();
