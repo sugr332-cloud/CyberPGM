@@ -1,3 +1,4 @@
+import { RolePanel } from './RolePanel.js';
 import { MedicalPanel } from './MedicalPanel.js';
 import { AddSpecializedSkill } from './AddSpecializedSkill.js';
 import { RoleInfoPanel } from './RoleInfoPanel.js';
@@ -632,6 +633,21 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
           </div>
           <AddSpecializedSkill existing={Object.keys(form.skills)} onAdd={(key) => setForm((f) => ({ ...f, skills: { ...f.skills, [key]: f.skills[key] ?? 1 } }))} />
         </div>
+
+        {/* ロール特技（Phase 5x） */}
+        {form.id && characters.find((c) => c.id === form.id) && (
+          <div style={panel}>
+            <span style={heading}>ロール特技</span>
+            <RolePanel
+              character={characters.find((c) => c.id === form.id)!}
+              characters={characters}
+              onChanged={() => {
+                reloadAfterMedical.current = form.id ?? null;
+                onSaved();
+              }}
+            />
+          </div>
+        )}
 
         {/* 医療・ドラッグ・セラピー・人間性（Phase 5w） */}
         {form.id && characters.find((c) => c.id === form.id) && (

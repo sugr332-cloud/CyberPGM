@@ -15,6 +15,10 @@ import {
   HAZARDS,
   isHazardStatus,
   DRUGS,
+  soloEffects,
+  roleRank,
+  SOLO_ABILITIES,
+  BACKUP_TIERS,
 } from '@cyberpgm/shared';
 import {
   initiativeTotal,
@@ -130,6 +134,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
   // ドラッグ・薬品（Phase 5w）
   const [drugEntryId, setDrugEntryId] = useState('');
   const [drugUnwilling, setDrugUnwilling] = useState(false);
+  // ソロの割り振り直し・支援要員（Phase 5x）
+  const [soloAlloc, setSoloAlloc] = useState<Record<string, string>>({});
+  const [backupTierSel, setBackupTierSel] = useState('3〜4');
   
   // 出目を入れる前の計算式と成功ライン（仕様 §5.0.1。Phase 5n）
   const [attackLineText, setAttackLineText] = useState<string | null>(null);
@@ -600,7 +607,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
         const rolledFirst = Math.floor(Math.random() * 10) + 1;
         rollObj = { first: rolledFirst };
       }
-      const res = initiativeTotal(ref, rollObj.first, rollObj.extra);
+      // ソロのイニシアチブ強化（p.146。Phase 5x）
+      const soloInit = p.character ? soloEffects(p.character.role, p.character.extra).initiative : 0;
+      const res = initiativeTotal(ref + soloInit, rollObj.first, rollObj.extra);
       return {
         id: p.id,
         ref,
@@ -794,6 +803,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         hazard_status: selectedActionKey === 'hazard_end' ? hazardEndStatus || undefined : undefined,
         throw_entry_id: selectedActionKey === 'throw_object' ? throwEntryId || undefined : undefined,
         drug_entry_id: selectedActionKey === 'use_drug' ? drugEntryId || undefined : undefined,
+        solo_alloc: selectedActionKey === 'solo_realloc' ? Object.fromEntries(Object.entries(soloAlloc).map(([k, v]) => [k, Number(v) || 0])) : undefined,
         unwilling: selectedActionKey === 'use_drug' ? drugUnwilling : undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
@@ -897,6 +907,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         hazard_status: selectedActionKey === 'hazard_end' ? hazardEndStatus || undefined : undefined,
         throw_entry_id: selectedActionKey === 'throw_object' ? throwEntryId || undefined : undefined,
         drug_entry_id: selectedActionKey === 'use_drug' ? drugEntryId || undefined : undefined,
+        solo_alloc: selectedActionKey === 'solo_realloc' ? Object.fromEntries(Object.entries(soloAlloc).map(([k, v]) => [k, Number(v) || 0])) : undefined,
         unwilling: selectedActionKey === 'use_drug' ? drugUnwilling : undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
@@ -1585,6 +1596,38 @@ export const CombatView: React.FC<CombatViewProps> = ({
             >
               参加者を足す
             </button>
+            {/* 支援要員・トラウマ・チームを入れる（Phase 5x。p.158・224） */}
+            <select aria-label="支援要員のランク" value={backupTierSel} onChange={(e) => setBackupTierSel(e.target.value)} style={{ padding: '6px', fontSize: '0.85rem', backgroundColor: 'var(--color-surface-elevated)', border: '1px solid var(--color-border)', borderRadius: '4px', color: 'var(--color-text)' }}>
+              {BACKUP_TIERS.map((t) => (
+                <option key={t} value={t}>
+                  支援要員 ランク {t}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!combat) return;
+                const res = await gmFetch(`/api/combats/${combat.id}/squad`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'lawman', tier: backupTierSel }) }).then((r) => r.json());
+                if (res.error) alert(res.error);
+                else setCombat(res.combat);
+              }}
+              style={{ backgroundColor: 'var(--color-surface-elevated)', border: '1px solid var(--color-border)', color: 'var(--color-text)', padding: '6px 12px', borderRadius: '4px', fontSize: '0.85rem', cursor: 'pointer' }}
+            >
+              支援要員を入れる
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!combat) return;
+                const res = await gmFetch(`/api/combats/${combat.id}/squad`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'trauma' }) }).then((r) => r.json());
+                if (res.error) alert(res.error);
+                else setCombat(res.combat);
+              }}
+              style={{ backgroundColor: 'var(--color-surface-elevated)', border: '1px solid var(--color-border)', color: 'var(--color-text)', padding: '6px 12px', borderRadius: '4px', fontSize: '0.85rem', cursor: 'pointer' }}
+            >
+              トラウマ・チームを入れる
+            </button>
             <button
               onClick={handleNextTurn}
               style={{
@@ -2109,6 +2152,19 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           足元・隣接マスに拾える落とし物はありません。
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* ソロ《コンバット・アウェアネス》の割り振り直し（Phase 5x。p.146） */}
+                  {selectedActionKey === 'solo_realloc' && (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.85rem' }}>
+                      ランク {activePart.character ? roleRank(activePart.character.role, activePart.character.extra, 'Solo') : 0} ポイント:
+                      {SOLO_ABILITIES.map((a) => (
+                        <label key={a.key}>
+                          {a.name}
+                          <input aria-label={a.name} type="number" min={0} max={a.max} step={a.step} value={soloAlloc[a.key] ?? ''} onChange={(e) => setSoloAlloc((p) => ({ ...p, [a.key]: e.target.value }))} style={{ width: '44px', marginLeft: '2px', padding: '2px 4px', backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }} />
+                        </label>
+                      ))}
                     </div>
                   )}
 

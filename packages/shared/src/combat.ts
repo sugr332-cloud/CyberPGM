@@ -342,6 +342,8 @@ export const ResolveActionInputSchema = z.object({
   // ドラッグ・薬品を使う（Phase 5w。p.150・227）
   drug_entry_id: z.string().optional(),
   unwilling: z.boolean().optional(), // 同意しない相手（エアハイポで近接攻撃）
+  // ソロ《コンバット・アウェアネス》の割り振り直し（Phase 5x。p.146）
+  solo_alloc: z.record(z.string(), z.number().int().min(0)).optional(),
   // Multi-attack for ROF > 1
   attacks: z.array(SingleAttackInputSchema).optional(),
   // Manual / unconfirmed adjustments

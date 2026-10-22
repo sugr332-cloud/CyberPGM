@@ -6,6 +6,8 @@ export interface ResolveDamageInput {
   location: 'body' | 'head';
   /** 頭部に当たったときの倍率。既定 2、致命的損傷「頭蓋損傷」があれば 3（日本語版 p.188） */
   headMultiplier?: number;
+  /** 防具を引く前に足すダメージ（ソロの弱点看破。Phase 5x） */
+  flatBonus?: number;
   sp: number;
   ignoreArmorPercent?: number;
   ignoreBelowSP?: number;
@@ -37,7 +39,7 @@ export function resolveDamage(
 ): ResolveDamageResult {
   const multiplier = input.multiplier !== undefined && input.multiplier > 0 ? input.multiplier : 1;
   const diceSum = input.dice.reduce((acc, d) => acc + d, 0);
-  const rawTotal = diceSum * multiplier;
+  const rawTotal = diceSum * multiplier + Math.max(0, input.flatBonus ?? 0);
 
   // Count sixes for critical
   const sixes = input.dice.filter((d) => d === 6).length;

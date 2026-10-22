@@ -1529,7 +1529,7 @@ function checkActorBase(characterId: string | null | undefined, skillKey: string
   const def = getSkillDef(skillKey);
   if (!char || !def) return null;
   // ドラッグ・依存症の修正を入れる（Phase 5w）
-  const eff = effectiveForChecks(JSON.parse(char.stats || '{}'), JSON.parse(char.skills || '{}'), JSON.parse(char.extra || '{}'));
+  const eff = effectiveForChecks(JSON.parse(char.stats || '{}'), JSON.parse(char.skills || '{}'), JSON.parse(char.extra || '{}'), char.role);
   const stats: Record<string, number> = eff.stats as unknown as Record<string, number>;
   const skills: Record<string, number> = eff.skills;
   const stat = stats[def.stat];

@@ -13,6 +13,7 @@ import {
   CharacterExtra,
   drugModifiers,
   cyberpsychosisStage,
+  roleSkillBonuses,
 } from '@cyberpgm/shared';
 import { maxHumanity, currentEmp, woundState, woundPenalty } from '@cyberpgm/rules';
 
@@ -87,7 +88,7 @@ export function calculateCharacterSheet(char: Character): CharacterSheet {
   // 2. Wound status & penalty
   const calculatedWoundState = woundState(char.hp, char.hp_max);
   // ドラッグ・依存症の修正（Phase 5w）
-  const eff = effectiveForChecks(char.stats, char.skills, char.extra);
+  const eff = effectiveForChecks(char.stats, char.skills, char.extra, char.role);
   const calculatedWoundPenalty = eff.ignoreSeriousWound && calculatedWoundState === 'seriously' ? 0 : woundPenalty(calculatedWoundState);
 
   // 3. Skills list calculation
@@ -236,11 +237,17 @@ export function maskAmmoForPlayer<T extends { inventory?: unknown }>(c: T, hidde
  * 判定に使う能力値と技能（ドラッグと依存症の修正を入れたもの。Phase 5w。日本語版 p.227〜229）。
  * キャラの記録（stats・skills）そのものは変えない
  */
-export function effectiveForChecks(stats: CharacterStats, skills: Record<string, number>, extra: CharacterExtra | undefined | null) {
+export function effectiveForChecks(stats: CharacterStats, skills: Record<string, number>, extra: CharacterExtra | undefined | null, role = '') {
   const mod = drugModifiers(extra);
   const s = { ...stats };
   for (const [k, v] of Object.entries(mod.stats)) (s as Record<string, number>)[k] = Math.max(0, (s as Record<string, number>)[k] + (v ?? 0));
   const sk = { ...skills };
   for (const [k, v] of Object.entries(mod.skills)) if (sk[k] !== undefined || v > 0) sk[k] = Math.max(0, (sk[k] ?? 0) + v);
-  return { stats: s, skills: sk, ignoreSeriousWound: mod.ignoreSeriousWound, notes: mod.notes };
+  // ロール特技が足す技能（ソロの危険感知、テクの現場エンジニア、ノーマッドのモト。Phase 5x）
+  const notes = [...mod.notes];
+  for (const [k, v] of Object.entries(roleSkillBonuses(role, extra))) {
+    sk[k] = (sk[k] ?? 0) + v;
+    notes.push(`${formatSkillName(k)} +${v}（ロール特技）`);
+  }
+  return { stats: s, skills: sk, ignoreSeriousWound: mod.ignoreSeriousWound, notes };
 }
