@@ -12,6 +12,7 @@ import {
   SkillCatalogEntry,
   CpgmCharacterFile,
   formatWeaponType,
+  CreationTemplates,
 } from '@cyberpgm/shared';
 import {
   validateCharacterDraft,
@@ -25,18 +26,21 @@ import '../player-theme.css';
 const STORAGE_KEY = 'cpgm_char_draft';
 const SUBMISSION_ID_KEY = 'cpgm_submission_id';
 
+// 能力値の名前は日本語版コアルールブックの表記（Phase 5t）
 const STAT_NAMES_JA: Record<string, string> = {
-  int: '知力 (INT)',
-  ref: '反応 (REF)',
-  dex: '軽業 (DEX)',
-  tech: '技術 (TECH)',
-  cool: '冷却 (COOL)',
-  will: '意志 (WILL)',
-  luck: '幸運 (LUCK)',
-  move: '移動 (MOVE)',
-  body: '体格 (BODY)',
-  emp: '共感 (EMP)',
+  int: '【知力】 (INT)',
+  ref: '【反応】 (REF)',
+  dex: '【敏捷】 (DEX)',
+  tech: '【技術】 (TECH)',
+  cool: '【魅力】 (COOL)',
+  will: '【意志】 (WILL)',
+  luck: '【運命】 (LUCK)',
+  move: '【移動】 (MOVE)',
+  body: '【体格】 (BODY)',
+  emp: '【共感】 (EMP)',
 };
+
+const roll1d10 = () => Math.floor(Math.random() * 10) + 1;
 
 const DEFAULT_STATS: CharacterStats = {
   int: 6,
@@ -85,6 +89,12 @@ export const CharacterCreatePage: React.FC = () => {
     static_loss?: number;
   }>>([]);
 
+  // ロール別のテンプレート（能力値表・技能・武器と防具。Phase 5t）
+  const [templates, setTemplates] = useState<CreationTemplates | null>(null);
+  const [packageChoice, setPackageChoice] = useState<number[]>([]);
+  const [rowRoll, setRowRoll] = useState<string>('');
+  const [statRolls, setStatRolls] = useState<Record<string, string>>({});
+
   // Catalog items for equipment selection
   const [catalogItems, setCatalogItems] = useState<any[]>([]);
   const [equipCategory, setEquipCategory] = useState<string>('all');
@@ -127,7 +137,76 @@ export const CharacterCreatePage: React.FC = () => {
       }
     }
     init();
+    api.getCreationTemplates().then(setTemplates).catch(() => setTemplates(null));
   }, []);
+
+  const roleKeyOf = (r: string) => ROLES.find((x) => x.key === r || x.nameJa === r)?.key ?? r;
+  const usesPackage = methodConfig?.template === 'streetrat' || methodConfig?.template === 'edgerunner';
+
+  // ロールの武器と防具（パッケージ）を所持品に入れる。代金はかからない（p.98）。前に入れたパッケージは入れ替える
+  const applyPackage = (roleKey: string, choice: number[]) => {
+    const pkg = templates?.gear_packages[roleKey];
+    setInventory((prev) => {
+      const bought = prev.filter((i) => !(i as any).package);
+      if (!pkg || !usesPackage) return bought;
+      const items = pkg.slots.map((slot, idx) => slot[Math.min(choice[idx] ?? 0, slot.length - 1)]).filter(Boolean);
+      const merged: typeof prev = [];
+      for (const o of items) {
+        const same = merged.find((m) => m.name === o.name);
+        if (same) same.qty += o.qty;
+        else merged.push({ item_id: o.item_id, name: o.name, qty: o.qty, price_eb: 0, category: o.category, package: true } as any);
+      }
+      return [...merged, ...bought];
+    });
+  };
+
+  // ロールを選んだら、技能のテンプレートと武器・防具のパッケージを入れる（Phase 5t）
+  const applyRoleDefaults = (roleKey: string) => {
+    const tpl = templates?.skill_templates[roleKey];
+    if (tpl) setSkills({ ...tpl.skills });
+    const choice = (templates?.gear_packages[roleKey]?.slots ?? []).map(() => 0);
+    setPackageChoice(choice);
+    applyPackage(roleKey, choice);
+  };
+
+  // 「A または B」を選ぶ。対になっている選択（ショットガンならショットガンの弾）はそろえる
+  const choosePackageOption = (slotIdx: number, optIdx: number) => {
+    const roleKey = roleKeyOf(role);
+    const slots = templates?.gear_packages[roleKey]?.slots ?? [];
+    const pair = slots[slotIdx]?.[optIdx]?.pair;
+    const next = slots.map((slot, i) => {
+      if (i === slotIdx) return optIdx;
+      if (pair) {
+        const j = slot.findIndex((o) => o.pair === pair);
+        if (j >= 0) return slot[packageChoice[i] ?? 0]?.pair === pair ? (packageChoice[i] ?? 0) : j;
+      }
+      return packageChoice[i] ?? 0;
+    });
+    setPackageChoice(next);
+    applyPackage(roleKey, next);
+  };
+
+  // 能力値表の 1 行をそのまま使う（ストリートラット方式。1d10 で行を決める）
+  const applyStatRow = (n: number) => {
+    const table = templates?.stat_tables[roleKeyOf(role)];
+    const row = table?.rows[n - 1];
+    if (!row || !templates) return;
+    const next = { ...stats };
+    templates.stat_order.forEach((k, i) => ((next as any)[k] = row[i]));
+    setStats(next);
+  };
+
+  // 能力値ごとに 1d10 を振って、その行の値を使う（エッジランナー方式。p.77）
+  const applyStatEach = (rolls: Record<string, number>) => {
+    const table = templates?.stat_tables[roleKeyOf(role)];
+    if (!table || !templates) return;
+    const next = { ...stats };
+    templates.stat_order.forEach((k, i) => {
+      const n = rolls[k];
+      if (n >= 1 && n <= 10) (next as any)[k] = table.rows[n - 1][i];
+    });
+    setStats(next);
+  };
 
   // Restore from localStorage
   useEffect(() => {
@@ -770,7 +849,10 @@ export const CharacterCreatePage: React.FC = () => {
                 return (
                   <button
                     key={r.key}
-                    onClick={() => setRole(r.key)}
+                    onClick={() => {
+                      setRole(r.key);
+                      applyRoleDefaults(r.key);
+                    }}
                     style={{
                       padding: '10px 8px',
                       borderRadius: '6px',
@@ -869,6 +951,114 @@ export const CharacterCreatePage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* ロールの能力値表で決める（Phase 5t。日本語版 p.73〜77） */}
+          {(() => {
+            const table = templates?.stat_tables[roleKeyOf(role)];
+            const order = templates?.stat_order ?? [];
+            if (!table) {
+              return (
+                <div data-testid="stat-table" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem' }}>
+                  <strong>{formatRole(role)} の能力値表</strong>
+                  <span style={{ color: 'var(--color-text-muted)' }}>
+                    このロールの能力値表（ルールブック p.74〜76）はまだ登録されていません。
+                    {methodConfig?.template ? ' GM と相談して決めるか、スクラッチビルド方式（62 ポイント、各 2〜8）で決めてください。' : ' 下で 62 ポイントを各能力値に 2〜8 で配分します。'}
+                  </span>
+                </div>
+              );
+            }
+            return (
+              <div data-testid="stat-table" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem' }}>
+                <strong>
+                  {formatRole(role)} の能力値表{table.page ? `（p.${table.page}）` : ''}
+                </strong>
+                {table.uncertain && <span style={{ color: 'var(--color-warning)' }}>{table.uncertain}</span>}
+                <div>
+                  <b>ストリートラット方式</b>: 1d10 を 1 回振り、その行の値をすべての能力値に使う。
+                </div>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span>出目</span>
+                  <input aria-label="能力値表の行の出目" type="number" min={1} max={10} value={rowRoll} onChange={(e) => setRowRoll(e.target.value)} style={{ width: '52px', padding: '4px', textAlign: 'center' as const, backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }} />
+                  <button type="button" style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text)', cursor: 'pointer', fontSize: '0.8rem' }} disabled={!(Number(rowRoll) >= 1 && Number(rowRoll) <= 10)} onClick={() => applyStatRow(Number(rowRoll))}>
+                    この行を使う
+                  </button>
+                  <button
+                    type="button"
+                    style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text)', cursor: 'pointer', fontSize: '0.8rem' }}
+                    onClick={() => {
+                      const n = roll1d10();
+                      setRowRoll(String(n));
+                      applyStatRow(n);
+                    }}
+                  >
+                    アプリで振る
+                  </button>
+                </div>
+                <div>
+                  <b>エッジランナー方式</b>: 能力値ごとに 1d10 を振り、それぞれの出目の行の値を使う（p.77）。
+                </div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {order.map((k) => (
+                    <label key={k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', fontSize: '0.75rem' }}>
+                      {(STAT_NAMES_JA[k] ?? k).replace(/ \(.*\)$/, '')}
+                      <input
+                        aria-label={`${k} の出目`}
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={statRolls[k] ?? ''}
+                        onChange={(e) => setStatRolls((prev) => ({ ...prev, [k]: e.target.value }))}
+                        style={{ width: '52px', padding: '4px', textAlign: 'center' as const, backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text)', cursor: 'pointer', fontSize: '0.8rem' }}
+                    onClick={() => applyStatEach(Object.fromEntries(Object.entries(statRolls).map(([k, v]) => [k, Number(v)])))}
+                  >
+                    入れた出目を使う
+                  </button>
+                  <button
+                    type="button"
+                    style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text)', cursor: 'pointer', fontSize: '0.8rem' }}
+                    onClick={() => {
+                      const rolls = Object.fromEntries(order.map((k) => [k, roll1d10()]));
+                      setStatRolls(Object.fromEntries(Object.entries(rolls).map(([k, v]) => [k, String(v)])));
+                      applyStatEach(rolls);
+                    }}
+                  >
+                    全部アプリで振る
+                  </button>
+                </div>
+                <details>
+                  <summary style={{ cursor: 'pointer' }}>表を見る</summary>
+                  <table style={{ borderCollapse: 'collapse', fontSize: '0.75rem', marginTop: '4px' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ padding: '2px 4px' }}>出目</th>
+                        {order.map((k) => (
+                          <th key={k} style={{ padding: '2px 4px' }}>{k.toUpperCase()}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {table.rows.map((r, i) => (
+                        <tr key={i} style={{ backgroundColor: Number(rowRoll) === i + 1 ? 'var(--color-surface-elevated)' : undefined }}>
+                          <td style={{ padding: '2px 4px', textAlign: 'center' }}>{i + 1}</td>
+                          {r.map((v, j) => (
+                            <td key={j} style={{ padding: '2px 4px', textAlign: 'center' }}>{v}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
+              </div>
+            );
+          })()}
 
           {/* Stats List */}
           <div
@@ -1001,6 +1191,36 @@ export const CharacterCreatePage: React.FC = () => {
       {/* STEP 3: 技能 */}
       {step === 3 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* ロールの技能テンプレート（Phase 5t。日本語版 p.86〜90） */}
+          {(() => {
+            const tpl = templates?.skill_templates[roleKeyOf(role)];
+            if (!tpl) return null;
+            const unsupported = Object.entries(tpl.unsupported);
+            return (
+              <div data-testid="skill-template" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem' }}>
+                <strong>{formatRole(role)} の技能テンプレート{tpl.page ? `（p.${tpl.page}）` : ''}</strong>
+                <span style={{ color: 'var(--color-text-muted)' }}>
+                  {methodConfig?.template === 'streetrat'
+                    ? 'ストリートラット方式: 技能はテンプレートのレベルをそのまま使います。'
+                    : methodConfig?.template === 'edgerunner'
+                      ? 'エッジランナー方式: このロールの 20 技能に 86 ポイントを配分します（各 2〜6）。テンプレートは配分の一例です。'
+                      : 'スクラッチビルド方式: 86 ポイントを自由に配分します（基礎技能は 2 以上、最大 6）。テンプレートは出発点に使えます。'}
+                  {' '}このほか、出身文化圏の〈言語〉1 つを 4 レベルで無料で得ます。
+                </span>
+                {unsupported.length > 0 && (
+                  <span style={{ color: 'var(--color-warning)' }}>
+                    アプリに未登録の技能: {unsupported.map(([n, l]) => `〈${n}〉${l}`).join('、')}（{unsupported.reduce((a, [, l]) => a + l, 0)} ポイント分。メモに残してください）
+                  </span>
+                )}
+                <div>
+                  <button type="button" style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text)', cursor: 'pointer', fontSize: '0.8rem' }} onClick={() => setSkills({ ...tpl.skills })}>
+                    テンプレートに戻す
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Skill Points Sticky Banner */}
           <div
             style={{
@@ -1313,6 +1533,56 @@ export const CharacterCreatePage: React.FC = () => {
       {/* STEP 4: 装備 */}
       {step === 4 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* ロールの武器と防具（パッケージ。Phase 5t。日本語版 p.98） */}
+          {usesPackage && (() => {
+            const pkg = templates?.gear_packages[roleKeyOf(role)];
+            if (!pkg) return null;
+            const hasPackage = inventory.some((i) => (i as any).package);
+            return (
+              <div data-testid="gear-package" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem' }}>
+                <strong>{formatRole(role)} の武器と防具{pkg.page ? `（p.${pkg.page}）` : ''}</strong>
+                <span style={{ color: 'var(--color-text-muted)' }}>
+                  代金はかかりません。「A または B」は 1 つ選びます。このほかに開始資金で買い物ができます。{templates?.gear_note ? ` ${templates.gear_note}` : ''}
+                </span>
+                {pkg.slots.map((slot, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {slot.map((o, j) => {
+                      const selected = (packageChoice[i] ?? 0) === j;
+                      return (
+                        <button
+                          key={j}
+                          type="button"
+                          onClick={() => choosePackageOption(i, j)}
+                          disabled={slot.length === 1}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            border: selected ? '2px solid var(--color-ally)' : '1px solid var(--color-border-light)',
+                            backgroundColor: selected ? 'var(--color-surface-elevated)' : 'transparent',
+                            color: 'var(--color-text)',
+                            fontSize: '0.8rem',
+                            cursor: slot.length === 1 ? 'default' : 'pointer',
+                          }}
+                        >
+                          {o.name}
+                          {o.qty > 1 ? ` ×${o.qty}` : ''}
+                        </button>
+                      );
+                    })}
+                    {slot.length > 1 && <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>どれか 1 つ</span>}
+                  </div>
+                ))}
+                {!hasPackage && (
+                  <div>
+                    <button type="button" style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text)', cursor: 'pointer', fontSize: '0.8rem' }} onClick={() => applyPackage(roleKeyOf(role), packageChoice)}>
+                      この武器と防具を持つ
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Funds & Humanity Sticky Banner */}
           <div
             style={{

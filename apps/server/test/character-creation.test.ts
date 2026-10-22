@@ -25,23 +25,22 @@ describe('Phase 3b Character Creation & Reception API', () => {
     Authorization: `Bearer ${gmToken}`,
   });
 
-  it('GET /api/creation-methods returns methods with all nulls initially', async () => {
+  it('GET /api/creation-methods returns the three rulebook methods (Phase 5t, p.73-104)', async () => {
     const res = await app.request('/api/creation-methods');
     expect(res.status).toBe(200);
     const data = await res.json();
 
     expect(data.active_method).toBe('complete_package');
-    expect(Array.isArray(data.methods)).toBe(true);
-
-    const completePkg = data.methods.find((m: any) => m.key === 'complete_package');
-    expect(completePkg).toBeDefined();
-    expect(completePkg.stat_points).toBeNull();
-    expect(completePkg.stat_min).toBeNull();
-    expect(completePkg.stat_max).toBeNull();
-    expect(completePkg.skill_points).toBeNull();
-    expect(completePkg.skill_level_max).toBeNull();
-    expect(completePkg.basic_skill_min).toBeNull();
-    expect(completePkg.difficult_cost).toBeNull();
+    const byKey = Object.fromEntries(data.methods.map((m: any) => [m.key, m]));
+    expect(byKey.streetrat.template).toBe('streetrat');
+    expect(byKey.edgerunner.template).toBe('edgerunner');
+    expect(byKey.streetrat.starting_funds_default).toBe(500);
+    const scratch = byKey.complete_package;
+    expect(scratch.label).toContain('スクラッチビルド');
+    expect([scratch.stat_points, scratch.stat_min, scratch.stat_max]).toEqual([62, 2, 8]);
+    expect([scratch.skill_points, scratch.skill_level_max, scratch.basic_skill_min, scratch.difficult_cost]).toEqual([86, 6, 2, 2]);
+    expect(scratch.starting_funds_default).toBe(2550);
+    expect(data.starting_funds).toBe(2550);
   });
 
   it('GET /api/skill-notes returns seeded skill notes', async () => {
@@ -109,8 +108,9 @@ describe('Phase 3b Character Creation & Reception API', () => {
     const data = await res.json();
     expect(data.id).toBeDefined();
     expect(data.status).toBe('pending');
-    expect(data.validation_results.valid).toBe(true);
-    expect(data.validation_results.stats.unconfigured).toBe(true);
+    // スクラッチビルド方式（62 ポイント・86 技能ポイント）の検証結果が付く。合わなくても受け付けて GM が判断する（Phase 5t）
+    expect(data.validation_results.stats.unconfigured).toBe(false);
+    expect(data.validation_results.stats.points).toBe(62);
 
     // GM lists submissions
     const listRes = await app.request('/api/character-submissions', {
@@ -267,5 +267,16 @@ describe('Phase 3b Character Creation & Reception API', () => {
       body: JSON.stringify({ format: 'invalid-format', version: 99 }),
     });
     expect(badRes.status).toBe(400);
+  });
+});
+
+describe('Phase 5t: creation templates', () => {
+  it('returns the template structure (empty when the local rule file is missing)', async () => {
+    const res = await app.request('/api/creation-templates');
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(typeof data.stat_tables).toBe('object');
+    expect(typeof data.skill_templates).toBe('object');
+    expect(typeof data.gear_packages).toBe('object');
   });
 });

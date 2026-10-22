@@ -12,9 +12,33 @@ export const CreationMethodConfigSchema = z.object({
   basic_skill_min: z.number().int().nullable().default(null),
   difficult_cost: z.number().int().nullable().default(null),
   uses_starting_funds: z.boolean().nullable().default(null),
+  // ロールのテンプレートを使う方式（Phase 5t。日本語版 p.73〜99）。
+  // streetrat: 能力値は表の 1 行（1d10）、技能はテンプレートどおり、武器と防具はロールのパッケージ
+  // edgerunner: 能力値は表から能力値ごとに 1d10、技能はロールの 20 技能に 86 ポイント、武器と防具はパッケージ
+  template: z.enum(['streetrat', 'edgerunner']).nullable().optional(),
+  // GM が開始資金を決めていないときの開始資金（パッケージ方式 500eb、スクラッチビルド 2,550eb）
+  starting_funds_default: z.number().int().nullable().optional(),
 });
 
 export type CreationMethodConfig = z.infer<typeof CreationMethodConfigSchema>;
+
+/** キャラクター作成のロール別データ（Phase 5t）。手元のルール資料から読み、技能は技能キー・品目は品目 ID に直して返す */
+export interface CreationGearOption {
+  item_id?: string;
+  name: string;
+  qty: number;
+  price_eb?: number;
+  category?: string;
+  pair?: string;
+}
+
+export interface CreationTemplates {
+  stat_order: string[];
+  stat_tables: Record<string, { page?: number; uncertain?: string; rows: number[][] }>;
+  skill_templates: Record<string, { page?: number; skills: Record<string, number>; unsupported: Record<string, number> }>;
+  gear_packages: Record<string, { page?: number; slots: CreationGearOption[][] }>;
+  gear_note?: string;
+}
 
 export const CharacterDraftItemSchema = z.object({
   item_id: z.string().optional(),
