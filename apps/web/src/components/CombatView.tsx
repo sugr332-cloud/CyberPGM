@@ -11,6 +11,7 @@ import {
   BoardToken,
   BoardDrop,
   formatSkillName,
+  MARTIAL_TECHNIQUES,
 } from '@cyberpgm/shared';
 import {
   initiativeTotal,
@@ -44,6 +45,9 @@ const phoneRoll = (p: { initiative_roll?: unknown }) => {
 // 1 ターンに使えるアクションの数（サーバーの actionsAllowed と同じ。Phase 5j）
 const actionsAllowedOf = (p: { state?: Record<string, unknown> }) =>
   Math.max(1, Number(p.state?.actions_per_turn ?? 1)) + Math.max(0, Number(p.state?.bonus_actions ?? 0));
+
+// 近接の攻撃・判定（相手は回避で受ける。間合いは隣のマス）。武術とつかみは Phase 5u
+const MELEE_LIKE = ['melee', 'brawl', 'martial_arts', 'grab', 'martial_technique'];
 
 export const CombatView: React.FC<CombatViewProps> = ({
   characters,
@@ -107,12 +111,18 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [dodgeMode, setDodgeMode] = useState<'dv' | 'dodge'>('dv');
   const [aimedLocation, setAimedLocation] = useState<'head' | 'held_item' | 'leg'>('head');
   const [heldItemId, setHeldItemId] = useState<string>('');
+  // 武術・つかみ（Phase 5u）
+  const [martialStyle, setMartialStyle] = useState<string>('');
+  const [technique, setTechnique] = useState<string>('');
+  const [grabMode, setGrabMode] = useState<'hold' | 'item'>('hold');
+  const [aimHead, setAimHead] = useState(false);
+  const [kipUp, setKipUp] = useState(false);
   
   // 出目を入れる前の計算式と成功ライン（仕様 §5.0.1。Phase 5n）
   const [attackLineText, setAttackLineText] = useState<string | null>(null);
   useEffect(() => {
     const cur = combat?.participants?.[combat.turn_index];
-    if (!combat || !cur || !['ranged', 'aimed', 'autofire', 'melee', 'brawl'].includes(selectedActionKey ?? '')) {
+    if (!combat || !cur || !['ranged', 'aimed', 'autofire', ...MELEE_LIKE].includes(selectedActionKey ?? '')) {
       setAttackLineText(null);
       return;
     }
@@ -425,7 +435,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   }, [losInfo, selectedActionKey]);
 
   const meleeBlocked = useMemo(() => {
-    if (!['melee', 'brawl'].includes(selectedActionKey || '')) return false;
+    if (!MELEE_LIKE.includes(selectedActionKey || '')) return false;
     if (losInfo && losInfo.distSquares > 1) return true;
     return false;
   }, [selectedActionKey, losInfo]);
@@ -457,7 +467,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
   // 近接攻撃・格闘は、相手はいつも DEX + 回避 で受ける（Phase 5l）
   useEffect(() => {
-    if (selectedActionKey === 'melee' || selectedActionKey === 'brawl') setDodgeMode('dodge');
+    if (MELEE_LIKE.includes(selectedActionKey ?? '')) setDodgeMode('dodge');
   }, [selectedActionKey]);
 
   // Weapon entries in inventory for active participant (kind === 'weapon')
@@ -758,6 +768,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
         ignore_armor_percent: ignoreArmorToSend,
         aimed_location: aimedLocation,
         held_item_id: heldItemId || undefined,
+        martial_style: martialStyle || undefined,
+        technique: selectedActionKey === 'martial_technique' ? technique || undefined : selectedActionKey === 'stand' && kipUp ? 'kip_up' : undefined,
+        grab_mode: selectedActionKey === 'grab' ? grabMode : undefined,
+        aim_head: aimHead || undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
         defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
@@ -849,6 +863,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
         ignore_armor_percent: ignoreArmorToSend,
         aimed_location: aimedLocation,
         held_item_id: heldItemId || undefined,
+        martial_style: martialStyle || undefined,
+        technique: selectedActionKey === 'martial_technique' ? technique || undefined : selectedActionKey === 'stand' && kipUp ? 'kip_up' : undefined,
+        grab_mode: selectedActionKey === 'grab' ? grabMode : undefined,
+        aim_head: aimHead || undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
         defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
@@ -2063,6 +2081,102 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     </div>
                   )}
 
+                  {/* 武術・つかみ・立ち上がる（Phase 5u。日本語版 p.177〜180） */}
+                  {['martial_arts', 'martial_technique', 'grab', 'stand'].includes(selectedActionKey) && (() => {
+                    const skills = (activePart.character?.skills ?? {}) as Record<string, number>;
+                    const styles = Object.entries(skills).filter(([k, v]) => k.split(':')[0] === 'martial_arts' && v >= 1);
+                    const targetChar = combat.participants.find((p) => p.id === targetParticipantId)?.character;
+                    const targetItems = ((targetChar?.inventory as Array<{ entry_id: string; name: string; equipped?: boolean }>) ?? []).filter((i) => i.equipped !== false);
+                    const tech = MARTIAL_TECHNIQUES.find((t) => t.key === technique);
+                    const styleSpec = (martialStyle || styles[0]?.[0] || '').split(':')[1] ?? null;
+                    const field: React.CSSProperties = { padding: '4px 6px', fontSize: '0.85rem', borderRadius: '4px', border: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' };
+                    const styleSelect = (
+                      <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '0.85rem' }}>
+                        流派:
+                        <select aria-label="武術の流派" value={martialStyle} onChange={(e) => setMartialStyle(e.target.value)} style={field}>
+                          <option value="">いちばん高い〈武術〉</option>
+                          {styles.map(([k, v]) => (
+                            <option key={k} value={k}>
+                              {formatSkillName(k)} {v}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    );
+                    if (selectedActionKey === 'stand') {
+                      return (
+                        <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '0.85rem' }}>
+                          <input type="checkbox" checked={kipUp} disabled={styles.length === 0} onChange={(e) => setKipUp(e.target.checked)} />
+                          跳ね起き（武術。DEX + 武術 + 1d10 が 13 を上回ればアクションを使わない。攻撃の欄に出目）
+                          {styles.length === 0 && <span style={{ color: 'var(--color-text-muted)' }}>— 〈武術〉がありません</span>}
+                        </label>
+                      );
+                    }
+                    if (selectedActionKey === 'grab') {
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem' }}>
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <label><input type="radio" checked={grabMode === 'hold'} onChange={() => setGrabMode('hold')} /> 相手を拘束する（つかまれていれば逃れる）</label>
+                            <label><input type="radio" checked={grabMode === 'item'} onChange={() => setGrabMode('item')} /> 持ち物を奪う</label>
+                          </div>
+                          {grabMode === 'item' && (
+                            <select aria-label="奪う持ち物" value={heldItemId} onChange={(e) => setHeldItemId(e.target.value)} style={field}>
+                              <option value="">奪う持ち物を選ぶ</option>
+                              {targetItems.map((i) => (
+                                <option key={i.entry_id} value={i.entry_id}>{i.name}</option>
+                              ))}
+                            </select>
+                          )}
+                          <span style={{ color: 'var(--color-text-muted)' }}>攻撃の欄に自分の出目、回避の欄に相手の〈格闘〉の出目を入れます。</span>
+                        </div>
+                      );
+                    }
+                    if (styles.length === 0) {
+                      return <div style={{ color: 'var(--color-warning)', fontSize: '0.85rem' }}>{activePart.name} は〈武術〉を持っていません（PC タブの編集で「種類を選ぶ技能を足す」から〈武術：流派〉を足せます）</div>;
+                    }
+                    if (selectedActionKey === 'martial_arts') return styleSelect;
+                    const usable = MARTIAL_TECHNIQUES.filter((t) => !t.style || !styleSpec || t.style === styleSpec);
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem' }}>
+                        {styleSelect}
+                        <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          奥義:
+                          <select aria-label="武術奥義" value={technique} onChange={(e) => setTechnique(e.target.value)} style={field}>
+                            <option value="">奥義を選ぶ</option>
+                            {usable.map((t) => (
+                              <option key={t.key} value={t.key}>
+                                {t.name}（{t.style ?? '共通'}）{t.dv ? ` 難易度 ${t.dv}` : ' 対抗判定'}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {tech && (
+                          <div style={{ color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
+                            条件: {tech.requirement}
+                            {tech.statReq ? `。【${tech.statReq.stat === 'will' ? '意志' : '移動'}】${tech.statReq.min} 以上` : ''}
+                            <br />
+                            効果: {tech.effect}
+                            {tech.usesAction ? '（アクション 1 回）' : '（アクションを使わない）'}
+                            {tech.damage ? '。ダメージの出目も入れます' : ''}
+                          </div>
+                        )}
+                        {tech?.canAimHead && (
+                          <label>
+                            <input type="checkbox" checked={aimHead} onChange={(e) => setAimHead(e.target.checked)} /> 頭部を狙う（判定 −8）
+                          </label>
+                        )}
+                        {tech?.key === 'disarm' && (
+                          <select aria-label="落とさせる持ち物" value={heldItemId} onChange={(e) => setHeldItemId(e.target.value)} style={field}>
+                            <option value="">落とさせる持ち物を選ぶ</option>
+                            {targetItems.map((i) => (
+                              <option key={i.entry_id} value={i.entry_id}>{i.name}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* Weapon Selection (for ranged / melee / reload / suppressive) */}
                   {['ranged', 'aimed', 'autofire', 'suppressive', 'melee', 'reload'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -2149,7 +2263,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   )}
 
                   {/* Target & Distance Selection (for ranged / melee / brawl) */}
-                  {['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'first_aid'].includes(selectedActionKey) && (
+                  {['ranged', 'aimed', 'autofire', ...MELEE_LIKE, 'choke', 'throw', 'first_aid'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{selectedActionKey === 'first_aid' ? '手当てする相手（自分も可）:' : '対象を選択:'}</span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -2358,7 +2472,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                       )}
 
                       {/* Melee adjacency notice */}
-                      {['melee', 'brawl'].includes(selectedActionKey) && meleeBlocked && (
+                      {MELEE_LIKE.includes(selectedActionKey) && meleeBlocked && (
                         <div
                           style={{
                             padding: '6px 10px',
@@ -2374,7 +2488,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                       )}
 
                       {/* Dodge mode if applicable（近接攻撃・格闘はいつも回避で受けるので出さない。Phase 5l） */}
-                      {!['melee', 'brawl'].includes(selectedActionKey) && (
+                      {!MELEE_LIKE.includes(selectedActionKey) && !['choke', 'throw'].includes(selectedActionKey) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
                         <span style={{ fontSize: '0.85rem' }}>受け方:</span>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', cursor: 'pointer' }}>
@@ -2625,7 +2739,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     </div>
 
                     {/* ROF 2 multi-attack option */}
-                    {['ranged', 'melee', 'brawl'].includes(selectedActionKey) && (
+                    {['ranged', 'melee', 'brawl', 'martial_arts'].includes(selectedActionKey) && (
                       <div
                         style={{
                           marginTop: '6px',

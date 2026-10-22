@@ -256,7 +256,7 @@ combatRoutes.get('/combats/current/my-lines', async (c) => {
   if (!combat || !me) return c.json({ lines: {} });
   const weapon_entry_id = c.req.query('weapon_entry_id') || undefined;
   const lines: Record<string, unknown> = {};
-  for (const key of ['ranged', 'aimed', 'autofire', 'melee', 'brawl']) {
+  for (const key of ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts']) {
     lines[key] = attackLine({ action_key: key, weapon_entry_id }, me);
   }
   return c.json({ lines });
@@ -1171,9 +1171,12 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
 
           if (afterObj.move_used !== undefined) moveUsed = afterObj.move_used ? 1 : 0;
           if (afterObj.action_used !== undefined) actionUsed = afterObj.action_used ? 1 : 0;
-          if (afterObj.deathSavePenalty !== undefined) newState.deathSavePenalty = afterObj.deathSavePenalty;
-          if (afterObj.statusRounds !== undefined) newState.statusRounds = afterObj.statusRounds ?? {};
-          if (afterObj.actions_taken !== undefined) newState.actions_taken = afterObj.actions_taken;
+          // ほかの値（死亡セーブの修正、状態の残りラウンド、つかみの相手など）はそのまま入れる。null は消す（Phase 5u）
+          for (const [k, v] of Object.entries(afterObj)) {
+            if (k === 'move_used' || k === 'action_used') continue;
+            if (v === null) delete newState[k];
+            else newState[k] = v;
+          }
 
           sqlite
             .prepare('UPDATE combat_participants SET state = ?, move_used = ?, action_used = ? WHERE id = ?')
@@ -1399,9 +1402,11 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
 
           if (beforeObj.move_used !== undefined) moveUsed = beforeObj.move_used ? 1 : 0;
           if (beforeObj.action_used !== undefined) actionUsed = beforeObj.action_used ? 1 : 0;
-          if (beforeObj.deathSavePenalty !== undefined) newState.deathSavePenalty = beforeObj.deathSavePenalty;
-          if (beforeObj.statusRounds !== undefined) newState.statusRounds = beforeObj.statusRounds ?? {};
-          if (beforeObj.actions_taken !== undefined) newState.actions_taken = beforeObj.actions_taken;
+          for (const [k, v] of Object.entries(beforeObj)) {
+            if (k === 'move_used' || k === 'action_used') continue;
+            if (v === null) delete newState[k];
+            else newState[k] = v;
+          }
 
           sqlite
             .prepare('UPDATE combat_participants SET state = ?, move_used = ?, action_used = ? WHERE id = ?')

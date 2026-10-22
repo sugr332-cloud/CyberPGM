@@ -20,17 +20,30 @@ export function initPhase4aData(dbInstance: AppDatabase) {
     if (existing) {
       const actionsPath = path.join(root, 'docs/data/combat-actions.ja.json');
       const parsed = JSON.parse(fs.readFileSync(actionsPath, 'utf-8'));
-      const fresh = (parsed.actions || parsed) as Array<{ key: string; status?: string }>;
-      const current = JSON.parse(existing.value) as Array<{ key: string; status?: string }>;
+      const fresh = (parsed.actions || parsed) as Array<{ key: string; status?: string; rev?: number }>;
+      const current = JSON.parse(existing.value) as Array<{ key: string; status?: string; rev?: number }>;
       let changed = false;
-      const next = current.map((a) => {
+      // 説明を差し替える: 格闘・応急手当は確認中のままの DB だけ（Phase 5l・5m）。rev が上がった行動はいつでも（Phase 5u）
+      let next = current.map((a) => {
         const f = fresh.find((x) => x.key === a.key);
         if (['brawl', 'first_aid'].includes(a.key) && f && a.status === 'unconfirmed' && f.status === 'confirmed') {
           changed = true;
           return f;
         }
+        if (f && (f.rev ?? 1) > (a.rev ?? 1)) {
+          changed = true;
+          return f;
+        }
         return a;
       });
+      // 新しく足した行動（武術・つかみなど）を、ファイルの順に入れる
+      for (const [i, f] of fresh.entries()) {
+        if (next.some((a) => a.key === f.key)) continue;
+        const prevKey = fresh[i - 1]?.key;
+        const at = prevKey ? next.findIndex((a) => a.key === prevKey) + 1 : 0;
+        next = [...next.slice(0, at), f, ...next.slice(at)];
+        changed = true;
+      }
       if (changed) {
         dbInstance
           .update(rule_constants)

@@ -1,3 +1,4 @@
+import { AddSpecializedSkill } from './AddSpecializedSkill.js';
 import { RoleInfoPanel } from './RoleInfoPanel.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -7,6 +8,7 @@ import {
   InventoryEntry,
   ROLES,
   SKILL_CATALOG,
+  getSkillDef,
   formatSkillName,
   generateUlid,
   skillNameToKey,
@@ -375,7 +377,8 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
       ...all
         .filter((s) => (!onlyLearned || form.skills[s.key] !== undefined) && (!q || s.name.toLowerCase().includes(q) || s.key.includes(q)))
         .map((s) => ({ key: s.key, name: s.name, stat: s.stat as StatKey | undefined })),
-      ...extra.map((k) => ({ key: k, name: formatSkillName(k), stat: undefined })),
+      // 種類つきの技能（科学：化学 など。Phase 5u）も、元の技能の能力値で基本値を出す
+      ...extra.map((k) => ({ key: k, name: formatSkillName(k), stat: getSkillDef(k)?.stat as StatKey | undefined })),
     ];
   }, [skillSearch, onlyLearned, form.skills]);
 
@@ -614,6 +617,7 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
               );
             })}
           </div>
+          <AddSpecializedSkill existing={Object.keys(form.skills)} onAdd={(key) => setForm((f) => ({ ...f, skills: { ...f.skills, [key]: f.skills[key] ?? 1 } }))} />
         </div>
 
         {/* 装備 */}
