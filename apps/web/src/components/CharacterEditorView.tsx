@@ -1,3 +1,4 @@
+import { RoleInfoPanel } from './RoleInfoPanel.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CharacterSheet,
@@ -476,6 +477,9 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
                 ))}
               </datalist>
             </label>
+            <div style={{ flexBasis: '100%' }}>
+              <RoleInfoPanel role={form.role} />
+            </div>
             <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '110px' }}>
               <span style={muted}>所持金 (eb)</span>
               <input aria-label="所持金" type="number" value={form.eb} onChange={(e) => setForm((f) => ({ ...f, eb: e.target.value }))} style={field} />

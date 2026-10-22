@@ -17,6 +17,8 @@ import {
   CreationMethodConfigSchema,
   CharacterDraft,
   CreationMethodConfig,
+  RoleInfo,
+  getProjectRoot,
 } from '@cyberpgm/shared';
 import { validateCharacterDraft, hpMaxFromStats } from '@cyberpgm/rules';
 import { requireGm } from '../auth.js';
@@ -134,6 +136,17 @@ export function saveBase64Image(dataUrl: string): { imageId: string; imagePath: 
 // ==========================================
 // 1. Creation Methods & Active Settings APIs
 // ==========================================
+
+// GET /api/role-info: ロール特技の説明（Phase 5s）。ルールブックの要約は手元のファイルにだけあり、なければ空で返す
+characterCreationRoutes.get('/role-info', async (c) => {
+  const file = path.join(getProjectRoot(), 'data', 'sources', 'core-ja', 'roles.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf-8')) as { startingRank?: number; roles?: RoleInfo[] };
+    return c.json({ starting_rank: parsed.startingRank ?? 4, roles: parsed.roles ?? [] });
+  } catch {
+    return c.json({ starting_rank: 4, roles: [] });
+  }
+});
 
 // GET /api/creation-methods
 characterCreationRoutes.get('/creation-methods', async (c) => {

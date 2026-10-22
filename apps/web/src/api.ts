@@ -13,6 +13,7 @@ import {
   PriceCategoryConfig,
   ItemPatchInput,
   CreationMethodConfig,
+  RoleInfo,
   CharacterDraft,
   CharacterSubmission,
   CpgmCharacterFile,
@@ -379,6 +380,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ categories }),
     }, getGmToken()),
+
+  // ロール特技の説明（Phase 5s）
+  getRoleInfo: () => request<{ starting_rank: number; roles: RoleInfo[] }>('/api/role-info'),
 
   // Character Creation & Submissions (Phase 3b)
   getCreationMethods: () =>
