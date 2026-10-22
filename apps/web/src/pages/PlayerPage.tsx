@@ -1,3 +1,4 @@
+import { RoleInfoPanel } from '../components/RoleInfoPanel.js';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
@@ -1179,6 +1180,11 @@ export const PlayerPage: React.FC = () => {
               </div>
               <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>資金</span>
             </div>
+          </div>
+
+          {/* ロールの概要とロール特技のランクごとの効果（Phase 5s） */}
+          <div style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px 16px' }}>
+            <RoleInfoPanel role={sheet.role} />
           </div>
 
           {/* HP & SP Section */}

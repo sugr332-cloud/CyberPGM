@@ -1,3 +1,4 @@
+import { RoleInfoPanel } from '../components/RoleInfoPanel.js';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -790,6 +791,8 @@ export const CharacterCreatePage: React.FC = () => {
                 );
               })}
             </div>
+            {/* 選んだロールの概要とロール特技（Phase 5s）。作成時はランク 4 */}
+            <RoleInfoPanel role={role} open />
           </div>
 
           <button

@@ -169,6 +169,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
   // Resolution preview
   const [previewResult, setPreviewResult] = useState<any | null>(null);
+  // 足りない入力を赤枠で示す（Phase 5s）。second は ROF 2 の 2 回目の攻撃の欄
+  const missingMsgs: string[] = previewResult?.missing_inputs ?? [];
+  const isMissing = (second: boolean, ...keys: string[]) =>
+    missingMsgs.some((m) => /^(\[#2\]|第2攻撃)/.test(m) === second && keys.some((k) => m.includes(k)));
+  const missBorder = (miss: boolean) => (miss ? '2px solid var(--color-danger)' : '1px solid var(--color-border-light)');
   const [isResolving, setIsResolving] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
 
@@ -2183,7 +2188,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                 width: '60px',
                                 padding: '4px 6px',
                                 backgroundColor: 'var(--color-bg)',
-                                border: '1px solid var(--color-border-light)',
+                                border: missBorder(isMissing(false, '距離')),
                                 borderRadius: '4px',
                                 color: 'var(--color-text)',
                               }}
@@ -2459,7 +2464,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           placeholder="1d10"
                           value={deathSaveRoll ?? ''}
                           onChange={(e) => setDeathSaveRoll(e.target.value ? Number(e.target.value) : undefined)}
-                          style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }}
+                          style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-bg)', border: missBorder(isMissing(false, '死亡セーブ')), borderRadius: '4px', color: 'var(--color-text)' }}
                         />
                       </div>
                     )}
@@ -2479,7 +2484,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             padding: '4px',
                             textAlign: 'center',
                             backgroundColor: 'var(--color-bg)',
-                            border: '1px solid var(--color-border-light)',
+                            border: missBorder(isMissing(false, '攻撃の出目', '判定の出目')),
                             borderRadius: '4px',
                             color: 'var(--color-text)',
                           }}
@@ -2503,7 +2508,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                               padding: '4px',
                               textAlign: 'center',
                               backgroundColor: 'var(--color-bg)',
-                              border: '1px solid var(--color-border-light)',
+                              border: missBorder(isMissing(false, '攻撃クリティカル', '攻撃ファンブル', '追加の出目')),
                               borderRadius: '4px',
                               color: 'var(--color-text)',
                             }}
@@ -2528,7 +2533,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                 padding: '4px',
                                 textAlign: 'center',
                                 backgroundColor: 'var(--color-bg)',
-                                border: '1px solid var(--color-border-light)',
+                                border: missBorder(isMissing(false, '回避の出目')),
                                 borderRadius: '4px',
                                 color: 'var(--color-text)',
                               }}
@@ -2552,7 +2557,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                   padding: '4px',
                                   textAlign: 'center',
                                   backgroundColor: 'var(--color-bg)',
-                                  border: '1px solid var(--color-border-light)',
+                                  border: missBorder(isMissing(false, '回避クリティカル', '回避ファンブル')),
                                   borderRadius: '4px',
                                   color: 'var(--color-text)',
                                 }}
@@ -2574,7 +2579,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             width: '90px',
                             padding: '4px 6px',
                             backgroundColor: 'var(--color-bg)',
-                            border: '1px solid var(--color-border-light)',
+                            border: missBorder(isMissing(false, 'ダメージ')),
                             borderRadius: '4px',
                             color: 'var(--color-text)',
                             fontSize: '0.85rem',
@@ -2596,7 +2601,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             padding: '4px',
                             textAlign: 'center',
                             backgroundColor: 'var(--color-bg)',
-                            border: '1px solid var(--color-border-light)',
+                            border: missBorder(isMissing(false, '致命傷表 (2d6) の出目を入力')),
                             borderRadius: '4px',
                             color: 'var(--color-text)',
                           }}
@@ -2658,7 +2663,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                   padding: '4px',
                                   textAlign: 'center',
                                   backgroundColor: 'var(--color-surface)',
-                                  border: '1px solid var(--color-border-light)',
+                                  border: missBorder(isMissing(true, '攻撃の出目')),
                                   borderRadius: '4px',
                                   color: 'var(--color-text)',
                                 }}
@@ -2682,7 +2687,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                     padding: '4px',
                                     textAlign: 'center',
                                     backgroundColor: 'var(--color-surface)',
-                                    border: '1px solid var(--color-border-light)',
+                                    border: missBorder(isMissing(true, '攻撃クリティカル', '攻撃ファンブル')),
                                     borderRadius: '4px',
                                     color: 'var(--color-text)',
                                   }}
@@ -2700,7 +2705,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                   placeholder="1d10"
                                   value={secondDefenseFirst ?? ''}
                                   onChange={(e) => setSecondDefenseFirst(e.target.value ? Number(e.target.value) : null)}
-                                  style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }}
+                                  style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: missBorder(isMissing(true, '回避の出目')), borderRadius: '4px', color: 'var(--color-text)' }}
                                 />
                               </div>
                             )}
@@ -2714,7 +2719,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                 placeholder="2d6"
                                 value={secondCritRoll ?? ''}
                                 onChange={(e) => setSecondCritRoll(e.target.value ? Number(e.target.value) : undefined)}
-                                style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }}
+                                style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: missBorder(isMissing(true, '致命傷表 (2d6) の出目を入力')), borderRadius: '4px', color: 'var(--color-text)' }}
                               />
                             </div>
                             {(secondExtraCritRoll !== undefined || (previewResult?.missing_inputs ?? []).some((m: string) => m.startsWith('[#2]') && m.includes('2 つ目'))) && (
@@ -2744,7 +2749,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                   width: '90px',
                                   padding: '4px 6px',
                                   backgroundColor: 'var(--color-surface)',
-                                  border: '1px solid var(--color-border-light)',
+                                  border: missBorder(isMissing(true, 'ダメージ')),
                                   borderRadius: '4px',
                                   color: 'var(--color-text)',
                                   fontSize: '0.85rem',

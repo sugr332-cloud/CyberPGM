@@ -413,7 +413,7 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
     expect(json.result.success).toBe(false);
     expect(json.result.missing_inputs).toBeDefined();
     expect(json.result.missing_inputs).toContain('距離を入力してください');
-    expect(json.result.missing_inputs).toContain('出目を入力してください');
+    expect(json.result.missing_inputs).toContain('攻撃の出目 (1d10) を入力してください');
     expect(json.result.changes.length).toBe(0);
   });
 
@@ -792,7 +792,7 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       });
 
       const json = await res.json();
-      expect(json.result.missing_inputs).toContain('倍率の上限が不明です');
+      expect(json.result.missing_inputs.join()).toContain('フルオート射撃ができません');
     });
 
     it('12.1: requires GM input for ignore_armor_percent when weapon value is missing, and resolves once provided', async () => {
@@ -1521,5 +1521,13 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       const mine = await (await app.request('/api/combats/current/my-lines?weapon_entry_id=e1', { headers: { Authorization: `Bearer ${pdev.token}` } })).json();
       expect(mine.lines.ranged.bands[0]).toEqual({ range: '0〜6m', dv: 13, needed: '2 以上で成功' });
     });
+  });
+});
+
+describe('Phase 5s: role info and autofire table names', () => {
+  it('returns role info (empty when the local rule file is missing)', async () => {
+    const res = await (await app.request('/api/role-info')).json();
+    expect(Array.isArray(res.roles)).toBe(true);
+    expect(res.starting_rank).toBe(4);
   });
 });

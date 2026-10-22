@@ -1013,18 +1013,19 @@ export function resolveCombatAction(
     if (wData) {
       if (isAutofire) {
         if (!wData.dv_table_key) {
-          missing_inputs.push('オートファイアの DV 表がありません');
+          missing_inputs.push(`${wData.name_ja} には難易度表がありません`);
         } else {
-          const autofireKey = `${wData.dv_table_key} (Autofire)`;
+          // 武器データの表の名前に (Autofire) が付いているものはそのまま使う（Phase 5s）
+          const autofireKey = /\(Autofire\)$/.test(wData.dv_table_key) ? wData.dv_table_key : `${wData.dv_table_key} (Autofire)`;
           dvTable =
             getRuleConstant<DvTable>(`dv_table.${autofireKey}`) ||
             getRuleConstant<DvTable>(autofireKey);
           if (!dvTable) {
-            missing_inputs.push('オートファイアの DV 表がありません');
+            missing_inputs.push(`フルオート射撃の難易度表（${autofireKey}）がありません`);
           }
         }
         if (typeof wData.autofire !== 'number' || wData.autofire <= 0) {
-          missing_inputs.push('倍率の上限が不明です');
+          missing_inputs.push(`${wData.name_ja} はフルオート射撃ができません。フルオート射撃のある武器（SMG、アサルト・ライフルなど）を選んでください`);
         }
       } else {
         if (!wData.dv_table_key) {
@@ -1164,7 +1165,7 @@ export function resolveCombatAction(
         missing_inputs.push(`${prefix}距離を入力してください`);
       }
       if (!att.attack_roll) {
-        missing_inputs.push(`${prefix}出目を入力してください`);
+        missing_inputs.push(`${prefix}攻撃の出目 (1d10) を入力してください`);
       } else if (
         (att.attack_roll.first === 10 || att.attack_roll.first === 1) &&
         att.attack_roll.extra === undefined
@@ -1301,7 +1302,7 @@ export function resolveCombatAction(
 
       if (isDodging && curTargetChar) {
         if (!att.defense_roll) {
-          missing_inputs.push(`${prefix}回避の出目を入力してください`);
+          missing_inputs.push(`${prefix}回避の出目 (1d10) を入力してください`);
           continue;
         }
         if (
@@ -1655,7 +1656,7 @@ export function resolveCombatAction(
         [att.defense_roll, '回避'],
       ] as const) {
         if (!roll) {
-          missing_inputs.push(`${prefix}${label === '攻撃' ? '出目' : '回避の出目'}を入力してください`);
+          missing_inputs.push(`${prefix}${label === '攻撃' ? '攻撃の出目 (1d10)' : '回避の出目 (1d10)'}を入力してください`);
         } else if ((roll.first === 10 || roll.first === 1) && roll.extra === undefined) {
           missing_inputs.push(
             `${prefix}${label}${roll.first === 10 ? 'クリティカル' : 'ファンブル'}: 追加出目 (1d10) を入力してください`,

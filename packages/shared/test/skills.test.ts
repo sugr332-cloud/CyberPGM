@@ -69,3 +69,13 @@ describe('skills catalog and formatting', () => {
     expect(skillNameToKey('近接武器')).toBe('melee_weapon');
   });
 });
+
+describe('rankInRange (Phase 5s)', () => {
+  it('reads ranges like 3〜4, 9 and 1〜10', async () => {
+    const { rankInRange } = await import('../src/roles.js');
+    expect(rankInRange('3〜4', 4)).toBe(true);
+    expect(rankInRange('3〜4', 5)).toBe(false);
+    expect(rankInRange('9', 9)).toBe(true);
+    expect(rankInRange('1〜10', 7)).toBe(true);
+  });
+});
