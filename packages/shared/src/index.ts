@@ -13,3 +13,4 @@ export * from './board.js';
 export * from './scenario.js';
 export * from './martial.js';
 export * from './hazards.js';
+export * from './medical.js';

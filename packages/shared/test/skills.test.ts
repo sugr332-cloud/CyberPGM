@@ -20,8 +20,9 @@ describe('disclaimer constants', () => {
 });
 
 describe('skills catalog and formatting', () => {
-  it('has 68 skills: 63 from FVTT and 5 skills with a chosen kind (p.132〜139)', () => {
-    expect(Object.keys(SKILL_CATALOG).length).toBe(68);
+  it('has 70 skills: 63 from FVTT, 5 skills with a chosen kind (p.132〜139) and 2 Medtech skills (p.149)', () => {
+    expect(Object.keys(SKILL_CATALOG).length).toBe(70);
+    expect(getSkillDef('surgery')?.stat).toBe('tech');
     expect(getSkillDef('martial_arts')?.multiplier).toBe(2);
     expect(getSkillDef('play_instrument')?.stat).toBe('tech');
   });

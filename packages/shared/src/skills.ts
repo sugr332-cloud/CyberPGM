@@ -83,8 +83,16 @@ export const SPECIALIZED_SKILLS: Record<string, SpecializedSkillEntry> = {
   },
 };
 
-/** 技能の一覧（FVTT 由来の 63 技能 ＋ 種類を選ぶ 5 技能） */
-export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = { ...GENERATED_SKILL_CATALOG, ...SPECIALIZED_SKILLS };
+/**
+ * メドテクだけが《メディシン》で得る技能（Phase 5w。日本語版 p.149）。〈外科手術〉は 1 ポイントで 2 レベル、〈医療技術〉は薬品とクリオシステム操作のポイントの合計
+ */
+export const MEDTECH_SKILLS: Record<string, SkillCatalogEntry> = {
+  surgery: { key: 'surgery', name: '外科手術', name_en: 'Surgery', stat: 'tech', category: 'techniqueSkills', basic: false, difficulty: 'typical', multiplier: 1, sources: [{ book: RULEBOOK, page: 149 }], provisional: false },
+  medical_tech: { key: 'medical_tech', name: '医療技術', name_en: 'Medical Tech', stat: 'tech', category: 'techniqueSkills', basic: false, difficulty: 'typical', multiplier: 1, sources: [{ book: RULEBOOK, page: 149 }], provisional: false },
+};
+
+/** 技能の一覧（FVTT 由来の 63 技能 ＋ 種類を選ぶ 5 技能 ＋ メドテクの 2 技能） */
+export const SKILL_CATALOG: Record<string, SkillCatalogEntry> = { ...GENERATED_SKILL_CATALOG, ...SPECIALIZED_SKILLS, ...MEDTECH_SKILLS };
 
 /** 「科学:化学」のようなキーを基本キーと種類に分ける */
 export function splitSkillKey(key: string): { base: string; spec: string | null } {

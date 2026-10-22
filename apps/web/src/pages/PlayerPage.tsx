@@ -1203,6 +1203,16 @@ export const PlayerPage: React.FC = () => {
             【運命】点: 残り <strong style={{ color: 'var(--color-text)' }}>{luckLeft}</strong> / {sheet.stats.luck}（判定の前に使うと 1 点につき +1。セッションの始めに戻る）
           </div>
 
+          {/* ドラッグ・依存症の効果とサイバーサイコシス（Phase 5w。p.227〜232） */}
+          {((sheet.effectNotes ?? []).length > 0 || (sheet.psychosis?.level ?? 0) > 0) && (
+            <div data-testid="effects" style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {(sheet.effectNotes ?? []).map((n) => (
+                <span key={n} style={{ color: 'var(--color-warning)' }}>{n}</span>
+              ))}
+              {(sheet.psychosis?.level ?? 0) > 0 && <span style={{ color: 'var(--color-danger)' }}>サイバーサイコシス: {sheet.psychosis!.label}</span>}
+            </div>
+          )}
+
           {/* ロールの概要とロール特技のランクごとの効果（Phase 5s） */}
           <div style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px 16px' }}>
             <RoleInfoPanel role={sheet.role} />

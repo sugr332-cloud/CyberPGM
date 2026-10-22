@@ -14,7 +14,7 @@ import {
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
-import { formatCharacterRow, maskAmmoForPlayer } from '../character-helper.js';
+import { formatCharacterRow, maskAmmoForPlayer, effectiveForChecks } from '../character-helper.js';
 import {
   CreateCombatInputSchema,
   AddParticipantInputSchema,
@@ -120,8 +120,9 @@ export function getHydratedCombat(combatId: string): Combat | null {
           kind: formatted.kind,
           role: formatted.role,
           image_path: formatted.image_path,
-          stats: formatted.stats,
-          skills: formatted.skills,
+          // 判定にはドラッグ・依存症の修正を入れた値を使う（Phase 5w）
+          stats: effectiveForChecks(formatted.stats, formatted.skills, formatted.extra).stats,
+          skills: effectiveForChecks(formatted.stats, formatted.skills, formatted.extra).skills,
           hp: formatted.hp,
           hp_max: formatted.hp_max,
           sp_head: formatted.sp_head,
@@ -962,6 +963,22 @@ function announceResult(
   actionUsed: boolean,
   settings: Record<string, unknown>,
 ) {
+  // トラウマ・チームの自動呼び出し: 契約者の HP が【体格】未満になるか、体の一部を失う致命的損傷を受けたら（p.224。Phase 5w）
+  const DISMEMBER = ['片腕喪失', '片手喪失', '片脚喪失', '片目喪失', '片耳喪失'];
+  for (const ch of changes) {
+    const lost = ch.field === 'crit_injuries' && ((ch.after as Array<{ name?: string }>) ?? []).slice(((ch.before as unknown[]) ?? []).length).some((x) => DISMEMBER.includes(x.name ?? ''));
+    if (ch.field !== 'hp' && !lost) continue;
+    const row = db.select().from(characters).where(eq(characters.id, ch.target_id)).get();
+    if (!row) continue;
+    const extra = JSON.parse(row.extra || '{}');
+    if (!extra.trauma_plan || extra.trauma_called) continue;
+    const body = JSON.parse(row.stats).body;
+    if (lost || (typeof ch.after === 'number' && ch.after < body)) {
+      const rounds = randomInt(1, 7);
+      db.update(characters).set({ extra: JSON.stringify({ ...extra, trauma_called: true }) }).where(eq(characters.id, row.id)).run();
+      sessionManager.announceCombat('トラウマ・チーム', `${row.name} のエージェントがトラウマ・チーム（${extra.trauma_plan === 'executive' ? 'エグゼクティヴ' : 'シルバー'}）を呼んだ。${rounds} ラウンド後に AV-4 で到着し、行動順の先頭に入る`);
+    }
+  }
   for (const ch of changes) {
     if (ch.field === 'status') {
       const before = (ch.before as string[] | undefined) ?? [];
@@ -1221,6 +1238,9 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
       } else if (ch.field === 'extra' || ch.field === 'stats') {
         // 【運命】点・環境の状態など（extra）と、真空で減った能力値（stats）（Phase 5v）
         sqlite.prepare(`UPDATE characters SET ${ch.field} = ?, updated_at = ? WHERE id = ?`).run(JSON.stringify(ch.after), now, ch.target_id);
+      } else if (ch.field === 'humanity') {
+        // 人間性の増減（after に差分。Phase 5w）
+        sqlite.prepare('UPDATE characters SET humanity = humanity + ?, updated_at = ? WHERE id = ?').run(Number(ch.after) || 0, now, ch.target_id);
       } else if (ch.field === 'state') {
         // Participant state update (move_used, action_used, deathSavePenalty, etc.)
         const part = sqlite
@@ -1456,6 +1476,8 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
       } else if (ch.field === 'extra' || ch.field === 'stats') {
         // 【運命】点・環境の状態など（extra）と、真空で減った能力値（stats）（Phase 5v）
         sqlite.prepare(`UPDATE characters SET ${ch.field} = ?, updated_at = ? WHERE id = ?`).run(JSON.stringify(ch.before), now, ch.target_id);
+      } else if (ch.field === 'humanity') {
+        sqlite.prepare('UPDATE characters SET humanity = humanity - ?, updated_at = ? WHERE id = ?').run(Number(ch.after) || 0, now, ch.target_id);
       } else if (ch.field === 'state') {
         const part = sqlite
           .prepare('SELECT state, move_used, action_used FROM combat_participants WHERE id = ?')

@@ -133,6 +133,7 @@ export interface CombatChange {
     | 'crit_injuries'
     | 'extra'
     | 'stats'
+    | 'humanity'
     | 'dropped'
     | 'out'
     | 'state'
@@ -161,6 +162,7 @@ export const CombatChangeSchema = z.object({
     'crit_injuries',
     'extra',
     'stats',
+    'humanity',
     'dropped',
     'out',
     'state',
@@ -337,6 +339,9 @@ export const ResolveActionInputSchema = z.object({
   hazard_status: z.string().optional(), // 終わらせる環境の状態（hazard_end）
   // 物を投げる（Phase 5v。p.177〜178）
   throw_entry_id: z.string().optional(),
+  // ドラッグ・薬品を使う（Phase 5w。p.150・227）
+  drug_entry_id: z.string().optional(),
+  unwilling: z.boolean().optional(), // 同意しない相手（エアハイポで近接攻撃）
   // Multi-attack for ROF > 1
   attacks: z.array(SingleAttackInputSchema).optional(),
   // Manual / unconfirmed adjustments

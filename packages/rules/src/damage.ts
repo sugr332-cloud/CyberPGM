@@ -143,6 +143,8 @@ export interface CriticalInjuryEntry {
   sources?: unknown;
   /** どちらの表の損傷か（Phase 5q から記録） */
   table?: 'body' | 'head';
+  /** 元データの英語名（Phase 5w から日本語名を name に入れる） */
+  name_en?: string;
 }
 
 /**

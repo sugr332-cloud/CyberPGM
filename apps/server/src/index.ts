@@ -39,6 +39,7 @@ import { startLogFile } from './logfile.js';
 import { audioRoutes, syncAudioFolder, getAudioDir } from './routes/audio.js';
 import { playerShopRoutes } from './routes/player-shop.js';
 import { playersRoutes } from './routes/players.js';
+import { medicalRoutes } from './routes/medical.js';
 
 export const app = new Hono();
 
@@ -56,6 +57,7 @@ app.get('/api/health', (c) => {
 // Mount API routes
 app.route('/api/auth', authRoutes);
 app.route('/api', charactersRoutes);
+app.route('/api', medicalRoutes);
 app.route('/api/money', moneyRoutes);
 app.route('/api/saves', savesRoutes);
 app.route('/api', settingsRoutes);

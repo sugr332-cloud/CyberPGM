@@ -45,7 +45,7 @@ import {
 } from '@cyberpgm/rules';
 import { getHydratedBoard } from './boards.js';
 import { addCombatParticipants, getHydratedCombat, pcsInPlay } from './combat.js';
-import { armorPenaltyOf } from '../character-helper.js';
+import { armorPenaltyOf, effectiveForChecks } from '../character-helper.js';
 
 export const scenarioPlayRoutes = new Hono();
 
@@ -1528,12 +1528,15 @@ function checkActorBase(characterId: string | null | undefined, skillKey: string
   const char = db.select().from(characters).where(eq(characters.id, characterId)).get();
   const def = getSkillDef(skillKey);
   if (!char || !def) return null;
-  const stats: Record<string, number> = JSON.parse(char.stats || '{}');
-  const skills: Record<string, number> = JSON.parse(char.skills || '{}');
+  // ドラッグ・依存症の修正を入れる（Phase 5w）
+  const eff = effectiveForChecks(JSON.parse(char.stats || '{}'), JSON.parse(char.skills || '{}'), JSON.parse(char.extra || '{}'));
+  const stats: Record<string, number> = eff.stats as unknown as Record<string, number>;
+  const skills: Record<string, number> = eff.skills;
   const stat = stats[def.stat];
   if (typeof stat !== 'number') return null;
   const level = skills[skillKey] ?? 0; // 取っていない技能はレベル 0（ルールどおり）
-  const pen = woundPenalty(woundState(char.hp, char.hp_max));
+  const ws = woundState(char.hp, char.hp_max);
+  const pen = eff.ignoreSeriousWound && ws === 'seriously' ? 0 : woundPenalty(ws);
   // 重い防具は REF・DEX を下げる（Phase 5m）
   const armorPen = def.stat === 'ref' || def.stat === 'dex' ? armorPenaltyOf(JSON.parse(char.inventory || '[]')) : 0;
   const base = stat + level + pen - armorPen;
