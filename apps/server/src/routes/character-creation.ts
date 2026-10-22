@@ -23,6 +23,8 @@ import {
   CreationTemplates,
   skillNameToKey,
   getSkillDef,
+  SkillInfoEntry,
+  SkillInfoResponse,
 } from '@cyberpgm/shared';
 import { validateCharacterDraft, hpMaxFromStats } from '@cyberpgm/rules';
 import { requireGm } from '../auth.js';
@@ -213,6 +215,26 @@ export function loadRoleData(): { startingRank?: number; roles?: RoleInfo[]; squ
 characterCreationRoutes.get('/role-info', async (c) => {
   const d = loadRoleData();
   return c.json({ starting_rank: d.startingRank ?? 4, roles: d.roles ?? [], squads: d.squads ?? {}, exec_team: d.execTeam ?? null });
+});
+
+/** 手元のルール資料（data/sources/core-ja/skills.json）から技能ごとの説明を読む。ファイルがなければ空（Phase 6a） */
+export function loadSkillInfoData(): SkillInfoResponse {
+  try {
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(getProjectRoot(), 'data', 'sources', 'core-ja', 'skills.json'), 'utf-8'),
+    );
+    if (raw && typeof raw.skills === 'object' && raw.skills !== null) {
+      return { skills: raw.skills as Record<string, SkillInfoEntry>, hasSource: true };
+    }
+    return { skills: {}, hasSource: false };
+  } catch {
+    return { skills: {}, hasSource: false };
+  }
+}
+
+// GET /api/skill-info: 技能ごとの説明（Phase 6a）。data/sources/core-ja/skills.json がなければ { skills: {}, hasSource: false }
+characterCreationRoutes.get('/skill-info', async (c) => {
+  return c.json(loadSkillInfoData());
 });
 
 // GET /api/creation-methods

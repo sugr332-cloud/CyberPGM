@@ -92,6 +92,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [draggingTokenId, setDraggingTokenId] = useState<string | null>(null);
   const [draggingObjectId, setDraggingObjectId] = useState<string | null>(null);
+  const [dragHoverCell, setDragHoverCell] = useState<{ x: number; y: number } | null>(null);
+  const [dragMessage, setDragMessage] = useState<string | null>(null);
+  const dragStartCellRef = useRef<{ x: number; y: number } | null>(null);
+  const dragMovedRef = useRef<boolean>(false);
 
   // Fog of War state
   const [isFogMode, setIsFogMode] = useState<boolean>(false);
@@ -197,7 +201,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   );
 
   // Convert SVG client coords to grid cell
-  const getCellFromEvent = (e: React.MouseEvent<SVGSVGElement>): { x: number; y: number } | null => {
+  const getCellFromEvent = (e: { clientX: number; clientY: number }): { x: number; y: number } | null => {
     if (!svgRef.current) return null;
     let svgX: number;
     let svgY: number;
@@ -224,7 +228,63 @@ export const BoardView: React.FC<BoardViewProps> = ({
     return { x, y };
   };
 
+  // ドラッグ中のコマをそのマスに置けるか判定する（Phase 6a）
+  const evaluateTokenDropCell = useCallback(
+    (tokenId: string, cx: number, cy: number): { valid: boolean; isMoveAction: boolean; reason?: string } => {
+      const tok = tokens.find((t) => t.id === tokenId);
+      if (!tok) return { valid: false, isMoveAction: false };
+      const part = getParticipantForToken(tok);
+      const isActiveTurnMove =
+        combat?.status === 'active' &&
+        mode === 'move' &&
+        Boolean(activeParticipantId) &&
+        part?.id === activeParticipantId;
+
+      if (isActiveTurnMove) {
+        const inReach = Boolean(reachableCells?.has(`${cx},${cy}`));
+        if (inReach) {
+          return { valid: true, isMoveAction: true };
+        }
+        const charMove = (part?.character?.stats?.move ?? 6) - (part?.character?.armor_penalty ?? 0);
+        const dying = (part?.character?.hp ?? 1) < 1;
+        const maxMoves = Math.max(1, dying ? charMove - 6 : charMove);
+        return {
+          valid: false,
+          isMoveAction: true,
+          reason: `そのマスへは移動できません（移動力 ${maxMoves} マス）`,
+        };
+      }
+
+      const blockingObj = objects.find(
+        (obj) => !obj.passable && cx >= obj.x && cx < obj.x + obj.w && cy >= obj.y && cy < obj.y + obj.h,
+      );
+      if (blockingObj) {
+        return {
+          valid: false,
+          isMoveAction: false,
+          reason: `そのマスへは移動できません（通れない置物「${blockingObj.label || '障害物'}」があります）`,
+        };
+      }
+
+      const occupyingTok = tokens.find((t) => t.id !== tok.id && t.x === cx && t.y === cy);
+      if (occupyingTok) {
+        return {
+          valid: false,
+          isMoveAction: false,
+          reason: 'そのマスへは移動できません（ほかのコマがいます）',
+        };
+      }
+
+      return { valid: true, isMoveAction: false };
+    },
+    [tokens, objects, combat?.status, mode, activeParticipantId, reachableCells, getParticipantForToken],
+  );
+
   const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (dragMovedRef.current) {
+      dragMovedRef.current = false;
+      return;
+    }
     const cell = getCellFromEvent(e);
     if (!cell) return;
 
@@ -240,49 +300,113 @@ export const BoardView: React.FC<BoardViewProps> = ({
     }
   };
 
-  // Object drag handling in setup / non-combat
-  const handleObjectMouseDown = (objId: string, e: React.MouseEvent) => {
-    if (combat?.status === 'active' || isScreen || !isGm) return;
+  // Object drag handling in setup / non-combat (Pointer Events)
+  const handleObjectPointerDown = (objId: string, e: React.PointerEvent) => {
+    if (combat?.status === 'active' || isScreen || !isGm || isFogMode) return;
+    e.preventDefault();
     e.stopPropagation();
+    const obj = objects.find((o) => o.id === objId);
     setSelectedObjectId(objId);
     setDraggingObjectId(objId);
+    setDragHoverCell(obj ? { x: obj.x, y: obj.y } : null);
+    dragStartCellRef.current = obj ? { x: obj.x, y: obj.y } : null;
+    dragMovedRef.current = false;
+    try {
+      svgRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore synthetic events without active pointerId
+    }
   };
 
-  const handleTokenMouseDown = (tokenId: string, e: React.MouseEvent) => {
-    if (combat?.status === 'active' || isScreen || !isGm) return;
+  // Token drag handling in setup & active combat for GM (Phase 6a, Pointer Events)
+  const handleTokenPointerDown = (tokenId: string, e: React.PointerEvent) => {
+    if (isScreen || !isGm || isFogMode) return;
+    e.preventDefault();
     e.stopPropagation();
+    const tok = tokens.find((t) => t.id === tokenId);
     setDraggingTokenId(tokenId);
+    setDragHoverCell(tok ? { x: tok.x, y: tok.y } : null);
+    setDragMessage(null);
+    dragStartCellRef.current = tok ? { x: tok.x, y: tok.y } : null;
+    dragMovedRef.current = false;
+    try {
+      svgRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore synthetic events without active pointerId
+    }
   };
 
-  const handleSvgMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+  const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (isGm && isFogMode) {
+      e.preventDefault();
       const cell = getCellFromEvent(e);
       if (cell) {
         setIsPaintingFog(true);
         applyFogToolToCell(cell);
+        try {
+          svgRef.current?.setPointerCapture(e.pointerId);
+        } catch {
+          // ignore
+        }
       }
     }
   };
 
-  const handleSvgMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+  const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (isGm && isFogMode && isPaintingFog) {
       const cell = getCellFromEvent(e);
       if (cell) {
         applyFogToolToCell(cell);
       }
+      return;
+    }
+    if (draggingTokenId || draggingObjectId) {
+      const cell = getCellFromEvent(e);
+      setDragHoverCell(cell);
+      if (
+        cell &&
+        dragStartCellRef.current &&
+        (cell.x !== dragStartCellRef.current.x || cell.y !== dragStartCellRef.current.y)
+      ) {
+        dragMovedRef.current = true;
+      }
     }
   };
 
-  const handleMouseUp = (e: React.MouseEvent<SVGSVGElement>) => {
+  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    try {
+      if (svgRef.current?.hasPointerCapture?.(e.pointerId)) {
+        svgRef.current.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // ignore
+    }
     if (isPaintingFog) {
       setIsPaintingFog(false);
     }
     if (draggingTokenId) {
+      const tok = tokens.find((t) => t.id === draggingTokenId);
       const cell = getCellFromEvent(e);
-      if (cell) {
-        onMoveToken?.(draggingTokenId, cell.x, cell.y);
+      if (tok && cell && (cell.x !== tok.x || cell.y !== tok.y)) {
+        const check = evaluateTokenDropCell(draggingTokenId, cell.x, cell.y);
+        if (check.isMoveAction) {
+          if (check.valid) {
+            setDragMessage(null);
+            onSelectDestination?.(cell);
+          } else {
+            setDragMessage(check.reason || 'そのマスへは移動できません');
+          }
+        } else {
+          if (check.valid) {
+            setDragMessage(null);
+            onMoveToken?.(draggingTokenId, cell.x, cell.y);
+          } else {
+            setDragMessage(check.reason || 'そのマスへは移動できません');
+          }
+        }
       }
       setDraggingTokenId(null);
+      setDragHoverCell(null);
     }
     if (draggingObjectId) {
       const cell = getCellFromEvent(e);
@@ -290,6 +414,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
         onUpdateObject?.(draggingObjectId, { x: cell.x, y: cell.y });
       }
       setDraggingObjectId(null);
+      setDragHoverCell(null);
     }
   };
 
@@ -720,9 +845,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
           preserveAspectRatio="xMidYMid meet"
           className="border border-slate-800 shadow-2xl transition-transform"
           onClick={handleSvgClick}
-          onMouseDown={handleSvgMouseDown}
-          onMouseMove={handleSvgMouseMove}
-          onMouseUp={handleMouseUp}
+          onPointerDown={handleSvgPointerDown}
+          onPointerMove={handleSvgPointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
           style={{
             maxWidth: '100%',
             maxHeight: '100%',
@@ -730,6 +856,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
             height: isScreen ? '100%' : undefined,
             display: 'block',
             cursor: mode === 'move' ? 'crosshair' : 'default',
+            touchAction: isGm && !isScreen ? 'none' : undefined,
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
           }}
         >
           <defs>
@@ -864,7 +993,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                       ? 'cursor-move'
                       : 'pointer-events-none'
                   }
-                  onMouseDown={(e) => handleObjectMouseDown(obj.id, e)}
+                  onPointerDown={(e) => handleObjectPointerDown(obj.id, e)}
                   opacity={isBroken ? 0.4 : 0.9}
                 >
                   <rect
@@ -1038,19 +1167,32 @@ export const BoardView: React.FC<BoardViewProps> = ({
               return (
                 <g
                   key={tok.id}
+                  data-testid={`token-${tok.id}`}
+                  data-character-id={tok.character_id || ''}
+                  data-dragging={draggingTokenId === tok.id ? 'true' : undefined}
                   className={`token-group ${
-                    combat?.status !== 'active' && isGm && !isScreen
-                      ? 'cursor-move'
-                      : 'cursor-pointer'
+                    isGm && !isScreen ? 'cursor-move' : 'cursor-pointer'
                   }`}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (dragMovedRef.current) {
+                      dragMovedRef.current = false;
+                      return;
+                    }
                     if (part) {
                       onSelectParticipant?.(part.id);
                     }
                   }}
-                  onMouseDown={(e) => handleTokenMouseDown(tok.id, e)}
-                  opacity={tok.gm_only ? 0.6 : isDead ? 0.4 : 1.0}
+                  onPointerDown={(e) => handleTokenPointerDown(tok.id, e)}
+                  opacity={
+                    draggingTokenId === tok.id
+                      ? 0.45
+                      : tok.gm_only
+                      ? 0.6
+                      : isDead
+                      ? 0.4
+                      : 1.0
+                  }
                 >
                   {/* Active highlight */}
                   {isActive && (
@@ -1244,6 +1386,27 @@ export const BoardView: React.FC<BoardViewProps> = ({
             })}
           </g>
 
+          {/* Drag Hover Cell Outline (Phase 6a) */}
+          {draggingTokenId && dragHoverCell && (() => {
+            const check = evaluateTokenDropCell(draggingTokenId, dragHoverCell.x, dragHoverCell.y);
+            const isValid = check.valid;
+            return (
+              <rect
+                data-testid="drag-hover-cell"
+                data-cell={`${dragHoverCell.x},${dragHoverCell.y}`}
+                data-valid={isValid ? 'true' : 'false'}
+                x={dragHoverCell.x * cellPx}
+                y={dragHoverCell.y * cellPx}
+                width={cellPx}
+                height={cellPx}
+                fill={isValid ? 'rgba(34, 197, 94, 0.28)' : 'rgba(239, 68, 68, 0.28)'}
+                stroke={isValid ? '#22C55E' : '#EF4444'}
+                strokeWidth={3}
+                pointerEvents="none"
+              />
+            );
+          })()}
+
           {/* Fog of War Layer */}
           <g className="fog-layer">
             {fogCells.map((f, i) => (
@@ -1262,6 +1425,42 @@ export const BoardView: React.FC<BoardViewProps> = ({
           </g>
         </svg>
       </div>
+
+      {/* ドラッグできないマスで離したときの理由（Phase 6a） */}
+      {!isScreen && dragMessage && (
+        <div
+          data-testid="board-drag-message"
+          style={{
+            width: '100%',
+            padding: '6px 12px',
+            backgroundColor: 'rgba(239, 68, 68, 0.18)',
+            borderTop: '1px solid #EF4444',
+            color: '#FCA5A5',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <span>{dragMessage}</span>
+          <button
+            type="button"
+            onClick={() => setDragMessage(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#FCA5A5',
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+              padding: '0 4px',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 };

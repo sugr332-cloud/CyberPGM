@@ -14,6 +14,7 @@ import {
   ItemPatchInput,
   CreationMethodConfig,
   RoleInfo,
+  SkillInfoResponse,
   CreationTemplates,
   CharacterDraft,
   CharacterSubmission,
@@ -382,8 +383,9 @@ export const api = {
       body: JSON.stringify({ categories }),
     }, getGmToken()),
 
-  // ロール特技の説明（Phase 5s）
+  // ロール特技の説明（Phase 5s）・技能の説明（Phase 6a）
   getRoleInfo: () => request<{ starting_rank: number; roles: RoleInfo[] }>('/api/role-info'),
+  getSkillInfo: () => request<SkillInfoResponse>('/api/skill-info'),
   getCreationTemplates: () => request<CreationTemplates>('/api/creation-templates'),
 
   // Character Creation & Submissions (Phase 3b)
@@ -527,6 +529,13 @@ export const api = {
   undoCombatAction: (combatId: string) =>
     request<{ success: boolean; undoneLogId: string; combat: any }>(`/api/combats/${combatId}/undo`, {
       method: 'POST',
+    }, getGmToken()),
+
+  // 戦闘中に GM がコマの位置を直す（Phase 6a。戦闘ログに残り、一手戻るで戻せる）
+  moveCombatToken: (combatId: string, data: { token_id: string; x: number; y: number }) =>
+    request<{ combat: any }>(`/api/combats/${combatId}/move-token`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     }, getGmToken()),
 
   // Board API (Phase 4b)

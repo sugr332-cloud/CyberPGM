@@ -404,7 +404,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const handleMoveToken = async (tokenId: string, x: number, y: number) => {
     if (!boardData) return;
     try {
-      await api.updateBoardToken(boardData.board.id, tokenId, { x, y });
+      if (combat && combat.status === 'active') {
+        const res = await api.moveCombatToken(combat.id, { token_id: tokenId, x, y });
+        setCombat(res.combat);
+      } else {
+        await api.updateBoardToken(boardData.board.id, tokenId, { x, y });
+      }
       refreshBoard(boardData.board.id);
     } catch (err: any) {
       console.warn('Failed to update token position:', err);

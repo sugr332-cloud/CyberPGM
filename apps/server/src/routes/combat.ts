@@ -11,6 +11,9 @@ import {
   weapons,
   rule_constants,
   scenario_sessions,
+  boards,
+  board_tokens,
+  board_objects,
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
@@ -1708,4 +1711,122 @@ combatRoutes.post('/combats/:id/squad', requireGm, async (c) => {
   const updated = getHydratedCombat(combatId);
   sessionManager.broadcastCombatUpdate(updated);
   return c.json({ combat: updated, added: names }, 201);
+});
+
+/**
+ * POST /api/combats/:id/move-token: 戦闘中に GM がコマの位置を直す（Phase 6a）。
+ * 移動力を消費せずにコマを動かし、戦闘ログに「GM がコマを動かした: 名前 (x1,y1)→(x2,y2)」を残す。
+ * 「一手戻る」（POST /api/combats/:id/undo）で元の位置に戻せる。
+ */
+combatRoutes.post('/combats/:id/move-token', requireGm, async (c) => {
+  const combatId = c.req.param('id');
+  if (!combatId) return c.json({ error: 'Missing combat ID' }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  const tokenId = typeof body.token_id === 'string' ? body.token_id : '';
+  const x = Number(body.x);
+  const y = Number(body.y);
+  if (!tokenId || !Number.isInteger(x) || !Number.isInteger(y)) {
+    return c.json({ error: 'token_id, x, y が必要です' }, 400);
+  }
+
+  const cb = db.select().from(combats).where(eq(combats.id, combatId)).get();
+  if (!cb) return c.json({ error: 'Combat not found' }, 404);
+  if (!cb.board_id) return c.json({ error: '盤面が設定されていません' }, 400);
+
+  const boardRow = db.select().from(boards).where(eq(boards.id, cb.board_id)).get();
+  if (!boardRow) return c.json({ error: 'Board not found' }, 404);
+
+  let cols = 20;
+  let rows = 15;
+  try {
+    const grid = JSON.parse(boardRow.grid || '{}');
+    if (typeof grid.cols === 'number') cols = grid.cols;
+    if (typeof grid.rows === 'number') rows = grid.rows;
+  } catch {
+    // ignore
+  }
+  if (x < 0 || x >= cols || y < 0 || y >= rows) {
+    return c.json({ error: 'そのマスへは移動できません（盤面の外です）' }, 400);
+  }
+
+  const tok = db
+    .select()
+    .from(board_tokens)
+    .where(and(eq(board_tokens.id, tokenId), eq(board_tokens.board_id, cb.board_id)))
+    .get();
+  if (!tok) return c.json({ error: 'コマが見つかりません' }, 404);
+
+  // 通れない置物（!obj.passable）があるマスには置けない
+  const objs = db.select().from(board_objects).where(eq(board_objects.board_id, cb.board_id)).all();
+  const blockingObj = objs.find(
+    (obj) => !obj.passable && x >= obj.x && x < obj.x + obj.w && y >= obj.y && y < obj.y + obj.h,
+  );
+  if (blockingObj) {
+    return c.json(
+      { error: `そのマスへは移動できません（通れない置物「${blockingObj.label || '障害物'}」があります）` },
+      400,
+    );
+  }
+
+  // ほかのコマがいるマスには置けない
+  const otherTok = db
+    .select()
+    .from(board_tokens)
+    .where(and(eq(board_tokens.board_id, cb.board_id), eq(board_tokens.x, x), eq(board_tokens.y, y)))
+    .all()
+    .find((t) => t.id !== tok.id);
+  if (otherTok) {
+    return c.json({ error: 'そのマスへは移動できません（ほかのコマがいます）' }, 400);
+  }
+
+  if (tok.x === x && tok.y === y) {
+    const updated = getHydratedCombat(combatId);
+    return c.json({ combat: updated });
+  }
+
+  const parts = db.select().from(combat_participants).where(eq(combat_participants.combat_id, combatId)).all();
+  const part = parts.find(
+    (p) => (p.character_id && p.character_id === tok.character_id) || p.id === tok.character_id,
+  );
+  const charRow =
+    !part && tok.character_id
+      ? db.select().from(characters).where(eq(characters.id, tok.character_id)).get()
+      : null;
+  const tokenName = part?.name || charRow?.name || (tok.gm_only ? 'GM' : 'コマ');
+  const desc = `GM がコマを動かした: ${tokenName} (${tok.x},${tok.y})→(${x},${y})`;
+
+  const change: CombatChange = {
+    target_id: tok.id,
+    target_name: tokenName,
+    field: 'token_position',
+    before: { x: tok.x, y: tok.y },
+    after: { x, y },
+    desc,
+  };
+
+  sqlite.transaction(() => {
+    db.update(board_tokens).set({ x, y }).where(eq(board_tokens.id, tok.id)).run();
+    sqlite
+      .prepare(
+        `INSERT INTO combat_log (id, combat_id, round, actor_id, action_key, input, breakdown, changes, undone, at)
+         VALUES (?, ?, ?, ?, 'gm_move', ?, ?, ?, 0, ?)`,
+      )
+      .run(
+        generateUlid(),
+        combatId,
+        cb.round,
+        part?.id ?? null,
+        JSON.stringify({ token_id: tok.id, x, y }),
+        JSON.stringify({ formula: desc }),
+        JSON.stringify([change]),
+        Date.now(),
+      );
+  })();
+
+  const updatedCombat = getHydratedCombat(combatId);
+  sessionManager.broadcastCombatUpdate(updatedCombat);
+  sessionManager.broadcastBoardUpdate({ id: cb.board_id });
+  sessionManager.broadcastScreenUpdate();
+
+  return c.json({ combat: updatedCombat });
 });
