@@ -6,6 +6,10 @@ import {
   CharLogEntry,
   WsNotifyPayload,
   formatSkillName,
+  NetArchitecture,
+  NetRunState,
+  netActionsForRank,
+  roleRank,
 } from '@cyberpgm/shared';
 import {
   api,
@@ -122,6 +126,24 @@ export const PlayerPage: React.FC = () => {
   const [attackWeaponId, setAttackWeaponId] = useState<string | null>(null);
   // 選んだ武器の成功ライン（射撃は距離帯ごと。仕様 §5.0.1。Phase 5n）
   const [myLines, setMyLines] = useState<Record<string, { text: string; bands?: Array<{ range: string; dv: number; needed: string }> } | null>>({});
+  // ネットラン中の階層地図（難易度は出さない。Phase 5z）
+  const [playerNetArch, setPlayerNetArch] = useState<NetArchitecture | null>(null);
+
+  const myCombatPart = currentCombat?.participants?.find((p: any) => p.character_id === sheet?.id);
+  const myNetState = (myCombatPart?.state as any)?.net as Partial<NetRunState> | undefined;
+  const myRevealedKey = (myNetState?.revealed ?? []).join(',');
+
+  useEffect(() => {
+    if (!myNetState?.jacked_in || !myNetState.arch_id) {
+      setPlayerNetArch(null);
+      return;
+    }
+    const rev = myRevealedKey ? myRevealedKey.split(',').map(Number).filter(Boolean) : [];
+    api
+      .getNetArchitecture(myNetState.arch_id, true, rev)
+      .then((res) => setPlayerNetArch(res.architecture))
+      .catch(() => setPlayerNetArch(null));
+  }, [myNetState?.jacked_in, myNetState?.arch_id, myRevealedKey]);
 
   useEffect(() => {
     if (!token || !currentCombat || currentCombat.status !== 'active' || !sheet) return;
@@ -163,6 +185,7 @@ export const PlayerPage: React.FC = () => {
     } else if (type === 'combat:result') {
       const p = payload as any;
       setCombatResultNotification(p);
+      api.getCurrentCombat(token).then((res) => setCurrentCombat(res.combat)).catch(() => {});
       setTimeout(() => {
         setCombatResultNotification((prev) => (prev === p ? null : prev));
       }, 8000);
@@ -882,6 +905,73 @@ export const PlayerPage: React.FC = () => {
                 </div>
   ) : null;
 
+  const netrunnerRank =
+    roleRank(sheet.role, (sheet as any).extra, 'Netrunner') ||
+    Number((sheet as any).extra?.role_ranks?.Netrunner ?? sheet.skills?.interface ?? 0);
+
+  const playerNetrunPanel =
+    myNetState?.jacked_in || netrunnerRank > 0 ? (
+      <div
+        data-testid="player-netrun-panel"
+        style={{
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-ally)',
+          borderRadius: '8px',
+          padding: '12px 14px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          fontSize: '0.82rem',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+          <strong style={{ color: 'var(--color-ally)' }}>
+            {myNetState?.jacked_in ? `NET ジャックイン中 (第 ${myNetState.depth ?? 1} 階層)` : 'NET 未接続（ネットランナー）'}
+          </strong>
+          <span data-testid="player-netrun-remaining" style={{ fontWeight: 700 }}>
+            NET アクション残り:{' '}
+            {Math.max(0, netActionsForRank(netrunnerRank || 4, Boolean(myNetState?.slowed)) - Number(myNetState?.net_used ?? 0))} /{' '}
+            {netActionsForRank(netrunnerRank || 4, Boolean(myNetState?.slowed))} 回
+          </span>
+        </div>
+        <div data-testid="player-netrun-rezzed">
+          <span style={{ color: 'var(--color-text-muted)' }}>起動中プログラム: </span>
+          {(myNetState?.rezzed ?? []).length > 0
+            ? (myNetState?.rezzed ?? []).map((r, i) => (
+                <span key={`${r.key}-${i}`} style={{ marginRight: '8px', fontWeight: 600 }}>
+                  {r.name} (REZ {r.rez}/{r.rez_max})
+                </span>
+              ))
+            : 'なし'}
+        </div>
+        {playerNetArch && (
+          <div data-testid="player-netrun-map" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+            <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>見えている階層の地図:</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {playerNetArch.floors.map((fl) => {
+                const isCur = Boolean(myNetState?.jacked_in && myNetState.depth === fl.floor);
+                return (
+                  <span
+                    key={fl.floor}
+                    data-testid={`player-floor-${fl.floor}`}
+                    style={{
+                      padding: '2px 7px',
+                      borderRadius: '4px',
+                      border: isCur ? '1px solid var(--color-ally)' : '1px solid var(--color-border-light)',
+                      backgroundColor: isCur ? 'rgba(0, 240, 255, 0.14)' : 'var(--color-surface-elevated)',
+                    }}
+                  >
+                    <strong>F{fl.floor}:</strong> {fl.label}
+                    {isCur && <span style={{ marginLeft: '4px', color: 'var(--color-ally)', fontWeight: 700 }}>←現在</span>}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    ) : null;
+
   return (
     <div
       className="cp-player"
@@ -1217,6 +1307,8 @@ export const PlayerPage: React.FC = () => {
           <div style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px 16px' }}>
             <RoleInfoPanel role={sheet.role} />
           </div>
+
+          {playerNetrunPanel}
 
           {/* HP & SP Section */}
           <div
@@ -1989,6 +2081,8 @@ export const PlayerPage: React.FC = () => {
                 );
               })()}
 
+              {playerNetrunPanel}
+
               {/* Action Buttons (Only clickable if my turn) */}
               {(() => {
                 const activePart = currentCombat.participants[currentCombat.turn_index];
@@ -2312,6 +2406,35 @@ export const PlayerPage: React.FC = () => {
                             さらに MOVE 分移動
                           </div>
                         </button>
+
+                        {netrunnerRank > 0 && (
+                          <button
+                            data-testid="player-net-action-btn"
+                            onClick={() => {
+                              setChosenActionLabel('NET アクション');
+                              setPadRollType('attack');
+                              setShowDicePad(true);
+                              setPadFirstRoll(null);
+                              setPadExtraRoll(null);
+                              setNeedsExtraRoll(false);
+                              sendMessage({ type: 'combat:choose', payload: { action_key: 'net_action', target_id: attackTargetId ?? undefined } });
+                            }}
+                            style={{
+                              padding: '12px 10px',
+                              backgroundColor: 'var(--color-surface)',
+                              border: '1px solid var(--color-ally)',
+                              borderRadius: '6px',
+                              color: 'var(--color-ally)',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>NET アクション</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                              インタフェース {netrunnerRank} + 1d10
+                            </div>
+                          </button>
+                        )}
 
                         {sheet.woundState === 'mortally' && (
                           <button

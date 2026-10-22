@@ -33,6 +33,7 @@ describe('generateSkillCatalog', () => {
 
     expect(catalog.find((s) => s.key === 'riding')?.name).toBe('騎乗');
     expect(catalog.every((s) => !s.provisional)).toBe(true);
+    // eslint-disable-next-line no-control-regex
     expect(catalog.every((s) => /[^\x00-\x7f]/.test(s.name))).toBe(true);
   });
 });

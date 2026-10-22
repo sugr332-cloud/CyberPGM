@@ -7,6 +7,7 @@ import {
   board_tokens,
   board_drops,
   images,
+  rule_constants,
 } from '../db/schema.js';
 import { requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
@@ -24,6 +25,28 @@ import {
 
 export const boardsRoutes = new Hono();
 
+export function getAccessPointLinks(): Record<string, string> {
+  const row = db.select().from(rule_constants).where(eq(rule_constants.key, 'net_access_points')).get();
+  if (!row) return {};
+  try {
+    return JSON.parse(row.value) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveAccessPointLink(objId: string, archId: string | null | undefined) {
+  const map = getAccessPointLinks();
+  if (archId) map[objId] = archId;
+  else delete map[objId];
+  const existing = db.select().from(rule_constants).where(eq(rule_constants.key, 'net_access_points')).get();
+  if (existing) {
+    db.update(rule_constants).set({ value: JSON.stringify(map) }).where(eq(rule_constants.key, 'net_access_points')).run();
+  } else {
+    db.insert(rule_constants).values({ key: 'net_access_points', value: JSON.stringify(map), note: 'Access point board_object -> NET architecture links' }).run();
+  }
+}
+
 export function getHydratedBoard(boardId: string): Board | null {
   const b = db.select().from(boards).where(eq(boards.id, boardId)).get();
   if (!b) return null;
@@ -33,6 +56,8 @@ export function getHydratedBoard(boardId: string): Board | null {
     .from(board_objects)
     .where(eq(board_objects.board_id, boardId))
     .all();
+
+  const apLinks = getAccessPointLinks();
 
   const tokens = db
     .select()
@@ -72,6 +97,7 @@ export function getHydratedBoard(boardId: string): Board | null {
       ...o,
       blocks_los: o.blocks_los as 'none' | 'partial' | 'full',
       kind: o.kind as any,
+      ...(apLinks[o.id] ? { arch_id: apLinks[o.id] } : {}),
     })),
     tokens,
     drops,
@@ -231,6 +257,10 @@ boardsRoutes.post('/boards/:id/objects', requireGm, async (c) => {
     })
     .run();
 
+  if (parsed.data.arch_id !== undefined) {
+    saveAccessPointLink(id, parsed.data.arch_id);
+  }
+
   db.update(boards).set({ updated_at: Date.now() }).where(eq(boards.id, boardId)).run();
 
   const updatedBoard = getHydratedBoard(boardId);
@@ -263,7 +293,12 @@ boardsRoutes.patch('/boards/:id/objects/:objId', requireGm, async (c) => {
   if (parsed.data.cover_hp !== undefined) updates.cover_hp = parsed.data.cover_hp;
   if (parsed.data.cover_hp_max !== undefined) updates.cover_hp_max = parsed.data.cover_hp_max;
 
-  db.update(board_objects).set(updates).where(eq(board_objects.id, objId)).run();
+  if (Object.keys(updates).length > 0) {
+    db.update(board_objects).set(updates).where(eq(board_objects.id, objId)).run();
+  }
+  if (parsed.data.arch_id !== undefined) {
+    saveAccessPointLink(objId, parsed.data.arch_id);
+  }
   db.update(boards).set({ updated_at: Date.now() }).where(eq(boards.id, boardId)).run();
 
   const updatedBoard = getHydratedBoard(boardId);

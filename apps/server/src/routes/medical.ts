@@ -50,12 +50,13 @@ function save(ch: MedChar, after: Partial<MedChar>, text: string): void {
   const row = db.select().from(characters).where(eq(characters.id, ch.id)).get()!;
   const now = Date.now();
   db.insert(char_log)
-    .values({ id: generateUlid(), character_id: ch.id, text: `${SNAPSHOT_PREFIX}${JSON.stringify({ hp: row.hp, humanity: row.humanity, cyberware: row.cyberware, crit_injuries: row.crit_injuries, status: row.status, extra: row.extra, eb: row.eb })}`, at: now })
+    .values({ id: generateUlid(), character_id: ch.id, text: `${SNAPSHOT_PREFIX}${JSON.stringify({ hp: row.hp, humanity: row.humanity, stats: row.stats, cyberware: row.cyberware, crit_injuries: row.crit_injuries, status: row.status, extra: row.extra, eb: row.eb })}`, at: now })
     .run();
   db.insert(char_log).values({ id: generateUlid(), character_id: ch.id, text, at: now + 1 }).run();
   const set: Record<string, unknown> = { updated_at: now };
   if (after.hp !== undefined) set.hp = after.hp;
   if (after.humanity !== undefined) set.humanity = after.humanity;
+  if (after.stats) set.stats = JSON.stringify(after.stats);
   if (after.cyberware) set.cyberware = JSON.stringify(after.cyberware);
   if (after.crit_injuries) set.crit_injuries = JSON.stringify(after.crit_injuries);
   if (after.status) set.status = JSON.stringify(after.status);
@@ -116,7 +117,7 @@ medicalRoutes.post('/medical/time', requireGm, async (c) => {
   for (const row of db.select().from(characters).all()) {
     const ch = loadMed(row.id)!;
     const m = medicalOf(ch.extra);
-    const relevant = (m.drugs?.length ?? 0) > 0 || Object.keys(m.drug_cooldowns ?? {}).length > 0 || m.healing || ch.crit_injuries.some((x) => x.quick_fixed);
+    const relevant = (m.drugs?.length ?? 0) > 0 || Object.keys(m.drug_cooldowns ?? {}).length > 0 || m.healing || ch.crit_injuries.some((x) => x.quick_fixed) || Boolean(ch.extra?.net_drain);
     if (!relevant) continue;
     const r = passTime(ch, hours, { rested: rested.includes(ch.id) });
     if (r.formula.length === 0 && JSON.stringify(r.after.extra) === JSON.stringify(ch.extra)) continue;
@@ -239,7 +240,7 @@ medicalRoutes.post('/medical/:id/undo', requireGm, async (c) => {
     .get();
   if (!snap) return bad(c, '戻せる操作がありません');
   const v = JSON.parse(snap.text.slice(SNAPSHOT_PREFIX.length));
-  db.update(characters).set({ hp: v.hp, humanity: v.humanity, cyberware: v.cyberware, crit_injuries: v.crit_injuries, status: v.status, extra: v.extra, eb: v.eb, updated_at: Date.now() }).where(eq(characters.id, id)).run();
+  db.update(characters).set({ hp: v.hp, humanity: v.humanity, ...(v.stats ? { stats: v.stats } : {}), cyberware: v.cyberware, crit_injuries: v.crit_injuries, status: v.status, extra: v.extra, eb: v.eb, updated_at: Date.now() }).where(eq(characters.id, id)).run();
   db.delete(char_log).where(eq(char_log.id, snap.id)).run();
   db.insert(char_log).values({ id: generateUlid(), character_id: id, text: '医療・人間性の操作を 1 つ戻した', at: Date.now() }).run();
   sessionManager.updateCharacterSheet(id);

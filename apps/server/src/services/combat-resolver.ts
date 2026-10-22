@@ -55,8 +55,10 @@ import {
   MANEUVERS,
   RAM_DICE,
   WHIPLASH,
+  hasVirtualityGoggles,
 } from '@cyberpgm/shared';
 import { useDrug } from './medical.js';
+import { resolveNetCombatAction, checkMoveBreaksNetrun, checkIncapacitatedBreaksNetrun } from './netrun-resolver.js';
 import { z } from 'zod';
 import type { AppDatabase } from '../db/client.js';
 import { rule_constants, weapons, items, boards, board_tokens, board_objects, board_drops, characters } from '../db/schema.js';
@@ -136,6 +138,9 @@ const ACTION_LABEL: Record<string, string> = {
   vehicle_ram: '体当たり',
   attack_vehicle: 'ヴィークルを攻撃',
   solo_realloc: 'コンバット・アウェアネスを割り振り直す',
+  net_action: 'NET アクション',
+  net_ice_attack: 'ブラック ICE の攻撃',
+  scanner: 'アクセスポイントを探す（スキャナ）',
 };
 
 /**
@@ -251,13 +256,24 @@ function resolveCombatActionInner(
   const usesMove = MOVE_ACTION_KEYS.includes(input.action_key);
   // つかみを放すのはアクションなしでできる（p.177）
   // 環境ダメージ（GM が与える）と、その終わり（火を消すときは中でアクションを使う）もアクションの残りに関係なく使える
-  const usesAction = !usesMove && !['death_save', 'release', 'hazard', 'hazard_end', 'vehicle_exit'].includes(input.action_key);
+  // NET アクションのうち移動（descend）と安全でないジャックアウト（unsafe_jack_out）、およびブラック ICE の攻撃はアクション残りに関係なく使える（Phase 5z）
+  const isNetFreeSub = input.action_key === 'net_action' && ['descend', 'unsafe_jack_out'].includes(input.net?.sub_action ?? '');
+  const usesAction =
+    !usesMove &&
+    !['death_save', 'release', 'hazard', 'hazard_end', 'vehicle_exit', 'net_ice_attack'].includes(input.action_key) &&
+    !isNetFreeSub;
+  const actorNet = (actorPart.state as any)?.net;
+  const isOngoingNetTurn = input.action_key === 'net_action' && (actorNet?.net_used ?? 0) > 0;
   const spent =
-    usesMove && actorPart.move_used
-      ? '移動アクションは使用済みです（もう一度動くなら「走る」でアクションを使います）'
-      : usesAction && actorPart.action_used
-        ? 'このターンのアクションは使い切っています（GM は「+1 アクション」で追加できます）'
-        : null;
+    actorNet?.jacked_in && !hasVirtualityGoggles(actorChar as any) && (usesMove || input.action_key === 'run')
+      ? 'ヴァーチャリティ・ゴーグルを着用していないため、ネットラン中は肉体を移動できません'
+      : (actorNet?.net_used ?? 0) > 0 && usesAction && input.action_key !== 'net_action'
+        ? 'このターンはすでに NET アクションを使っているため、肉体のアクションは使えません'
+        : usesMove && actorPart.move_used
+          ? '移動アクションは使用済みです（もう一度動くなら「走る」でアクションを使います）'
+          : usesAction && actorPart.action_used && !isOngoingNetTurn
+            ? 'このターンのアクションは使い切っています（GM は「+1 アクション」で追加できます）'
+            : null;
   if (spent) {
     return {
       action_key: input.action_key,
@@ -269,6 +285,11 @@ function resolveCombatActionInner(
       changes: [],
       missing_inputs: [spent],
     };
+  }
+
+  // Phase 5z: ネットランニング（NET アクション / ブラック ICE の攻撃 / スキャナ）
+  if (['net_action', 'net_ice_attack', 'scanner'].includes(input.action_key)) {
+    return resolveNetCombatAction(db, input, actorPart, targetPart, allParticipants, boardId, combatSettings);
   }
 
   const actorWound = woundState(actorChar.hp, actorChar.hp_max);
@@ -548,13 +569,25 @@ function resolveCombatActionInner(
     if (boardMove.change) {
       changes.push(boardMove.change);
     }
+    const netBreakMove = checkMoveBreaksNetrun(
+      db,
+      boardId,
+      actorPart,
+      input.destination,
+      allParticipants,
+      rules.diagonalRule,
+      input.damage_dice ?? [],
+    );
+    if (netBreakMove.changes.length > 0) {
+      changes.push(...netBreakMove.changes);
+    }
 
     return {
       action_key: 'move',
       actor_id: actorPart.id,
       actor_name: actorPart.name,
       success: true,
-      formula: `MOVE ${effectiveMove}マス (1マス2m) まで移動${moveNote}`,
+      formula: `MOVE ${effectiveMove}マス (1マス2m) まで移動${moveNote}${netBreakMove.formulaNote ?? ''}`,
       breakdown: { move: effectiveMove, ...(input.destination ? { destination: input.destination } : {}) },
       changes,
     };
@@ -588,13 +621,25 @@ function resolveCombatActionInner(
     if (boardMove.change) {
       changes.push(boardMove.change);
     }
+    const netBreakRun = checkMoveBreaksNetrun(
+      db,
+      boardId,
+      actorPart,
+      input.destination,
+      allParticipants,
+      rules.diagonalRule,
+      input.damage_dice ?? [],
+    );
+    if (netBreakRun.changes.length > 0) {
+      changes.push(...netBreakRun.changes);
+    }
 
     return {
       action_key: 'run',
       actor_id: actorPart.id,
       actor_name: actorPart.name,
       success: true,
-      formula: `追加で MOVE ${effectiveMove}マス (1マス2m) 移動${moveNote}`,
+      formula: `追加で MOVE ${effectiveMove}マス (1マス2m) 移動${moveNote}${netBreakRun.formulaNote ?? ''}`,
       breakdown: { move: effectiveMove, ...(input.destination ? { destination: input.destination } : {}) },
       changes,
     };
@@ -2699,9 +2744,10 @@ function resolveCombatActionInner(
           }
         }
       }
+      const cannotDodgeMelee = (tPart.character.status ?? []).includes('回避できない');
       for (const [roll, label] of [
         [att.attack_roll, '攻撃'],
-        [att.defense_roll, '回避'],
+        ...(cannotDodgeMelee ? [] : ([[att.defense_roll, '回避']] as const)),
       ] as const) {
         if (!roll) {
           missing_inputs.push(`${prefix}${label === '攻撃' ? '攻撃の出目 (1d10)' : '回避の出目 (1d10)'}を入力してください`);
@@ -2762,13 +2808,20 @@ function resolveCombatActionInner(
 
       const attD10 = atkD10(att.attack_roll!);
       const attackTotal = base + attD10 + (i === 0 ? luck : 0) + solo.precision;
-      const defStat = tChar.stats.dex - (tChar.armor_penalty ?? 0);
-      const defSkill = tChar.skills[skillNameToKey('evasion')] ?? 0;
-      const defWoundPen = woundPenalty(woundState(cur.hp, tChar.hp_max)) + grapplePenalty(cur.status);
-      const defD10 = resolveD10(att.defense_roll!.first, att.defense_roll!.extra).value;
-      const defTotal = defStat + defSkill + defWoundPen + defD10;
-      const isHit = attackTotal > defTotal;
-      let sub = `${prefix}${label}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''}${precisionText} = ${attackTotal} vs ${tPart.name} 回避 DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
+      const cannotDodgeMelee = (cur.status ?? []).includes('回避できない');
+      let isHit = true;
+      let sub = '';
+      if (cannotDodgeMelee) {
+        sub = `${prefix}${label}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''}${precisionText} = ${attackTotal} vs ${tPart.name} 固定設備（回避不可） -> 命中`;
+      } else {
+        const defStat = tChar.stats.dex - (tChar.armor_penalty ?? 0);
+        const defSkill = tChar.skills[skillNameToKey('evasion')] ?? 0;
+        const defWoundPen = woundPenalty(woundState(cur.hp, tChar.hp_max)) + grapplePenalty(cur.status);
+        const defD10 = resolveD10(att.defense_roll!.first, att.defense_roll!.extra).value;
+        const defTotal = defStat + defSkill + defWoundPen + defD10;
+        isHit = attackTotal > defTotal;
+        sub = `${prefix}${label}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''}${precisionText} = ${attackTotal} vs ${tPart.name} 回避 DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
+      }
       if (!isHit) {
         formulaParts.push(sub);
         continue;
@@ -2899,7 +2952,7 @@ function resolveCombatActionInner(
 }
 
 /** 【運命】点を使える行動（自分が振る判定のあるもの） */
-const LUCK_ACTIONS = ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts', 'grab', 'martial_technique', 'stand', 'first_aid', 'throw_object', 'use_drug', 'vehicle_control', 'vehicle_maneuver', 'attack_vehicle'];
+const LUCK_ACTIONS = ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts', 'grab', 'martial_technique', 'stand', 'first_aid', 'throw_object', 'use_drug', 'vehicle_control', 'vehicle_maneuver', 'attack_vehicle', 'net_action', 'scanner'];
 
 /**
  * 行動の結果を出す。【運命】点を使ったら、残りを確かめて、使った分を記録する変化を足す（Phase 5v。日本語版 p.130）
@@ -2928,6 +2981,16 @@ export function resolveCombatAction(
     }
   }
   const result = resolveCombatActionInner(db, input, actorPart, targetPart, allParticipants, boardId, combatSettings);
+  if (result.changes.length > 0 && !['move', 'run'].includes(input.action_key)) {
+    const seen = new Set<string>();
+    const partList = [actorPart, ...(targetPart ? [targetPart] : []), ...(allParticipants ?? [])].filter((p) => {
+      if (!p || seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+    const incNote = checkIncapacitatedBreaksNetrun(result.changes, partList, input.damage_dice ?? []);
+    if (incNote) result.formula += incNote;
+  }
   if (spend > 0 && ch && !(result.missing_inputs?.length) && result.changes.length > 0) {
     const used = Number(ch.extra?.luck_used ?? 0);
     result.changes.push({

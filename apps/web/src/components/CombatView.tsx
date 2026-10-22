@@ -20,6 +20,12 @@ import {
   SOLO_ABILITIES,
   BACKUP_TIERS,
   MANEUVERS,
+  NetArchitecture,
+  NetRunState,
+  NetDeckConfig,
+  NET_PROGRAMS,
+  BLACK_ICE_CATALOG,
+  netActionsForRank,
 } from '@cyberpgm/shared';
 import {
   initiativeTotal,
@@ -144,6 +150,19 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [asDriver, setAsDriver] = useState(true);
   const [maneuverKey, setManeuverKey] = useState('swerve');
   const [weakpoint, setWeakpoint] = useState(false);
+  // ネットラン（Phase 5z）
+  const [netArchList, setNetArchList] = useState<NetArchitecture[]>([]);
+  const [netSubAction, setNetSubAction] = useState<string>('jack_in');
+  const [netArchId, setNetArchId] = useState<string>('');
+  const [netTargetFloor, setNetTargetFloor] = useState<number>(1);
+  const [netProgramKey, setNetProgramKey] = useState<string>('Sword');
+  const [netTargetIceId, setNetTargetIceId] = useState<string>('');
+  const [netVirusDesc, setNetVirusDesc] = useState<string>('システム改変ウイルス');
+  const [netVirusDv, setNetVirusDv] = useState<number>(10);
+  const [netVirusActions, setNetVirusActions] = useState<number>(2);
+  const [netScannerDv, setNetScannerDv] = useState<number>(13);
+  const [netAmbushIceRoll, setNetAmbushIceRoll] = useState<number | null>(null);
+  const [netAmbushRunnerRoll, setNetAmbushRunnerRoll] = useState<number | null>(null);
   
   // 出目を入れる前の計算式と成功ライン（仕様 §5.0.1。Phase 5n）
   const [attackLineText, setAttackLineText] = useState<string | null>(null);
@@ -257,11 +276,46 @@ export const CombatView: React.FC<CombatViewProps> = ({
     }
   }, []);
 
+  const refreshNetArchs = useCallback(async () => {
+    try {
+      const res = await api.listNetArchitectures();
+      setNetArchList(res.architectures || []);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     refreshCombat();
     refreshBoardsList();
+    refreshNetArchs();
     api.getCombatActions().then((res) => setActions(res.actions)).catch(() => {});
-  }, [refreshCombat, refreshBoardsList]);
+  }, [refreshCombat, refreshBoardsList, refreshNetArchs]);
+
+  useEffect(() => {
+    if (!netArchId && netArchList.length > 0) {
+      setNetArchId(netArchList[0].id);
+    }
+  }, [netArchId, netArchList]);
+
+  useEffect(() => {
+    const netSt = (activePart?.state as any)?.net as NetRunState | undefined;
+    if (netSt?.arch_id) {
+      setNetArchId(netSt.arch_id);
+    }
+    if (!netSt?.jacked_in) {
+      setNetSubAction('jack_in');
+    } else if (netSubAction === 'jack_in') {
+      setNetSubAction('pathfinder');
+    }
+    if (netSt?.depth) {
+      setNetTargetFloor(netSt.depth);
+    }
+    const activeIce = (netSt?.active_ice ?? []).find((x) => x.rez > 0);
+    if (activeIce) {
+      setNetTargetIceId(activeIce.id);
+    }
+  }, [activePart?.id, (activePart?.state as any)?.net?.jacked_in, (activePart?.state as any)?.net?.depth]);
 
   useEffect(() => {
     if (combat?.board_id) {
@@ -492,10 +546,16 @@ export const CombatView: React.FC<CombatViewProps> = ({
     });
   }, [boardData, activePart]);
 
-  // 近接攻撃・格闘は、相手はいつも DEX + 回避 で受ける（Phase 5l）
+  // 近接攻撃・格闘・NETの対抗判定は、相手はいつも回避（防御）の出目で受ける（Phase 5l / 5z）
   useEffect(() => {
-    if (MELEE_LIKE.includes(selectedActionKey ?? '')) setDodgeMode('dodge');
-  }, [selectedActionKey]);
+    if (
+      MELEE_LIKE.includes(selectedActionKey ?? '') ||
+      selectedActionKey === 'net_ice_attack' ||
+      (selectedActionKey === 'net_action' && ['program', 'zap', 'slide'].includes(netSubAction))
+    ) {
+      setDodgeMode('dodge');
+    }
+  }, [selectedActionKey, netSubAction]);
 
   // Weapon entries in inventory for active participant (kind === 'weapon')
   const weaponEntries = useMemo(() => {
@@ -671,10 +731,50 @@ export const CombatView: React.FC<CombatViewProps> = ({
     setSecondDamageDiceStr('');
     setSecondDefenseFirst(null);
     setSecondCritRoll(undefined);
+    setNetAmbushIceRoll(null);
+    setNetAmbushRunnerRoll(null);
   };
   useEffect(() => {
     resetRolls();
   }, [combat?.turn_index, combat?.round]);
+
+  const buildNetInput = (damageDice: number[]) => {
+    if (selectedActionKey === 'scanner') {
+      return { scanner_dv: netScannerDv };
+    }
+    if (selectedActionKey === 'net_ice_attack') {
+      return {
+        target_ice_id: netTargetIceId || undefined,
+      };
+    }
+    if (selectedActionKey === 'net_action') {
+      const iceRolls =
+        ['jack_in', 'descend'].includes(netSubAction) && netAmbushIceRoll !== null && netAmbushRunnerRoll !== null
+          ? [
+              {
+                ice_roll: { first: netAmbushIceRoll },
+                runner_roll: { first: netAmbushRunnerRoll },
+                damage_dice: damageDice.length > 0 ? damageDice : undefined,
+              },
+            ]
+          : undefined;
+      return {
+        sub_action: netSubAction as any,
+        arch_id: netArchId || (activePart?.state as any)?.net?.arch_id || netArchList[0]?.id || undefined,
+        target_floor: ['descend', 'backdoor', 'eyedee', 'control', 'operate_node', 'slide'].includes(netSubAction)
+          ? netTargetFloor
+          : undefined,
+        program_key: ['activate', 'derez', 'program'].includes(netSubAction) ? netProgramKey : undefined,
+        deactivate: netSubAction === 'derez' ? true : undefined,
+        target_ice_id: ['program', 'zap', 'slide'].includes(netSubAction) ? netTargetIceId || undefined : undefined,
+        virus_desc: netSubAction === 'virus' ? netVirusDesc : undefined,
+        virus_dv: netSubAction === 'virus' ? netVirusDv : undefined,
+        virus_actions: netSubAction === 'virus' ? netVirusActions : undefined,
+        ice_rolls: iceRolls,
+      };
+    }
+    return undefined;
+  };
 
   // 1 ターンのアクション回数を変える（Phase 5j）
   const handleSetActions = async (participantId: string, data: { actions_per_turn?: number; bonus?: 1 | -1 }) => {
@@ -834,6 +934,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         cover_current_hp: hitCover && coverHpInput !== '' ? Number(coverHpInput) : undefined,
         cover_damage: hitCover && coverDamageInput !== '' ? Number(coverDamageInput) : undefined,
         pickup_drop_id: selectedActionKey === 'pickup' ? pickupDropId || undefined : undefined,
+        net: buildNetInput(damageDice),
       });
 
       setPreviewResult(res.result);
@@ -942,18 +1043,24 @@ export const CombatView: React.FC<CombatViewProps> = ({
         cover_current_hp: hitCover && coverHpInput !== '' ? Number(coverHpInput) : undefined,
         cover_damage: hitCover && coverDamageInput !== '' ? Number(coverDamageInput) : undefined,
         pickup_drop_id: selectedActionKey === 'pickup' ? pickupDropId || undefined : undefined,
+        net: buildNetInput(damageDice),
       });
 
       setCombat(res.combat);
       if (combat.board_id) {
         refreshBoard(combat.board_id);
       }
+      if (selectedActionKey === 'net_action') {
+        refreshNetArchs();
+      }
       setDestination(null);
       setHitCover(false);
       setCoverDamageInput('');
       setPickupDropId(null);
       setPreviewResult(null);
-      setSelectedActionKey(null);
+      if (selectedActionKey !== 'net_action' || res.combat.turn_index !== combat.turn_index) {
+        setSelectedActionKey(null);
+      }
       setSecondAttackEnabled(false);
       resetRolls();
       onRefreshCharacters();
@@ -2225,6 +2332,440 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     );
                   })()}
 
+                  {/* ネットラン（Phase 5z。日本語版 p.198〜216） */}
+                  {['net_action', 'net_ice_attack', 'scanner'].includes(selectedActionKey) && (() => {
+                    const field: React.CSSProperties = {
+                      padding: '4px 6px',
+                      fontSize: '0.85rem',
+                      borderRadius: '4px',
+                      border: '1px solid var(--color-border-light)',
+                      backgroundColor: 'var(--color-bg)',
+                      color: 'var(--color-text)',
+                    };
+                    if (selectedActionKey === 'scanner') {
+                      return (
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.85rem' }}>
+                          <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            スキャナ探知の難易度 (DV):
+                            <input
+                              data-testid="net-scanner-dv"
+                              type="number"
+                              min={1}
+                              value={netScannerDv}
+                              onChange={(e) => setNetScannerDv(Number(e.target.value) || 13)}
+                              style={{ ...field, width: '64px' }}
+                            />
+                          </label>
+                          <span style={{ color: 'var(--color-text-muted)' }}>
+                            TECH + 〈電子／セキュリティ技術〉（+ テク現場エンジニア）+ 1d10。出目は「攻撃」の欄に入れます。
+                          </span>
+                        </div>
+                      );
+                    }
+
+                    if (selectedActionKey === 'net_ice_attack') {
+                      const tPart = combat.participants.find((p) => p.id === targetParticipantId) ?? activePart;
+                      const tNet = (tPart?.state as any)?.net as NetRunState | undefined;
+                      const activeIces = (tNet?.active_ice ?? []).filter((x) => x.rez > 0);
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem' }}>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span>攻撃するブラック ICE:</span>
+                            <select
+                              data-testid="net-ice-attack-select"
+                              value={netTargetIceId}
+                              onChange={(e) => setNetTargetIceId(e.target.value)}
+                              style={field}
+                            >
+                              {activeIces.map((ai) => (
+                                <option key={ai.id} value={ai.id}>
+                                  {ai.name} (第{ai.floor}階層 / REZ {ai.rez}/{ai.rez_max} / ATK {ai.atk})
+                                </option>
+                              ))}
+                              {BLACK_ICE_CATALOG.map((ice) => (
+                                <option key={ice.en} value={ice.en}>
+                                  {ice.name} ({ice.en} / ATK {ice.atk})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <span style={{ color: 'var(--color-text-muted)' }}>
+                            対象ネットランナーを下の「対象を選択」で選び、ICE の出目を「攻撃」、ネットランナーの防御出目を「回避」、効果ダイスを「ダメージ出目」に入れます。
+                          </span>
+                        </div>
+                      );
+                    }
+
+                    // net_action
+                    const curNet = ((activePart.state as any)?.net ?? {}) as Partial<NetRunState>;
+                    const rank =
+                      (activePart.character ? roleRank(activePart.character.role, activePart.character.extra, 'Netrunner') : 0) ||
+                      Number((activePart.character?.extra as any)?.role_ranks?.Netrunner ?? (activePart.character?.skills as any)?.interface ?? 4);
+                    const maxNet = netActionsForRank(rank, Boolean(curNet.slowed));
+                    const netUsed = Number(curNet.net_used ?? 0);
+                    const netRemaining = Math.max(0, maxNet - netUsed);
+                    const activeArchId = curNet.arch_id || netArchId || netArchList[0]?.id || '';
+                    const activeArch = netArchList.find((a) => a.id === activeArchId) ?? null;
+                    const rezzedList = curNet.rezzed ?? [];
+                    const activeIces = (curNet.active_ice ?? []).filter((x) => x.rez > 0);
+                    const revealedSet = new Set<number>(curNet.revealed ?? []);
+                    const unlockedSet = new Set<number>(curNet.unlocked_passwords ?? []);
+                    const identifiedSet = new Set<number>(curNet.identified_files ?? []);
+                    const controlledSet = new Set<string>(curNet.controlled ?? []);
+                    const deck = ((activePart.character?.extra as any)?.cyberdeck ?? { slots: 7, programs: [], hardware: [] }) as NetDeckConfig;
+
+                    // ジャックインまたは階層移動で入る階層にブラックICEがいるか
+                    const enteringFloorNum = netSubAction === 'jack_in' ? 1 : netSubAction === 'descend' ? netTargetFloor : 0;
+                    const enteringFloor = activeArch?.floors.find((f) => f.floor === enteringFloorNum);
+                    const enteringFloorHasIce = Boolean(enteringFloor?.ice && enteringFloor.ice.length > 0);
+
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem' }}>
+                        {/* 欄の上の状態・地図パネル */}
+                        <div
+                          data-testid="netrun-combat-status"
+                          style={{
+                            padding: '10px',
+                            backgroundColor: 'var(--color-bg)',
+                            border: '1px solid var(--color-ally)',
+                            borderRadius: '6px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                            <div>
+                              <strong style={{ color: 'var(--color-ally)' }}>
+                                {curNet.jacked_in ? `ジャックイン中: 第 ${curNet.depth ?? 1} 階層` : '未接続（ジャックアウト中）'}
+                              </strong>
+                              {activeArch && <span style={{ marginLeft: '8px', color: 'var(--color-text-muted)' }}>[{activeArch.name}]</span>}
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                              <span data-testid="netrun-remaining-actions" style={{ fontWeight: 700 }}>
+                                NET アクション残り: {netRemaining} / {maxNet} 回
+                              </span>
+                              {curNet.jacked_in && (
+                                <button
+                                  type="button"
+                                  data-testid="unsafe-jack-out-btn"
+                                  onClick={() => setNetSubAction('unsafe_jack_out')}
+                                  style={{
+                                    padding: '2px 8px',
+                                    fontSize: '0.78rem',
+                                    backgroundColor: 'rgba(235, 75, 75, 0.2)',
+                                    color: 'var(--color-danger)',
+                                    border: '1px solid var(--color-danger)',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  ネットランから外れる
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div data-testid="netrun-rezzed-list" style={{ fontSize: '0.82rem' }}>
+                            <span style={{ color: 'var(--color-text-muted)' }}>起動中プログラム: </span>
+                            {rezzedList.length > 0
+                              ? rezzedList.map((r, i) => (
+                                  <span key={`${r.key}-${i}`} style={{ marginRight: '8px', fontWeight: 600 }}>
+                                    {r.name} (REZ {r.rez}/{r.rez_max})
+                                  </span>
+                                ))
+                              : 'なし'}
+                          </div>
+
+                          {activeIces.length > 0 && (
+                            <div data-testid="netrun-active-ice-list" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.82rem' }}>
+                              <span style={{ color: 'var(--color-danger)', fontWeight: 700 }}>遭遇中ブラック ICE:</span>
+                              {activeIces.map((ai) => (
+                                <span key={ai.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 6px', backgroundColor: 'rgba(235, 75, 75, 0.12)', borderRadius: '4px' }}>
+                                  {ai.name} (F{ai.floor} / REZ {ai.rez}/{ai.rez_max})
+                                  <button
+                                    type="button"
+                                    data-testid={`join-ice-${ai.en}`}
+                                    onClick={async () => {
+                                      try {
+                                        const res = await api.joinCombatNetEntity(combat.id, { kind: 'ice', key: ai.en, custom_name: ai.name });
+                                        setCombat(res.combat);
+                                      } catch (err: any) {
+                                        alert(err.message);
+                                      }
+                                    }}
+                                    style={{ padding: '1px 6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                                  >
+                                    先頭で参戦
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* パスファインダで見えている階層の地図 */}
+                          {activeArch && (
+                            <div data-testid="netrun-floor-map" style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '2px', fontSize: '0.8rem' }}>
+                              <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>階層の地図（パスファインダ視認状況）:</span>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {activeArch.floors.map((fl) => {
+                                  const isRevealed = revealedSet.has(fl.floor);
+                                  const isCurrent = Boolean(curNet.jacked_in && curNet.depth === fl.floor);
+                                  const isUnlocked = unlockedSet.has(fl.floor);
+                                  const isIdentified = identifiedSet.has(fl.floor);
+                                  const isControlled = controlledSet.has(`floor-${fl.floor}`);
+                                  return (
+                                    <div
+                                      key={fl.floor}
+                                      data-testid={`netrun-floor-item-${fl.floor}`}
+                                      style={{
+                                        padding: '3px 8px',
+                                        borderRadius: '4px',
+                                        border: isCurrent ? '2px solid var(--color-ally)' : '1px solid var(--color-border-light)',
+                                        backgroundColor: isCurrent ? 'rgba(0, 240, 255, 0.14)' : 'var(--color-surface)',
+                                      }}
+                                    >
+                                      <strong>F{fl.floor}:</strong>{' '}
+                                      {isRevealed ? (
+                                        <span>
+                                          {fl.label}
+                                          {fl.dv && !(fl.label || '').includes('DV') ? ` (DV${fl.dv})` : ''}
+                                          {isUnlocked ? ' [突破済]' : ''}
+                                          {isIdentified ? ' [確認済]' : ''}
+                                          {isControlled ? ' [支配下]' : ''}
+                                        </span>
+                                      ) : (
+                                        <span>
+                                          ？ <small style={{ color: 'var(--color-text-muted)' }}>({fl.label}{fl.dv && !(fl.label || '').includes('DV') ? ` DV${fl.dv}` : ''})</small>
+                                        </span>
+                                      )}
+                                      {isCurrent && <span style={{ marginLeft: '4px', color: 'var(--color-ally)', fontWeight: 700 }}>←現在</span>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* サブ行動と対象の選択 */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                          <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            サブ行動:
+                            <select
+                              data-testid="net-sub-action-select"
+                              aria-label="NETサブ行動"
+                              value={netSubAction}
+                              onChange={(e) => setNetSubAction(e.target.value)}
+                              style={field}
+                            >
+                              <option value="jack_in">ジャックイン（接続・NET 1）</option>
+                              <option value="pathfinder">パスファインダ（構造視認・NET 1）</option>
+                              <option value="descend">階層を移動する（降りる／上がる・NET 0）</option>
+                              <option value="backdoor">バックドア（パスワード突破・NET 1）</option>
+                              <option value="eyedee">アイディール（ファイル確認・NET 1）</option>
+                              <option value="control">コントロール（ノード掌握／操作・NET 1）</option>
+                              <option value="activate">プログラム起動（Rez・NET 1）</option>
+                              <option value="derez">プログラム停止（Derez・NET 1）</option>
+                              <option value="program">攻撃プログラムを使う（ソード等・NET 1）</option>
+                              <option value="zap">ザップ（1d6 ダメージ・NET 1）</option>
+                              <option value="slide">スライド（ICE から逃走・NET 1）</option>
+                              <option value="cloak">クローク（痕跡隠蔽・NET 1）</option>
+                              <option value="virus">ウイルス（最下層改変・NET 1〜）</option>
+                              <option value="jack_out">ジャックアウト（安全に切断・NET 1）</option>
+                              <option value="unsafe_jack_out">安全でないジャックアウト（強制切断・NET 0）</option>
+                            </select>
+                          </label>
+
+                          {netSubAction === 'jack_in' && (
+                            <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              接続する構造体:
+                              <select
+                                data-testid="net-arch-select"
+                                aria-label="接続するNET構造体"
+                                value={netArchId}
+                                onChange={(e) => setNetArchId(e.target.value)}
+                                style={field}
+                              >
+                                {netArchList.length === 0 && <option value="default">デフォルト構造体</option>}
+                                {netArchList.map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.name}（{a.floors.length} 階層 / DV {a.dv}）
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+
+                          {['descend', 'backdoor', 'eyedee', 'control', 'slide'].includes(netSubAction) && (
+                            <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              対象の階層:
+                              <select
+                                data-testid="net-target-floor-select"
+                                aria-label="対象の階層"
+                                value={netTargetFloor}
+                                onChange={(e) => setNetTargetFloor(Number(e.target.value))}
+                                style={field}
+                              >
+                                {(activeArch
+                                  ? activeArch.floors.map((f) => ({ floor: f.floor, text: `第 ${f.floor} 階層 (${f.label})` }))
+                                  : Array.from({ length: 18 }, (_, i) => ({ floor: i + 1, text: `第 ${i + 1} 階層` }))
+                                ).map((opt) => (
+                                  <option key={opt.floor} value={opt.floor}>
+                                    {opt.text}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+
+                          {['activate', 'derez', 'program'].includes(netSubAction) && (
+                            <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              プログラム:
+                              <select
+                                data-testid="net-program-select"
+                                aria-label="使用するプログラム"
+                                value={netProgramKey}
+                                onChange={(e) => setNetProgramKey(e.target.value)}
+                                style={field}
+                              >
+                                {netSubAction === 'derez'
+                                  ? (rezzedList.length > 0
+                                      ? rezzedList.map((r) => ({ key: r.key, label: `${r.name} (起動中 REZ ${r.rez})` }))
+                                      : NET_PROGRAMS.map((p) => ({ key: p.en, label: `${p.name} (${p.en})` }))
+                                    ).map((opt, idx) => (
+                                      <option key={`${opt.key}-${idx}`} value={opt.key}>
+                                        {opt.label}
+                                      </option>
+                                    ))
+                                  : netSubAction === 'program'
+                                    ? NET_PROGRAMS.filter((p) => p.class.includes('attacker')).map((p) => (
+                                        <option key={p.en} value={p.en}>
+                                          {p.name} ({p.en} / ATK {p.atk}){deck.programs?.includes(p.en) ? ' ★搭載' : ''}
+                                        </option>
+                                      ))
+                                    : [
+                                        ...NET_PROGRAMS.filter((p) => !p.class.includes('attacker')).map((p) => ({
+                                          key: p.en,
+                                          label: `${p.name} (${p.en} / REZ ${p.rez})${deck.programs?.includes(p.en) ? ' ★搭載' : ''}`,
+                                        })),
+                                        ...BLACK_ICE_CATALOG.map((ice) => ({
+                                          key: ice.en,
+                                          label: `[ブラックICE] ${ice.name} (REZ ${ice.rez})`,
+                                        })),
+                                      ].map((opt) => (
+                                        <option key={opt.key} value={opt.key}>
+                                          {opt.label}
+                                        </option>
+                                      ))}
+                              </select>
+                            </label>
+                          )}
+
+                          {['program', 'zap', 'slide'].includes(netSubAction) && (
+                            <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              目標 (ICE/対象):
+                              <select
+                                data-testid="net-target-ice-select"
+                                aria-label="目標のブラックICE"
+                                value={netTargetIceId}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setNetTargetIceId(val);
+                                  if (combat.participants.some((p) => p.id === val)) {
+                                    setTargetParticipantId(val);
+                                  }
+                                }}
+                                style={field}
+                              >
+                                <option value="">現在の階層のブラックICE（自動）</option>
+                                {activeIces.map((ai) => (
+                                  <option key={ai.id} value={ai.id}>
+                                    {ai.name} (第{ai.floor}階層 / REZ {ai.rez}/{ai.rez_max} / DEF {ai.def})
+                                  </option>
+                                ))}
+                                {combat.participants
+                                  .filter((p) => !p.out && p.id !== activePart.id)
+                                  .map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      [参加者] {p.name}
+                                    </option>
+                                  ))}
+                              </select>
+                            </label>
+                          )}
+                        </div>
+
+                        {netSubAction === 'virus' && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                            <label style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                              ウイルス内容:
+                              <input
+                                data-testid="net-virus-desc"
+                                type="text"
+                                value={netVirusDesc}
+                                onChange={(e) => setNetVirusDesc(e.target.value)}
+                                style={{ ...field, width: '180px' }}
+                              />
+                            </label>
+                            <label style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                              難易度 (DV):
+                              <input
+                                data-testid="net-virus-dv"
+                                type="number"
+                                min={1}
+                                value={netVirusDv}
+                                onChange={(e) => setNetVirusDv(Number(e.target.value) || 10)}
+                                style={{ ...field, width: '56px' }}
+                              />
+                            </label>
+                            <label style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                              必要 NET アクション数:
+                              <input
+                                data-testid="net-virus-actions"
+                                type="number"
+                                min={1}
+                                value={netVirusActions}
+                                onChange={(e) => setNetVirusActions(Number(e.target.value) || 1)}
+                                style={{ ...field, width: '56px' }}
+                              />
+                            </label>
+                          </div>
+                        )}
+
+                        {enteringFloorHasIce && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                            <span>遭遇するブラック ICE の速度対抗（任意）:</span>
+                            <label>
+                              ICE SPD 1d10:{' '}
+                              <input
+                                data-testid="net-ambush-ice-roll"
+                                type="number"
+                                min={1}
+                                max={10}
+                                value={netAmbushIceRoll ?? ''}
+                                onChange={(e) => setNetAmbushIceRoll(e.target.value ? Number(e.target.value) : null)}
+                                style={{ ...field, width: '48px' }}
+                              />
+                            </label>
+                            <label>
+                              ランナー SPD 1d10:{' '}
+                              <input
+                                data-testid="net-ambush-runner-roll"
+                                type="number"
+                                min={1}
+                                max={10}
+                                value={netAmbushRunnerRoll ?? ''}
+                                onChange={(e) => setNetAmbushRunnerRoll(e.target.value ? Number(e.target.value) : null)}
+                                style={{ ...field, width: '48px' }}
+                              />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* ソロ《コンバット・アウェアネス》の割り振り直し（Phase 5x。p.146） */}
                   {selectedActionKey === 'solo_realloc' && (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.85rem' }}>
@@ -2508,12 +3049,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   )}
 
                   {/* Target & Distance Selection (for ranged / melee / brawl) */}
-                  {['ranged', 'aimed', 'autofire', ...MELEE_LIKE, 'choke', 'throw', 'throw_object', 'first_aid', 'hazard', 'hazard_end', 'use_drug', 'vehicle_ram'].includes(selectedActionKey) && (
+                  {['ranged', 'aimed', 'autofire', ...MELEE_LIKE, 'choke', 'throw', 'throw_object', 'first_aid', 'hazard', 'hazard_end', 'use_drug', 'vehicle_ram', 'net_ice_attack'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{selectedActionKey === 'first_aid' ? '手当てする相手（自分も可）:' : '対象を選択:'}</span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         {combat.participants
-                          .filter((p) => (['first_aid', 'hazard', 'hazard_end', 'use_drug'].includes(selectedActionKey) || p.id !== activePart.id) && !p.out)
+                          .filter((p) => (['first_aid', 'hazard', 'hazard_end', 'use_drug', 'net_ice_attack'].includes(selectedActionKey) || p.id !== activePart.id) && !p.out)
                           .map((p) => (
                             <button
                               key={p.id}
@@ -2733,7 +3274,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                       )}
 
                       {/* Dodge mode if applicable（近接攻撃・格闘はいつも回避で受けるので出さない。Phase 5l） */}
-                      {!MELEE_LIKE.includes(selectedActionKey) && !['choke', 'throw', 'hazard', 'hazard_end', 'use_drug'].includes(selectedActionKey) && (
+                      {!MELEE_LIKE.includes(selectedActionKey) && !['choke', 'throw', 'hazard', 'hazard_end', 'use_drug', 'net_ice_attack'].includes(selectedActionKey) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
                         <span style={{ fontSize: '0.85rem' }}>受け方:</span>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', cursor: 'pointer' }}>
@@ -2811,7 +3352,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     )}
                     <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>出目の入力:</span>
                     {/* 【運命】点（振る前に使う。1 点につき +1。日本語版 p.130。Phase 5v） */}
-                    {activePart.character && ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts', 'grab', 'martial_technique', 'stand', 'first_aid', 'throw_object'].includes(selectedActionKey) && (() => {
+                    {activePart.character && ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts', 'grab', 'martial_technique', 'stand', 'first_aid', 'throw_object', 'net_action', 'scanner'].includes(selectedActionKey) && (() => {
                       const left = Math.max(0, (activePart.character.stats?.luck ?? 0) - Number(activePart.character.extra?.luck_used ?? 0));
                       return (
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
@@ -2852,6 +3393,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{selectedActionKey === 'first_aid' ? '判定 1d10:' : '攻撃 1d10:'}</span>
                         {rollSourceTag('attack')}
                         <input
+                          data-testid="attack-roll-input"
                           type="number"
                           min={1}
                           max={10}
@@ -2863,7 +3405,22 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             padding: '4px',
                             textAlign: 'center',
                             backgroundColor: 'var(--color-bg)',
-                            border: missBorder(isMissing(false, '攻撃の出目', '判定の出目')),
+                            border: missBorder(
+                              isMissing(
+                                false,
+                                '攻撃の出目',
+                                '判定の出目',
+                                'パスファインダーの出目',
+                                'バックドアの出目',
+                                'アイディールの出目',
+                                'コントロールの出目',
+                                'スライドの出目',
+                                'クロークの出目',
+                                'ウイルスの出目',
+                                'ブラック ICE 攻撃の出目',
+                                '〈電子／セキュリティ技術〉の出目',
+                              ),
+                            ),
                             borderRadius: '4px',
                             color: 'var(--color-text)',
                           }}
@@ -2895,12 +3452,13 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         </div>
                       )}
 
-                      {dodgeMode === 'dodge' && (
+                      {(dodgeMode === 'dodge' || selectedActionKey === 'net_action' || selectedActionKey === 'net_ice_attack') && (
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>回避 1d10:</span>
                             {rollSourceTag('defense')}
                             <input
+                              data-testid="defense-roll-input"
                               type="number"
                               min={1}
                               max={10}
@@ -2912,7 +3470,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                 padding: '4px',
                                 textAlign: 'center',
                                 backgroundColor: 'var(--color-bg)',
-                                border: missBorder(isMissing(false, '回避の出目')),
+                                border: missBorder(isMissing(false, '回避の出目', '防御の出目', 'PERの出目')),
                                 borderRadius: '4px',
                                 color: 'var(--color-text)',
                               }}
@@ -2950,6 +3508,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>ダメージ出目:</span>
                         {rollSourceTag('damage')}
                         <input
+                          data-testid="damage-dice-input"
                           type="text"
                           value={damageDiceStr}
                           onChange={(e) => setDamageDiceStr(e.target.value)}
@@ -2958,7 +3517,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             width: '90px',
                             padding: '4px 6px',
                             backgroundColor: 'var(--color-bg)',
-                            border: missBorder(isMissing(false, 'ダメージ')),
+                            border: missBorder(isMissing(false, 'ダメージ', '効果ダイス')),
                             borderRadius: '4px',
                             color: 'var(--color-text)',
                             fontSize: '0.85rem',
@@ -3074,7 +3633,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                               </div>
                             )}
 
-                            {dodgeMode === 'dodge' && (
+                            {(dodgeMode === 'dodge' || selectedActionKey === 'net_action' || selectedActionKey === 'net_ice_attack') && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>第2 回避 1d10:</span>
                                 <input

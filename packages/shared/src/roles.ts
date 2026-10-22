@@ -37,7 +37,7 @@ export interface RoleInfo {
 
 /** 「3〜4」「9」「1〜10」のような範囲にランクが入るか */
 export function rankInRange(range: string, rank: number): boolean {
-  const m = /^(\d+)(?:[〜~\-](\d+))?$/.exec(range.trim());
+  const m = /^(\d+)(?:[〜~-](\d+))?$/.exec(range.trim());
   if (!m) return false;
   const lo = Number(m[1]);
   const hi = m[2] ? Number(m[2]) : lo;

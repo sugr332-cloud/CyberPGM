@@ -14,6 +14,7 @@ import {
 import { api } from '../api.js';
 import { SceneBgmField } from './SceneBgmField.js';
 import { SceneBoardField } from './SceneBoardField.js';
+import { NetrunGmPanel } from './NetrunGmPanel.js';
 
 interface ScenarioMakerViewProps {
   characters: CharacterSheet[];
@@ -36,8 +37,8 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Active View Tab: 'flowchart' | 'random_tables'
-  const [activeSubTab, setActiveSubTab] = useState<'flowchart' | 'random_tables'>('flowchart');
+  // Active View Tab: 'flowchart' | 'random_tables' | 'netrun'
+  const [activeSubTab, setActiveSubTab] = useState<'flowchart' | 'random_tables' | 'netrun'>('flowchart');
 
   // Mobile mode toggle (or auto detection)
   const [isMobileMode, setIsMobileMode] = useState(false);
@@ -902,6 +903,22 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
             }}
           >
             ランダム表
+          </button>
+          <button
+            data-testid="tab-netrun"
+            onClick={() => setActiveSubTab('netrun')}
+            style={{
+              padding: '6px 14px',
+              fontSize: '0.875rem',
+              fontWeight: activeSubTab === 'netrun' ? 'bold' : 'normal',
+              borderRadius: '4px',
+              border: 'none',
+              backgroundColor: activeSubTab === 'netrun' ? 'var(--color-accent)' : 'transparent',
+              color: activeSubTab === 'netrun' ? '#fff' : 'var(--color-text-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            NET構造体・セキュリティ
           </button>
         </div>
 
@@ -2416,6 +2433,12 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {activeSubTab === 'netrun' && (
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <NetrunGmPanel />
           </div>
         )}
       </div>

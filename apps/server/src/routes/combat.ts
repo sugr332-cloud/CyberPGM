@@ -31,6 +31,7 @@ import {
   skillNameToKey,
   burnDamage,
   soloEffects,
+  roleRank,
 } from '@cyberpgm/shared';
 import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES } from '../services/combat-resolver.js';
 import { woundState, initiativeTotal, resolveDamage } from '@cyberpgm/rules';
@@ -882,6 +883,15 @@ function advanceTurn(combatId: string): CombatChange | null {
     const st = JSON.parse(curPart.state || '{}');
     delete st.actions_taken;
     delete st.bonus_actions;
+    if (st.net && typeof st.net === 'object') {
+      st.net.net_used = 0;
+      st.net.slid_this_turn = false;
+      st.net.controlled_used_this_turn = [];
+      if (st.net.slowed) {
+        if (st.net.slowed_just_set) delete st.net.slowed_just_set;
+        else st.net.slowed = false;
+      }
+    }
     db.update(combat_participants)
       .set({ move_used: false, action_used: false, state: JSON.stringify(st) })
       .where(eq(combat_participants.id, curPart.id))
@@ -1328,6 +1338,10 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
           .run(d.id, d.board_id, d.x, d.y, JSON.stringify(d.inventory_entry), d.from_character_id ?? null);
       } else if (ch.field === 'board_drop_remove') {
         sqlite.prepare('DELETE FROM board_drops WHERE id = ?').run(ch.target_id);
+      } else if (ch.field === 'net_architecture') {
+        sqlite
+          .prepare('INSERT INTO rule_constants (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+          .run(`net_architecture.${ch.target_id}`, JSON.stringify(ch.after));
       }
     }
   });
@@ -1344,11 +1358,15 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
   const cbNow = db.select().from(combats).where(eq(combats.id, combatId)).get();
   const actorNow = db.select().from(combat_participants).where(eq(combat_participants.id, actor.id)).get();
   const ordered = getHydratedCombat(combatId)?.participants ?? [];
+  const actorNowNet = actorNow ? JSON.parse(actorNow.state || '{}')?.net : null;
+  const netMax = actor.character ? (roleRank(actor.character.role, actor.character.extra, 'Netrunner') >= 10 ? 5 : roleRank(actor.character.role, actor.character.extra, 'Netrunner') >= 7 ? 4 : roleRank(actor.character.role, actor.character.extra, 'Netrunner') >= 4 ? 3 : 2) : 2;
+  const netEffectiveMax = actorNowNet?.slowed ? Math.max(2, netMax - 1) : netMax;
+  const netHasRemaining = Boolean(actorNowNet && (actorNowNet.net_used ?? 0) > 0 && (actorNowNet.net_used ?? 0) < netEffectiveMax);
   if (
     cbNow?.status === 'active' &&
     actorNow &&
     ordered[cbNow.turn_index]?.id === actor.id &&
-    ((actorNow.move_used && actorNow.action_used) || actorNow.out)
+    ((actorNow.move_used && actorNow.action_used && !netHasRemaining) || actorNow.out)
   ) {
     const turnChange = advanceTurn(combatId);
     if (turnChange) {
@@ -1575,6 +1593,12 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
             'INSERT INTO board_drops (id, board_id, x, y, inventory_entry, from_character_id) VALUES (?, ?, ?, ?, ?, ?)',
           )
           .run(d.id, d.board_id, d.x, d.y, JSON.stringify(d.inventory_entry), d.from_character_id ?? null);
+      } else if (ch.field === 'net_architecture') {
+        if (ch.before) {
+          sqlite
+            .prepare('INSERT INTO rule_constants (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+            .run(`net_architecture.${ch.target_id}`, JSON.stringify(ch.before));
+        }
       }
     }
 

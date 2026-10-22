@@ -16,3 +16,4 @@ export * from './hazards.js';
 export * from './medical.js';
 export * from './role-abilities.js';
 export * from './vehicles.js';
+export * from './netrun.js';

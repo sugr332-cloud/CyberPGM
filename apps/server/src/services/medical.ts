@@ -133,7 +133,18 @@ export function passTime(ch: MedChar, hours: number, opts: { rested?: boolean })
     after.crit_injuries = ch.crit_injuries.map(({ quick_fixed: _q, ...rest }) => rest);
     notes.push('対症治療の効果が切れた');
   }
-  after.extra = { ...ch.extra, ...m, drugs, pending_addiction: pending, drug_cooldowns: cooldowns, ...(after.hp === ch.hp_max ? { healing: false } : {}) };
+  const nextExtra: Record<string, unknown> = { ...ch.extra, ...m, drugs, pending_addiction: pending, drug_cooldowns: cooldowns, ...(after.hp === ch.hp_max ? { healing: false } : {}) };
+  // プログラム・ブラック ICE（リッチ・スコーピオン・ナーヴスクラブ）による 1 時間の能力値低下を戻す（Phase 5z）
+  if (ch.extra.net_drain && hours >= (ch.extra.net_drain.hours ?? 1)) {
+    const nextStats = { ...ch.stats };
+    for (const [k, v] of Object.entries(ch.extra.net_drain.stats ?? {})) {
+      if (typeof v === 'number') nextStats[k] = (nextStats[k] ?? 0) + v;
+    }
+    after.stats = nextStats;
+    delete nextExtra.net_drain;
+    notes.push('プログラム／ブラック ICE による能力値低下（1 時間）が回復した');
+  }
+  after.extra = nextExtra as CharacterExtra;
   return { formula: notes, after };
 }
 
