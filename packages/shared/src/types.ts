@@ -235,6 +235,17 @@ export interface InventoryEntry {
   notes?: string;
 }
 
+/**
+ * キャラクターのそのほかの記録（Phase 5v〜）。DB の characters.extra（JSON）
+ */
+export interface CharacterExtra {
+  /** このセッションで使った【運命】点。残り = 【運命】 − これ。セッションの始めに 0 に戻す（日本語版 p.130） */
+  luck_used?: number;
+  /** 真空にさらされて減った能力値（空気を吸えば戻る。p.180） */
+  vacuum_loss?: Partial<Record<'int' | 'ref' | 'dex', number>>;
+  [key: string]: unknown;
+}
+
 export interface Character {
   id: string;
   kind: 'pc' | 'npc' | 'mook';
@@ -256,6 +267,7 @@ export interface Character {
   inventory: InventoryEntry[];
   status: string[];
   crit_injuries: unknown[];
+  extra?: CharacterExtra;
   eb: number;
   notes_gm?: string | null;
   player_id?: string | null; // 持ち主のプレイヤー（Phase 5i）

@@ -5,7 +5,7 @@ import { characters, images, combat_participants } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { runDemoSeed } from '../src/db/seed-demo.js';
 import { generateUlid } from '@cyberpgm/shared';
-import { evaluateStoryCheck } from '../src/routes/scenario-play.js';
+import { evaluateStoryCheck, refillLuck } from '../src/routes/scenario-play.js';
 
 // Phase 5b: シナリオの進行モード（docs/agy/phase5b-scenario-play.md §8）
 describe('Scenario play (Phase 5b)', () => {
@@ -139,6 +139,19 @@ describe('Scenario play (Phase 5b)', () => {
     active = await (await app.request('/api/scenario-sessions/active', { headers: H() })).json();
     expect(active.session.current_scene_id).toBe(sceneIds[0]);
     expect(active.session.revealed.clue_ids).not.toContain(clueId);
+  });
+
+  it('spends luck on a story check (+1 per point, recorded, refilled when a session starts) (Phase 5v)', async () => {
+    const c = await (await post(`/api/scenario-sessions/${sessionId}/checks`, { actor_character_ids: [viperId], choice_id: choiceId })).json();
+    const checkId = c.checks[0].id;
+    const rolled = await (await post(`/api/scenario-sessions/${sessionId}/checks/${checkId}/roll`, { rolls: [2], luck_spent: 2 })).json();
+    expect(rolled.formula).toContain('運命 2');
+    const used = JSON.parse(db.select().from(characters).where(eq(characters.id, viperId)).get()!.extra).luck_used;
+    expect(used).toBe(2);
+    const tooMuch = await post(`/api/scenario-sessions/${sessionId}/checks/${checkId}/roll`, { rolls: [2], luck_spent: 1 });
+    expect(tooMuch.status).toBe(200); // 一度使った判定では、あとから足さない
+    refillLuck();
+    expect(JSON.parse(db.select().from(characters).where(eq(characters.id, viperId)).get()!.extra).luck_used).toBe(0);
   });
 
   it('applies failure outcomes (HP −3 and a status) and undo restores them', async () => {

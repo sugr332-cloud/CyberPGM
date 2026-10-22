@@ -28,9 +28,10 @@ import {
   Combat,
   CombatChange,
   skillNameToKey,
+  burnDamage,
 } from '@cyberpgm/shared';
 import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES } from '../services/combat-resolver.js';
-import { woundState, initiativeTotal } from '@cyberpgm/rules';
+import { woundState, initiativeTotal, resolveDamage } from '@cyberpgm/rules';
 import { randomInt } from 'node:crypto';
 import { linkTextWeapons } from '../weapon-link.js';
 import { attackLine } from '../services/attack-line.js';
@@ -130,6 +131,7 @@ export function getHydratedCombat(combatId: string): Combat | null {
           cyberware: formatted.cyberware,
           status: formatted.status,
           crit_injuries: formatted.crit_injuries,
+          extra: formatted.extra,
           armor_penalty: formatted.armor_penalty,
         };
       }
@@ -788,8 +790,65 @@ interface TurnSnapshot {
   turn_index: number;
   round: number;
   participants: Array<{ id: string; move_used: boolean; action_used: boolean; state: string }>;
-  // 時間切れで外した状態（気絶など）の元の状態。戻すときに使う（Phase 5r）
-  characters?: Array<{ id: string; status: string }>;
+  // 時間切れで外した状態（気絶など）や、環境ダメージで変わる前の値。戻すときに使う（Phase 5r・5v）
+  characters?: Array<{ id: string; status: string; hp?: number; stats?: string; extra?: string }>;
+}
+
+/**
+ * 続いている環境ダメージを入れる（Phase 5v。日本語版 p.180〜181）。
+ * ターンの終わり: 着火・放射線（HP に直接 2/4/6）、感電（6d6、防具で減るが損耗しない）、真空（【知力】【反応】【敏捷】に 1d6 ずつ）
+ * ターンの始め: 溺れ（【体格】ぶん HP に直接）。ダイスはアプリが振る
+ */
+function applyTurnHazards(characterId: string | null, phase: 'start' | 'end', snapshot: TurnSnapshot, name: string) {
+  if (!characterId) return;
+  const ch = db.select().from(characters).where(eq(characters.id, characterId)).get();
+  if (!ch) return;
+  const status = JSON.parse(ch.status || '[]') as string[];
+  const stats = JSON.parse(ch.stats) as Record<string, number>;
+  const extra = JSON.parse(ch.extra || '{}') as Record<string, any>;
+  let hp = ch.hp;
+  const notes: string[] = [];
+  const d6 = () => randomInt(1, 7);
+  if (phase === 'end') {
+    const burn = burnDamage(status);
+    if (burn > 0) {
+      hp = Math.max(0, hp - burn);
+      notes.push(`燃えて HP に直接 ${burn}`);
+    }
+    if (status.includes('感電')) {
+      const dice = Array.from({ length: 6 }, d6);
+      const res = resolveDamage({ dice, location: 'body', sp: ch.sp_body, currentHp: hp, ablation: 0 });
+      hp = Math.max(0, hp - res.hpLoss);
+      notes.push(`感電 6d6（${dice.join(', ')}）− SP ${ch.sp_body} → ${res.hpLoss}`);
+    }
+    if (status.includes('真空')) {
+      const loss = { ...(extra.vacuum_loss ?? {}) };
+      const parts: string[] = [];
+      for (const k of ['int', 'ref', 'dex']) {
+        const n = d6();
+        const take = Math.min(n, stats[k]);
+        stats[k] -= take;
+        loss[k] = (loss[k] ?? 0) + take;
+        parts.push(`${k.toUpperCase()} −${n}`);
+      }
+      extra.vacuum_loss = loss;
+      notes.push(`真空: ${parts.join('、')}${stats.int <= 0 ? '。【知力】が 0 になり死亡' : ''}`);
+      if (stats.int <= 0 && !status.includes('dead')) status.push('dead');
+    }
+  } else if (status.includes('溺れ')) {
+    hp = Math.max(0, hp - stats.body);
+    notes.push(`溺れて HP に直接 ${stats.body}`);
+  }
+  if (notes.length === 0) return;
+  (snapshot.characters ??= []).push({ id: ch.id, status: ch.status || '[]', hp: ch.hp, stats: ch.stats, extra: ch.extra || '{}' });
+  const ws = woundState(hp, ch.hp_max);
+  const nextStatus = [...status.filter((s) => s !== 'seriously' && s !== 'mortally'), ...(ws === 'seriously' ? ['seriously'] : ws === 'mortally' ? ['mortally'] : [])];
+  db.update(characters)
+    .set({ hp, stats: JSON.stringify(stats), extra: JSON.stringify(extra), status: JSON.stringify(nextStatus), updated_at: Date.now() })
+    .where(eq(characters.id, ch.id))
+    .run();
+  sessionManager.announceCombat('環境ダメージ', `${name}: ${notes.join(' / ')}（HP ${ch.hp} → ${hp}）`);
+  sessionManager.updateCharacterSheet(ch.id);
 }
 
 /**
@@ -815,6 +874,7 @@ function advanceTurn(combatId: string): CombatChange | null {
 
   // 今の手番の人: 行動済みと、このターンだけの回数を戻す
   const curPart = parts[cb.turn_index];
+  if (curPart) applyTurnHazards(curPart.character_id, 'end', before, curPart.name);
   if (curPart) {
     const st = JSON.parse(curPart.state || '{}');
     delete st.actions_taken;
@@ -875,6 +935,7 @@ function advanceTurn(combatId: string): CombatChange | null {
     }
   }
   db.update(combats).set(updates).where(eq(combats.id, combatId)).run();
+  applyTurnHazards(parts[nextIndex]?.character_id ?? null, 'start', before, parts[nextIndex]?.name ?? '');
   for (const e of expired) sessionManager.announceCombat('状態が解けた', `${e.name} の「${e.status}」が解けた（時間切れ）`);
 
   const next = parts[nextIndex];
@@ -1157,6 +1218,9 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
           now,
           ch.target_id,
         );
+      } else if (ch.field === 'extra' || ch.field === 'stats') {
+        // 【運命】点・環境の状態など（extra）と、真空で減った能力値（stats）（Phase 5v）
+        sqlite.prepare(`UPDATE characters SET ${ch.field} = ?, updated_at = ? WHERE id = ?`).run(JSON.stringify(ch.after), now, ch.target_id);
       } else if (ch.field === 'state') {
         // Participant state update (move_used, action_used, deathSavePenalty, etc.)
         const part = sqlite
@@ -1389,6 +1453,9 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
           now,
           ch.target_id,
         );
+      } else if (ch.field === 'extra' || ch.field === 'stats') {
+        // 【運命】点・環境の状態など（extra）と、真空で減った能力値（stats）（Phase 5v）
+        sqlite.prepare(`UPDATE characters SET ${ch.field} = ?, updated_at = ? WHERE id = ?`).run(JSON.stringify(ch.before), now, ch.target_id);
       } else if (ch.field === 'state') {
         const part = sqlite
           .prepare('SELECT state, move_used, action_used FROM combat_participants WHERE id = ?')
@@ -1448,7 +1515,11 @@ combatRoutes.post('/combats/:id/undo', requireGm, async (c) => {
             .prepare('UPDATE combat_participants SET move_used = ?, action_used = ?, state = ? WHERE id = ?')
             .run(p.move_used ? 1 : 0, p.action_used ? 1 : 0, p.state, p.id);
         }
-        for (const ch of b.characters ?? []) sqlite.prepare('UPDATE characters SET status = ? WHERE id = ?').run(ch.status, ch.id);
+        // 後から変えた順の逆に戻す（同じキャラが 2 回入っていれば最初の値が残る）
+        for (const ch of [...(b.characters ?? [])].reverse()) {
+          sqlite.prepare('UPDATE characters SET status = ? WHERE id = ?').run(ch.status, ch.id);
+          if (ch.hp !== undefined) sqlite.prepare('UPDATE characters SET hp = ?, stats = ?, extra = ? WHERE id = ?').run(ch.hp, ch.stats, ch.extra, ch.id);
+        }
       } else if (ch.field === 'board_drop') {
         sqlite.prepare('DELETE FROM board_drops WHERE id = ?').run(ch.target_id);
       } else if (ch.field === 'board_drop_remove') {

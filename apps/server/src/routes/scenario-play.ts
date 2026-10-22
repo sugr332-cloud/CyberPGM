@@ -356,6 +356,7 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/resume', requireGm, async (c) =>
   logToActiveSession('scene', `進行再開: ${scene ? scene.title : 'シーン未指定'}`, { scene_id: session.current_scene_id });
   lockConnectedCharacters(session.scenario_id);
   showSceneOnDisplay(sessionId, scene);
+  refillLuck(); // 再開もセッションの始まりなので【運命】点を戻す（Phase 5v）
 
   return c.json({ success: true, sessionId, current_scene_id: session.current_scene_id });
 });
@@ -417,6 +418,7 @@ scenarioPlayRoutes.post('/scenario-sessions/start', requireGm, async (c) => {
 
   lockConnectedCharacters(scenario_id);
   showSceneOnDisplay(sessionId, scene);
+  refillLuck(); // セッションの始めに【運命】点を全部戻す（Phase 5v。p.130）
 
   return c.json({
     success: true,
@@ -1006,6 +1008,8 @@ scenarioPlayRoutes.post('/scenario-sessions/:id/checks/:checkId/roll', requireGm
     check.opposed = JSON.stringify(opp);
     db.update(story_checks).set({ opposed: check.opposed }).where(eq(story_checks.id, checkId)).run();
   }
+  const luckError = spendStoryLuck(check, body.luck_spent);
+  if (luckError) return c.json({ error: luckError }, 400);
   const evaluated = evaluateStoryCheck(check, Array.isArray(rolls) ? rolls : []);
 
   db.update(story_checks)
@@ -1564,7 +1568,10 @@ export interface StoryCheckEvaluation {
  */
 export function evaluateStoryCheck(check: any, rolls: number[]): StoryCheckEvaluation {
   const missing: string[] = [];
-  const actor = checkActorBase(check.actor_character_id, check.skill_key);
+  const baseActor = checkActorBase(check.actor_character_id, check.skill_key);
+  // 【運命】点を使っていれば 1 点につき +1（Phase 5v。p.130）
+  const luck = Number(check.luck ?? 0);
+  const actor = baseActor && luck > 0 ? { ...baseActor, base: baseActor.base + luck, parts: `${baseActor.parts} + 運命 ${luck}` } : baseActor;
   if (!check.skill_key) missing.push('技能を選んでください');
   else if (!actor) missing.push('キャラの能力値か技能のデータがありません');
 
@@ -1684,6 +1691,7 @@ export async function handleStoryRoll(
     characterId: string;
     check_id: string;
     rolls: number[];
+    luck_spent?: number;
   },
   ws?: any,
 ) {
@@ -1704,6 +1712,11 @@ export async function handleStoryRoll(
     return;
   }
   const rolls = Array.isArray(payload.rolls) ? payload.rolls : [];
+  const luckError = spendStoryLuck(check, payload.luck_spent);
+  if (luckError) {
+    ws?.send(JSON.stringify({ type: 'story:result', payload: { check_id: check.id, missing_inputs: [luckError] } }));
+    return;
+  }
   const evaluated = evaluateStoryCheck(check, rolls);
 
   db.update(story_checks)
@@ -1730,4 +1743,33 @@ export async function handleStoryRoll(
   });
 
   sessionManager.broadcastStoryCheckUpdate(check.scenario_session_id);
+}
+
+/**
+ * 判定に【運命】点を使う（Phase 5v。日本語版 p.130）。振る前に使い、1 点につき +1。
+ * 残りを超える分は使えない。同じ判定で一度使ったら、あとから変えない
+ */
+export function spendStoryLuck(check: { id: string; actor_character_id: string; luck?: number | null }, luck: unknown): string | null {
+  const n = Math.max(0, Math.floor(Number(luck) || 0));
+  if (n === 0 || Number(check.luck ?? 0) > 0) return null;
+  const ch = db.select().from(characters).where(eq(characters.id, check.actor_character_id)).get();
+  if (!ch) return null;
+  const extra = JSON.parse(ch.extra || '{}');
+  const left = Math.max(0, JSON.parse(ch.stats).luck - Number(extra.luck_used ?? 0));
+  if (n > left) return `【運命】点が足りません（残り ${left} 点）`;
+  db.update(characters).set({ extra: JSON.stringify({ ...extra, luck_used: Number(extra.luck_used ?? 0) + n }), updated_at: Date.now() }).where(eq(characters.id, ch.id)).run();
+  db.update(story_checks).set({ luck: n }).where(eq(story_checks.id, check.id)).run();
+  check.luck = n;
+  sessionManager.updateCharacterSheet(ch.id);
+  return null;
+}
+
+/** セッションの始めに PC の【運命】点を全部戻す（p.130） */
+export function refillLuck(): void {
+  for (const ch of db.select().from(characters).where(eq(characters.kind, 'pc')).all()) {
+    const extra = JSON.parse(ch.extra || '{}');
+    if (!extra.luck_used) continue;
+    db.update(characters).set({ extra: JSON.stringify({ ...extra, luck_used: 0 }), updated_at: Date.now() }).where(eq(characters.id, ch.id)).run();
+    sessionManager.updateCharacterSheet(ch.id);
+  }
 }

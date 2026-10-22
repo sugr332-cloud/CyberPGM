@@ -12,6 +12,8 @@ import {
   BoardDrop,
   formatSkillName,
   MARTIAL_TECHNIQUES,
+  HAZARDS,
+  isHazardStatus,
 } from '@cyberpgm/shared';
 import {
   initiativeTotal,
@@ -117,6 +119,13 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [grabMode, setGrabMode] = useState<'hold' | 'item'>('hold');
   const [aimHead, setAimHead] = useState(false);
   const [kipUp, setKipUp] = useState(false);
+  // 【運命】点・環境ダメージ・投げる（Phase 5v）
+  const [luckSpent, setLuckSpent] = useState(0);
+  const [hazardKey, setHazardKey] = useState<string>('fire');
+  const [hazardLevel, setHazardLevel] = useState<'small' | 'medium' | 'large'>('small');
+  const [fallM, setFallM] = useState('');
+  const [hazardEndStatus, setHazardEndStatus] = useState('');
+  const [throwEntryId, setThrowEntryId] = useState('');
   
   // 出目を入れる前の計算式と成功ライン（仕様 §5.0.1。Phase 5n）
   const [attackLineText, setAttackLineText] = useState<string | null>(null);
@@ -512,6 +521,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       // どのスマホから届いたかを出目欄の横に出す（Phase 5n）
       const fromPart = combat?.participants.find((p) => p.character_id === wsMessage.payload.character_id);
       if (fromPart && roll_type !== 'initiative') setRollFrom((prev) => ({ ...prev, [roll_type]: fromPart.name }));
+      if (roll_type === 'attack' && typeof wsMessage.payload.luck_spent === 'number') setLuckSpent(wsMessage.payload.luck_spent);
       if (roll_type === 'attack' && typeof first === 'number') {
         setAttackFirst(first);
         if (typeof extra === 'number') setAttackExtra(extra);
@@ -632,6 +642,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
     setDefenseExtra(undefined);
     setDamageDiceStr('');
     setCritRoll(undefined);
+    setLuckSpent(0);
     setExtraCritRoll(undefined);
     setSecondExtraCritRoll(undefined);
     setDeathSaveRoll(undefined);
@@ -772,6 +783,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
         technique: selectedActionKey === 'martial_technique' ? technique || undefined : selectedActionKey === 'stand' && kipUp ? 'kip_up' : undefined,
         grab_mode: selectedActionKey === 'grab' ? grabMode : undefined,
         aim_head: aimHead || undefined,
+        luck_spent: luckSpent || undefined,
+        hazard: selectedActionKey === 'hazard' ? hazardKey : undefined,
+        hazard_level: selectedActionKey === 'hazard' ? hazardLevel : undefined,
+        fall_m: selectedActionKey === 'hazard' && hazardKey === 'fall' && fallM !== '' ? Number(fallM) : undefined,
+        hazard_status: selectedActionKey === 'hazard_end' ? hazardEndStatus || undefined : undefined,
+        throw_entry_id: selectedActionKey === 'throw_object' ? throwEntryId || undefined : undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
         defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
@@ -867,6 +884,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
         technique: selectedActionKey === 'martial_technique' ? technique || undefined : selectedActionKey === 'stand' && kipUp ? 'kip_up' : undefined,
         grab_mode: selectedActionKey === 'grab' ? grabMode : undefined,
         aim_head: aimHead || undefined,
+        luck_spent: luckSpent || undefined,
+        hazard: selectedActionKey === 'hazard' ? hazardKey : undefined,
+        hazard_level: selectedActionKey === 'hazard' ? hazardLevel : undefined,
+        fall_m: selectedActionKey === 'hazard' && hazardKey === 'fall' && fallM !== '' ? Number(fallM) : undefined,
+        hazard_status: selectedActionKey === 'hazard_end' ? hazardEndStatus || undefined : undefined,
+        throw_entry_id: selectedActionKey === 'throw_object' ? throwEntryId || undefined : undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
         defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
@@ -2081,6 +2104,71 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     </div>
                   )}
 
+                  {/* 投げる・環境ダメージ（Phase 5v。日本語版 p.177〜181） */}
+                  {['throw_object', 'hazard', 'hazard_end'].includes(selectedActionKey) && (() => {
+                    const field: React.CSSProperties = { padding: '4px 6px', fontSize: '0.85rem', borderRadius: '4px', border: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' };
+                    if (selectedActionKey === 'throw_object') {
+                      const inv = ((activePart.character?.inventory as Array<{ entry_id: string; name: string; kind?: string; qty?: number }>) ?? []).filter((i) => i.kind === 'weapon' || /グレネード|Grenade/.test(i.name));
+                      return (
+                        <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '0.85rem' }}>
+                          投げる物:
+                          <select aria-label="投げる物" value={throwEntryId} onChange={(e) => setThrowEntryId(e.target.value)} style={field}>
+                            <option value="">選ぶ</option>
+                            {inv.map((i) => (
+                              <option key={i.entry_id} value={i.entry_id}>
+                                {i.name}
+                                {i.qty && i.qty > 1 ? ` ×${i.qty}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <span style={{ color: 'var(--color-text-muted)' }}>ダメージ: 近接武器はそのまま、グレネードはランチャーと同じ、それ以外は GM が決めた個数</span>
+                        </label>
+                      );
+                    }
+                    if (selectedActionKey === 'hazard_end') {
+                      const tStatus = (combat.participants.find((p) => p.id === targetParticipantId)?.character?.status ?? []).filter((s) => isHazardStatus(s));
+                      return (
+                        <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '0.85rem' }}>
+                          終える状態:
+                          <select aria-label="終える環境の状態" value={hazardEndStatus} onChange={(e) => setHazardEndStatus(e.target.value)} style={field}>
+                            <option value="">選ぶ</option>
+                            {tStatus.map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                          {tStatus.length === 0 && <span style={{ color: 'var(--color-text-muted)' }}>対象に環境の状態がありません</span>}
+                        </label>
+                      );
+                    }
+                    const hz = HAZARDS.find((h) => h.key === hazardKey);
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          種類:
+                          <select aria-label="環境ダメージの種類" value={hazardKey} onChange={(e) => setHazardKey(e.target.value)} style={field}>
+                            {HAZARDS.map((h) => (
+                              <option key={h.key} value={h.key}>{h.name}</option>
+                            ))}
+                          </select>
+                          {hz?.leveled && (
+                            <select aria-label="危険度" value={hazardLevel} onChange={(e) => setHazardLevel(e.target.value as 'small' | 'medium' | 'large')} style={field}>
+                              <option value="small">小</option>
+                              <option value="medium">中</option>
+                              <option value="large">大</option>
+                            </select>
+                          )}
+                          {hazardKey === 'fall' && (
+                            <>
+                              <input aria-label="落ちた高さ" type="number" min={0} value={fallM} onChange={(e) => setFallM(e.target.value)} style={{ ...field, width: '70px' }} />m
+                            </>
+                          )}
+                        </div>
+                        {hz && <span style={{ color: 'var(--color-text-muted)' }}>{hz.desc}</span>}
+                        {['fall', 'poison', 'drug'].includes(hazardKey) && <span style={{ color: 'var(--color-text-muted)' }}>判定（〈運動〉または〈拷問／薬物抵抗〉）の出目は「攻撃」の欄に、ダメージは「ダメージ出目」に入れます。</span>}
+                      </div>
+                    );
+                  })()}
+
                   {/* 武術・つかみ・立ち上がる（Phase 5u。日本語版 p.177〜180） */}
                   {['martial_arts', 'martial_technique', 'grab', 'stand'].includes(selectedActionKey) && (() => {
                     const skills = (activePart.character?.skills ?? {}) as Record<string, number>;
@@ -2263,12 +2351,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   )}
 
                   {/* Target & Distance Selection (for ranged / melee / brawl) */}
-                  {['ranged', 'aimed', 'autofire', ...MELEE_LIKE, 'choke', 'throw', 'first_aid'].includes(selectedActionKey) && (
+                  {['ranged', 'aimed', 'autofire', ...MELEE_LIKE, 'choke', 'throw', 'throw_object', 'first_aid', 'hazard', 'hazard_end'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{selectedActionKey === 'first_aid' ? '手当てする相手（自分も可）:' : '対象を選択:'}</span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         {combat.participants
-                          .filter((p) => (selectedActionKey === 'first_aid' || p.id !== activePart.id) && !p.out)
+                          .filter((p) => (['first_aid', 'hazard', 'hazard_end'].includes(selectedActionKey) || p.id !== activePart.id) && !p.out)
                           .map((p) => (
                             <button
                               key={p.id}
@@ -2289,7 +2377,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           ))}
                       </div>
 
-                      {['ranged', 'aimed', 'autofire'].includes(selectedActionKey) && (
+                      {['ranged', 'aimed', 'autofire', 'throw_object'].includes(selectedActionKey) && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '0.85rem' }}>距離 (m):</span>
@@ -2488,7 +2576,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                       )}
 
                       {/* Dodge mode if applicable（近接攻撃・格闘はいつも回避で受けるので出さない。Phase 5l） */}
-                      {!MELEE_LIKE.includes(selectedActionKey) && !['choke', 'throw'].includes(selectedActionKey) && (
+                      {!MELEE_LIKE.includes(selectedActionKey) && !['choke', 'throw', 'hazard', 'hazard_end'].includes(selectedActionKey) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
                         <span style={{ fontSize: '0.85rem' }}>受け方:</span>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', cursor: 'pointer' }}>
@@ -2565,6 +2653,26 @@ export const CombatView: React.FC<CombatViewProps> = ({
                       </div>
                     )}
                     <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>出目の入力:</span>
+                    {/* 【運命】点（振る前に使う。1 点につき +1。日本語版 p.130。Phase 5v） */}
+                    {activePart.character && ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts', 'grab', 'martial_technique', 'stand', 'first_aid', 'throw_object'].includes(selectedActionKey) && (() => {
+                      const left = Math.max(0, (activePart.character.stats?.luck ?? 0) - Number(activePart.character.extra?.luck_used ?? 0));
+                      return (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                          【運命】点を使う:
+                          <input
+                            aria-label="使う運命点"
+                            type="number"
+                            min={0}
+                            max={left}
+                            value={luckSpent || ''}
+                            placeholder="0"
+                            onChange={(e) => setLuckSpent(Math.max(0, Math.min(left, Number(e.target.value) || 0)))}
+                            style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }}
+                          />
+                          （残り {left}。1 点につき +1）
+                        </label>
+                      );
+                    })()}
                     {/* 死亡セーブの出目（スマホから届けば入る。NPC は GM が入れる。Phase 5l） */}
                     {selectedActionKey === 'death_save' && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

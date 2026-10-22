@@ -380,13 +380,13 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   };
 
   // Evaluate roll on check
-  const handleRollCheck = async (checkId: string, rolls: number[], opposedRolls?: number[]) => {
+  const handleRollCheck = async (checkId: string, rolls: number[], opposedRolls?: number[], luckSpent?: number) => {
     if (!activeSession) return;
     try {
       const res = await gmFetch(`/api/scenario-sessions/${activeSession.id}/checks/${checkId}/roll`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rolls, opposed_rolls: opposedRolls }),
+        body: JSON.stringify({ rolls, opposed_rolls: opposedRolls, luck_spent: luckSpent }),
       }).then((r) => r.json());
 
       if (res.error) throw new Error(res.error);
@@ -1223,7 +1223,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                   check={chk}
                   characters={characters}
                   onPatch={(body) => handlePatchCheck(chk.id, body)}
-                  onRoll={(rolls, opposedRolls) => handleRollCheck(chk.id, rolls, opposedRolls)}
+                  onRoll={(rolls, opposedRolls, luckSpent) => handleRollCheck(chk.id, rolls, opposedRolls, luckSpent)}
                   onApply={() => handleApplyCheck(chk.id)}
                   onUndo={() => handleUndoCheck(chk.id)}
                 />
