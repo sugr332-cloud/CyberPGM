@@ -29,7 +29,7 @@ interface Props {
   check: StoryCheckView;
   characters: CharacterSheet[];
   onPatch: (body: Record<string, unknown>) => void;
-  onRoll: (rolls: number[], opposedRolls?: number[]) => void;
+  onRoll: (rolls: number[], opposedRolls?: number[], luckSpent?: number) => void;
   onApply: () => void;
   onUndo: () => void;
 }
@@ -65,6 +65,8 @@ export function StoryCheckRow({ check, characters, onPatch, onRoll, onApply, onU
   const [extra, setExtra] = useState('');
   const [theirFirst, setTheirFirst] = useState('');
   const [theirExtra, setTheirExtra] = useState('');
+  // 使う【運命】点（Phase 5v。p.130）
+  const [luck, setLuck] = useState('');
   const applied = !!check.applied_log_id;
   const firstNum = parseInt(first, 10);
   const needsExtra = firstNum === 10 || firstNum === 1;
@@ -80,7 +82,7 @@ export function StoryCheckRow({ check, characters, onPatch, onRoll, onApply, onU
           ? [theirFirstNum, parseInt(theirExtra, 10)]
           : [theirFirstNum]
         : undefined;
-    onRoll(mine, theirs);
+    onRoll(mine, theirs, Number(luck) || undefined);
   };
 
   return (
@@ -200,6 +202,14 @@ export function StoryCheckRow({ check, characters, onPatch, onRoll, onApply, onU
           {needsExtra && (
             <input aria-label="追加の出目" type="number" min={1} max={10} placeholder="追加" value={extra} onChange={(e) => setExtra(e.target.value)} style={{ ...inputStyle, width: '52px' }} />
           )}
+          {(() => {
+            const left = actor ? Math.max(0, (actor.stats?.luck ?? 0) - Number((actor as { extra?: { luck_used?: number } }).extra?.luck_used ?? 0)) : 0;
+            return (check as { luck?: number }).luck ? (
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>運命 +{(check as { luck?: number }).luck}</span>
+            ) : left > 0 ? (
+              <input aria-label="使う運命点" type="number" min={0} max={left} placeholder={`運命（残${left}）`} value={luck} onChange={(e) => setLuck(e.target.value)} style={{ ...inputStyle, width: '84px' }} />
+            ) : null;
+          })()}
           {check.opposed && (
             <>
               <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>相手の出目</span>

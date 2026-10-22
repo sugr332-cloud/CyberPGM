@@ -134,6 +134,8 @@ export const characters = sqliteTable('characters', {
   inventory: text('inventory').notNull().default('[]'), // JSON
   status: text('status').notNull().default('[]'), // JSON: string[]
   crit_injuries: text('crit_injuries').notNull().default('[]'), // JSON
+  // そのほかの記録（Phase 5v）: 使った【運命】点、環境の状態、ドラッグの効果など。JSON
+  extra: text('extra').notNull().default('{}'),
   eb: integer('eb').notNull().default(0),
   notes_gm: text('notes_gm'),
   player_id: text('player_id').references(() => players.id, { onDelete: 'set null' }), // 持ち主（Phase 5i）
@@ -503,6 +505,7 @@ export const story_checks = sqliteTable('story_checks', {
   result: text('result'), // 'success' | 'failure'（出目がそろうまでは null）
   applied_log_id: text('applied_log_id'),
   action_label: text('action_label'), // プレイヤーが選んだ行動（選択肢の名前・一般的な行動・自由記述）
+  luck: integer('luck').notNull().default(0), // 使った【運命】点（Phase 5v。p.130）
 });
 
 // Relations

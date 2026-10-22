@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CharacterStats } from './types.js';
+import type { CharacterStats, CharacterExtra } from './types.js';
 
 export type CombatActionSlot = 'move' | 'action' | 'reaction';
 export type CombatActionStatus = 'confirmed' | 'unconfirmed';
@@ -99,6 +99,7 @@ export interface CombatParticipant {
     cyberware?: Array<{ item_id?: string; name: string; type?: string; static_loss?: number }>;
     status: string[];
     crit_injuries: unknown[];
+    extra?: CharacterExtra; // 【運命】点・環境の状態など（Phase 5v）
     armor_penalty?: number; // 重い防具のペナルティ（REF・DEX・MOVE から引く。Phase 5m）
   } | null;
 }
@@ -130,6 +131,8 @@ export interface CombatChange {
     | 'inventory'
     | 'status'
     | 'crit_injuries'
+    | 'extra'
+    | 'stats'
     | 'dropped'
     | 'out'
     | 'state'
@@ -156,6 +159,8 @@ export const CombatChangeSchema = z.object({
     'inventory',
     'status',
     'crit_injuries',
+    'extra',
+    'stats',
     'dropped',
     'out',
     'state',
@@ -324,6 +329,14 @@ export const ResolveActionInputSchema = z.object({
   technique: z.enum(['kip_up', 'disarm', 'iron_grip', 'armor_break', 'bone_break', 'dodge_throw', 'arm_counter', 'pressure_point', 'flying_kick']).optional(),
   grab_mode: z.enum(['hold', 'item']).optional(), // つかむ: 相手を拘束する／持ち物を奪う
   aim_head: z.boolean().optional(), // 骨砕き・点穴撃で頭部を狙う（−8）
+  luck_spent: z.number().int().min(0).max(10).optional(), // 使う【運命】点（Phase 5v。p.130）
+  // 環境ダメージ（Phase 5v。p.180〜181）
+  hazard: z.enum(['fire', 'radiation', 'electric', 'drown', 'vacuum', 'fall', 'poison', 'drug', 'weather']).optional(),
+  hazard_level: z.enum(['small', 'medium', 'large']).optional(),
+  fall_m: z.number().min(0).optional(),
+  hazard_status: z.string().optional(), // 終わらせる環境の状態（hazard_end）
+  // 物を投げる（Phase 5v。p.177〜178）
+  throw_entry_id: z.string().optional(),
   // Multi-attack for ROF > 1
   attacks: z.array(SingleAttackInputSchema).optional(),
   // Manual / unconfirmed adjustments

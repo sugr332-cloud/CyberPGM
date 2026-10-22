@@ -113,6 +113,9 @@ export const PlayerPage: React.FC = () => {
   const [padFirstRoll, setPadFirstRoll] = useState<number | null>(null);
   const [padExtraRoll, setPadExtraRoll] = useState<number | null>(null);
   const [needsExtraRoll, setNeedsExtraRoll] = useState(false);
+  // 使う【運命】点（Phase 5v）
+  const [luckToSpend, setLuckToSpend] = useState(0);
+  const luckLeft = sheet ? Math.max(0, (sheet.stats?.luck ?? 0) - Number((sheet as any).extra?.luck_used ?? 0)) : 0;
   const [chosenActionLabel, setChosenActionLabel] = useState<string>('');
   // 攻撃する相手と使う武器（Phase 5j）。攻撃のボタンと一緒に GM へ送る
   const [attackTargetId, setAttackTargetId] = useState<string | null>(null);
@@ -830,6 +833,17 @@ export const PlayerPage: React.FC = () => {
                     })}
                   </div>
 
+                  {/* 【運命】点（振る前に使う。1 点につき +1。日本語版 p.130。Phase 5v） */}
+                  {luckLeft > 0 && (
+                    <div data-testid="luck-picker" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
+                      <span>【運命】点（残り {luckLeft}）:</span>
+                      <button type="button" onClick={() => setLuckToSpend((n) => Math.max(0, n - 1))} style={{ width: '32px', height: '32px' }}>−</button>
+                      <strong>{luckToSpend}</strong>
+                      <button type="button" onClick={() => setLuckToSpend((n) => Math.min(luckLeft, n + 1))} style={{ width: '32px', height: '32px' }}>＋</button>
+                      <span style={{ color: 'var(--color-text-muted)' }}>使うと +{luckToSpend}</span>
+                    </div>
+                  )}
+
                   {/* Submit Roll Button */}
                   <button
                     onClick={() => {
@@ -840,8 +854,10 @@ export const PlayerPage: React.FC = () => {
                           roll_type: padRollType,
                           first: padFirstRoll,
                           extra: padExtraRoll ?? undefined,
+                          ...(padRollType === 'attack' && luckToSpend > 0 ? { luck_spent: luckToSpend } : {}),
                         },
                       });
+                      setLuckToSpend(0);
                       setShowDicePad(false);
                       setPadFirstRoll(null);
                       setPadExtraRoll(null);
@@ -1180,6 +1196,11 @@ export const PlayerPage: React.FC = () => {
               </div>
               <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>資金</span>
             </div>
+          </div>
+
+          {/* 【運命】点の残り（Phase 5v。セッションの始めに全部戻る） */}
+          <div data-testid="luck-left" style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+            【運命】点: 残り <strong style={{ color: 'var(--color-text)' }}>{luckLeft}</strong> / {sheet.stats.luck}（判定の前に使うと 1 点につき +1。セッションの始めに戻る）
           </div>
 
           {/* ロールの概要とロール特技のランクごとの効果（Phase 5s） */}
@@ -1621,6 +1642,17 @@ export const PlayerPage: React.FC = () => {
                       })}
                     </div>
 
+                    {/* 【運命】点（振る前に使う。1 点につき +1。日本語版 p.130。Phase 5v） */}
+                    {luckLeft > 0 && (
+                      <div data-testid="luck-picker" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
+                        <span>【運命】点（残り {luckLeft}）:</span>
+                        <button type="button" onClick={() => setLuckToSpend((n) => Math.max(0, n - 1))} style={{ width: '32px', height: '32px' }}>−</button>
+                        <strong>{luckToSpend}</strong>
+                        <button type="button" onClick={() => setLuckToSpend((n) => Math.min(luckLeft, n + 1))} style={{ width: '32px', height: '32px' }}>＋</button>
+                        <span style={{ color: 'var(--color-text-muted)' }}>使うと +{luckToSpend}</span>
+                      </div>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {
@@ -1634,8 +1666,10 @@ export const PlayerPage: React.FC = () => {
                           payload: {
                             check_id: activeStoryCheck.check_id,
                             rolls,
+                            ...(luckToSpend > 0 ? { luck_spent: luckToSpend } : {}),
                           },
                         });
+                        setLuckToSpend(0);
                       }}
                       disabled={storyFirstRoll === null || (storyNeedsExtra && storyExtraRoll === null)}
                       style={{

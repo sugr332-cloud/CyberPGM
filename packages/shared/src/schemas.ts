@@ -65,6 +65,7 @@ export const CharacterSchema = z.object({
   inventory: z.array(InventoryFlexibleSchema).default([]),
   status: z.array(z.string()).default([]),
   crit_injuries: z.array(z.unknown()).default([]),
+  extra: z.record(z.string(), z.unknown()).default({}),
   eb: z.number().int().default(0),
   notes_gm: z.string().nullable().optional(),
   player_id: z.string().nullable().optional(), // 持ち主のプレイヤー（Phase 5i）

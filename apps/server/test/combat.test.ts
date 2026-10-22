@@ -1611,6 +1611,114 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
     });
   });
 
+  // Phase 5v: 【運命】点・物を投げる・環境ダメージ（日本語版 p.130、177〜181）
+  describe('Phase 5v: luck, throwing and hazards', () => {
+    const H = () => ({ ...authGm, 'Content-Type': 'application/json' });
+    const resolve = async (combatId: string, body: Record<string, unknown>) =>
+      (await (await app.request(`/api/combats/${combatId}/resolve`, { method: 'POST', headers: H(), body: JSON.stringify(body) })).json()).result;
+    const apply = async (combatId: string, body: Record<string, unknown>) =>
+      await (await app.request(`/api/combats/${combatId}/apply`, { method: 'POST', headers: H(), body: JSON.stringify(body) })).json();
+    const nyxRow = () => db.select().from(characters).where(eq(characters.id, pcId2)).get()!;
+
+    it('adds spent luck to the first attack roll and records it; refuses more than is left', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const shot = { action_key: 'ranged', actor_id: viper.id, target_id: ganger.id, weapon_id: weaponIdPistol, distance_m: 5, attack_roll: { first: 2 }, damage_dice: [1, 1, 1] };
+      const plain = await resolve(combat.id, shot);
+      const lucky = await resolve(combat.id, { ...shot, luck_spent: 3 });
+      expect(lucky.formula).toContain('+3（運命）');
+      expect(plain.formula).not.toContain('運命');
+      expect(plain.changes.some((ch: any) => ch.field === 'extra')).toBe(false);
+      const rec = lucky.changes.find((ch: any) => ch.field === 'extra');
+      expect(rec.after.luck_used).toBe(3);
+      const tooMuch = await resolve(combat.id, { ...shot, luck_spent: 9 });
+      expect(tooMuch.missing_inputs.join()).toContain('【運命】点が足りません');
+    });
+
+    it('sets fire, burns at the end of the turn, and undo restores HP', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const started = await (await app.request(`/api/combats/${combat.id}`, { method: 'PATCH', headers: H(), body: JSON.stringify({ action: 'start' }) })).json();
+      const first = started.combat.participants[started.combat.turn_index];
+      await apply(combat.id, { action_key: 'hazard', actor_id: first.id, target_id: first.id, hazard: 'fire', hazard_level: 'medium' });
+      const charId = first.character_id;
+      const hpBefore = db.select().from(characters).where(eq(characters.id, charId)).get()!.hp;
+      expect(JSON.parse(db.select().from(characters).where(eq(characters.id, charId)).get()!.status)).toContain('着火（中）');
+      await app.request(`/api/combats/${combat.id}`, { method: 'PATCH', headers: H(), body: JSON.stringify({ action: 'next_turn' }) });
+      expect(db.select().from(characters).where(eq(characters.id, charId)).get()!.hp).toBe(hpBefore - 4);
+      await app.request(`/api/combats/${combat.id}/undo`, { method: 'POST', headers: authGm });
+      expect(db.select().from(characters).where(eq(characters.id, charId)).get()!.hp).toBe(hpBefore);
+      expect(viper).toBeDefined();
+    });
+
+    it('falls: 2d6 per 10m and a failed Athletics check gives a broken leg', async () => {
+      sqlite.prepare('INSERT OR REPLACE INTO rule_constants (key, value, note) VALUES (?, ?, ?)').run(
+        'critical_injury.body',
+        JSON.stringify([{ range: [8, 8], name: 'Broken Leg', summary: '' }]),
+        'test',
+      );
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const needDice = await resolve(combat.id, { action_key: 'hazard', actor_id: viper.id, target_id: nyx.id, hazard: 'fall', fall_m: 20, attack_roll: { first: 2 } });
+      expect(needDice.missing_inputs.join()).toContain('4d6');
+      const r = await resolve(combat.id, { action_key: 'hazard', actor_id: viper.id, target_id: nyx.id, hazard: 'fall', fall_m: 20, attack_roll: { first: 2 }, damage_dice: [6, 6, 6, 6] });
+      expect(r.formula).toContain('片脚損傷');
+      expect(r.changes.find((ch: any) => ch.field === 'crit_injuries').after.at(-1).name).toBe('Broken Leg');
+    });
+
+    it('poison: resisted or direct HP damage', async () => {
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const base = { action_key: 'hazard', actor_id: viper.id, target_id: nyx.id, hazard: 'poison', hazard_level: 'large', damage_dice: [3, 3, 3] };
+      const resisted = await resolve(combat.id, { ...base, attack_roll: { first: 10, extra: 9 } });
+      expect(resisted.formula).toContain('抵抗した');
+      const hit = await resolve(combat.id, { ...base, attack_roll: { first: 2 } });
+      const hp = hit.changes.find((ch: any) => ch.field === 'hp');
+      expect(nyx.character.hp - hp.after).toBe(9);
+    });
+
+    it('vacuum: ending it restores the lost stats', async () => {
+      const row = nyxRow();
+      const stats = JSON.parse(row.stats);
+      db.update(characters)
+        .set({ status: JSON.stringify(['真空']), stats: JSON.stringify({ ...stats, int: stats.int - 3 }), extra: JSON.stringify({ vacuum_loss: { int: 3 } }) })
+        .where(eq(characters.id, pcId2))
+        .run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      await apply(combat.id, { action_key: 'hazard_end', actor_id: viper.id, target_id: nyx.id, hazard_status: '真空' });
+      const after = nyxRow();
+      expect(JSON.parse(after.stats).int).toBe(stats.int);
+      expect(JSON.parse(after.status)).toEqual([]);
+    });
+
+    it('throws a melee weapon: DEX + Athletics vs the grenade launcher table, item leaves the hand', async () => {
+      sqlite.prepare('INSERT OR REPLACE INTO rule_constants (key, value, note) VALUES (?, ?, ?)').run(
+        'dv_table.DV Grenade Launcher',
+        JSON.stringify([{ range: [0, 6], dv: 16 }, { range: [7, 12], dv: 15 }, { range: [13, 25], dv: 15 }]),
+        'test',
+      );
+      const row = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+      db.update(characters)
+        .set({ inventory: JSON.stringify([...JSON.parse(row.inventory), { entry_id: 'knife', item_id: weaponIdMelee, name: 'コンバット・ナイフ', kind: 'weapon', qty: 1, equipped: true }]) })
+        .where(eq(characters.id, pcId1))
+        .run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const nyx = combat.participants.find((p: any) => p.name === 'ニクス');
+      const far = await resolve(combat.id, { action_key: 'throw_object', actor_id: viper.id, target_id: nyx.id, throw_entry_id: 'knife', distance_m: 30, attack_roll: { first: 9 }, damage_dice: [3, 3] });
+      expect(far.missing_inputs.join()).toContain('25m');
+      const r = await resolve(combat.id, { action_key: 'throw_object', actor_id: viper.id, target_id: nyx.id, throw_entry_id: 'knife', distance_m: 5, attack_roll: { first: 10, extra: 5 }, damage_dice: [6, 5] });
+      expect(r.formula).toContain('難易度 16');
+      const inv = r.changes.find((ch: any) => ch.field === 'inventory');
+      expect(inv.after.some((i: any) => i.entry_id === 'knife')).toBe(false);
+    });
+  });
+
   // Phase 5n: 出目を入れる前の成功ライン
   describe('Phase 5n: attack line before the roll', () => {
     it('shows the success line for a ranged attack at a distance, and bands for the phone', async () => {

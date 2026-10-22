@@ -32,6 +32,14 @@ import {
   martialArtsDice,
   splitSkillKey,
   formatSkillName,
+  HAZARDS,
+  HazardLevel,
+  hazardStatus,
+  burnDamage,
+  RESIST_DV,
+  POISON_DICE,
+  DRUG_EFFECT,
+  HAZARD_LEVEL_LABEL,
 } from '@cyberpgm/shared';
 import { z } from 'zod';
 import type { AppDatabase } from '../db/client.js';
@@ -98,6 +106,9 @@ const ACTION_LABEL: Record<string, string> = {
   throw: '投げ',
   release: '放す',
   stand: '立ち上がる',
+  throw_object: '投げる',
+  hazard: '環境ダメージ',
+  hazard_end: '環境の状態を終える',
 };
 
 /**
@@ -186,7 +197,7 @@ function deathSavePenaltyOf(part: CombatParticipant): { base: number; added: num
   };
 }
 
-export function resolveCombatAction(
+function resolveCombatActionInner(
   db: AppDatabase,
   input: ResolveInput,
   actorPart: CombatParticipant,
@@ -211,7 +222,8 @@ export function resolveCombatAction(
   // 使い切った移動アクション・アクションは使えない（Phase 5j）
   const usesMove = MOVE_ACTION_KEYS.includes(input.action_key);
   // つかみを放すのはアクションなしでできる（p.177）
-  const usesAction = !usesMove && input.action_key !== 'death_save' && input.action_key !== 'release';
+  // 環境ダメージ（GM が与える）と、その終わり（火を消すときは中でアクションを使う）もアクションの残りに関係なく使える
+  const usesAction = !usesMove && !['death_save', 'release', 'hazard', 'hazard_end'].includes(input.action_key);
   const spent =
     usesMove && actorPart.move_used
       ? '移動アクションは使用済みです（もう一度動くなら「走る」でアクションを使います）'
@@ -234,6 +246,9 @@ export function resolveCombatAction(
   const actorWound = woundState(actorChar.hp, actorChar.hp_max);
   // つかみ状態のあいだは、つかんでいる側もつかまれている側もすべての判定に −2（日本語版 p.177。Phase 5u）
   const actorWoundPen = woundPenalty(actorWound) + grapplePenalty(actorChar.status);
+  // 【運命】点: 振る前に使うと 1 点につき +1（日本語版 p.130。Phase 5v）。ROF 2 などで 2 回振るときは 1 回目だけ
+  const luck = Math.max(0, input.luck_spent ?? 0);
+  const luckText = luck ? ` +${luck}（運命）` : '';
   // 重い防具は REF・DEX・MOVE を下げる。瀕死のあいだは MOVE −6（どちらも最低 1）（Phase 5m）
   const actorArmorPen = actorChar.armor_penalty ?? 0;
   const actorRef = actorChar.stats.ref - actorArmorPen;
@@ -912,9 +927,9 @@ export function resolveCombatAction(
         if (!style) return fail('跳ね起きには〈武術〉が 1 レベル以上必要です');
         const r = rollOf(input.attack_roll, '跳ね起き');
         if (typeof r === 'string') return fail(r);
-        const total = actorDex + style.level + actorWoundPen + r;
+        const total = actorDex + style.level + actorWoundPen + luck + r;
         const success = total > 13;
-        formula = `跳ね起き: DEX ${actorDex} + ${formatSkillName(style.key)} ${style.level}${actorWoundPen ? ` ${actorWoundPen}` : ''} + 出目 ${r} = ${total} vs 難易度 13 -> ${success ? '成功（アクションを使わずに立ち上がる）' : '失敗（立ち上がるのにアクションを使う）'}`;
+        formula = `跳ね起き: DEX ${actorDex} + ${formatSkillName(style.key)} ${style.level}${actorWoundPen ? ` ${actorWoundPen}` : ''}${luckText} + 出目 ${r} = ${total} vs 難易度 13 -> ${success ? '成功（アクションを使わずに立ち上がる）' : '失敗（立ち上がるのにアクションを使う）'}`;
         if (!success) changes.unshift(actionChange('立ち上がる'));
       } else {
         changes.unshift(actionChange('立ち上がる'));
@@ -943,10 +958,10 @@ export function resolveCombatAction(
       const tPen = woundPenalty(woundState(tChar.hp, tChar.hp_max)) + grapplePenalty(tChar.status);
       // 鋼のつかみを受けていると、逃れる判定にさらに −2
       const ironGrip = iAmHeld && statusOf(actorChar).includes('鋼のつかみ') ? -2 : 0;
-      const atk = actorDex + brawl + actorWoundPen + ironGrip + (a as number);
+      const atk = actorDex + brawl + actorWoundPen + luck + ironGrip + (a as number);
       const def = tDex + tBrawl + tPen + (d as number);
       const success = atk > def;
-      let formula = `つかむ: DEX ${actorDex} + 格闘 ${brawl}${actorWoundPen ? ` ${actorWoundPen}` : ''}${ironGrip ? ' −2（鋼のつかみ）' : ''} + 出目 ${a} = ${atk} vs ${targetPart.name} DEX ${tDex} + 格闘 ${tBrawl}${tPen ? ` ${tPen}` : ''} + 出目 ${d} = ${def} -> ${success ? '成功' : '失敗（同じなら相手の勝ち）'}`;
+      let formula = `つかむ: DEX ${actorDex} + 格闘 ${brawl}${actorWoundPen ? ` ${actorWoundPen}` : ''}${luckText}${ironGrip ? ' −2（鋼のつかみ）' : ''} + 出目 ${a} = ${atk} vs ${targetPart.name} DEX ${tDex} + 格闘 ${tBrawl}${tPen ? ` ${tPen}` : ''} + 出目 ${d} = ${def} -> ${success ? '成功' : '失敗（同じなら相手の勝ち）'}`;
       const changes: CombatChange[] = [actionChange('つかむ')];
       if (success && iAmHeld) {
         // つかまれている側が逃れる
@@ -1068,7 +1083,7 @@ export function resolveCombatAction(
     if (missing.length) return fail(missing);
 
     const aimHead = Boolean(input.aim_head && tech.canAimHead);
-    const atk = actorDex + style.level + actorWoundPen + (aimHead ? -8 : 0) + (a as number);
+    const atk = actorDex + style.level + actorWoundPen + luck + (aimHead ? -8 : 0) + (a as number);
     let success: boolean;
     let vs: string;
     if (tech.dv !== null) {
@@ -1082,7 +1097,7 @@ export function resolveCombatAction(
       success = atk > def;
       vs = `${targetPart.name} 回避 DEX ${tDex} + 回避 ${ev}${tPen ? ` ${tPen}` : ''} + 出目 ${d} = ${def}`;
     }
-    let formula = `${tech.name}（${tech.style ?? '共通'}）: DEX ${actorDex} + ${formatSkillName(style.key)} ${style.level}${actorWoundPen ? ` ${actorWoundPen}` : ''}${aimHead ? ' −8（頭部）' : ''} + 出目 ${a} = ${atk} vs ${vs} -> ${success ? '成功' : '失敗'}`;
+    let formula = `${tech.name}（${tech.style ?? '共通'}）: DEX ${actorDex} + ${formatSkillName(style.key)} ${style.level}${actorWoundPen ? ` ${actorWoundPen}` : ''}${luckText}${aimHead ? ' −8（頭部）' : ''} + 出目 ${a} = ${atk} vs ${vs} -> ${success ? '成功' : '失敗'}`;
     const changes: CombatChange[] = tech.usesAction ? [actionChange(tech.name)] : [];
     if (!success) return ok(false, formula, changes);
 
@@ -1185,6 +1200,207 @@ export function resolveCombatAction(
     return ok(true, formula, changes);
   }
 
+  // ── 物を投げる・環境ダメージ（Phase 5v。日本語版 p.177〜181） ──
+  if (['throw_object', 'hazard', 'hazard_end'].includes(input.action_key)) {
+    const fail = (msg: string | string[]): ResolveResult => {
+      const list = Array.isArray(msg) ? msg : [msg];
+      return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, target_id: targetPart?.id, target_name: targetPart?.name, success: false, formula: list.join(' / '), breakdown: {}, changes: [], missing_inputs: list };
+    };
+    const done = (success: boolean, formula: string, changes: CombatChange[]): ResolveResult => ({
+      action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, target_id: targetPart?.id, target_name: targetPart?.name, success, formula, breakdown: {}, changes,
+    });
+    const d10 = (roll: { first: number; extra?: number } | undefined, label: string): number | string => {
+      if (!roll) return `${label}の出目 (1d10) を入力してください`;
+      if ((roll.first === 10 || roll.first === 1) && roll.extra === undefined) return `${label}${roll.first === 10 ? 'クリティカル' : 'ファンブル'}: 追加出目 (1d10) を入力してください`;
+      return resolveD10(roll.first, roll.extra).value;
+    };
+    const statusChange = (ch: { id: string; name: string; status?: string[] | null }, before: string[], after: string[], desc: string): CombatChange => ({ target_id: ch.id, target_name: ch.name, field: 'status', before, after, desc });
+
+    // 物を投げる: DEX + 〈運動〉 + 1d10 を、グレネード・ランチャーの距離の難易度と比べる（25m まで）。REF 8 以上の相手は回避できる。防具は半分にしない
+    if (input.action_key === 'throw_object') {
+      const tChar = targetPart?.character;
+      const missing: string[] = [];
+      if (!targetPart || !tChar) missing.push('対象を選択してください');
+      const inv = (actorChar.inventory as InventoryEntry[]) ?? [];
+      const entry = inv.find((i) => i.entry_id === input.throw_entry_id);
+      if (!entry) missing.push('投げる物を選んでください（武器・グレネードなど）');
+      const dist = input.distance_m;
+      if (dist === undefined || dist === null) missing.push('距離を入力してください');
+      else if (dist > 25) missing.push('投げられるのは 25m までです');
+      const a = d10(input.attack_roll, '攻撃');
+      if (typeof a === 'string') missing.push(a);
+      const w = entry ? getWeaponData(entry.item_id || entry.name) : null;
+      // 近接武器は近接のダメージ、グレネードはグレネード・ランチャーと同じ、それ以外は GM が決めたダイス（p.178）
+      const diceCount = w && w.damage && /^\d+d6$/.test(w.damage) ? Number(w.damage.split('d')[0]) : null;
+      if (!input.damage_dice || input.damage_dice.length === 0) missing.push(`ダメージの出目を入力してください${diceCount ? `（${diceCount}d6）` : '（GM が決めた個数）'}`);
+      else if (diceCount && input.damage_dice.length !== diceCount) missing.push(`ダメージは ${diceCount}d6 なので、d6 の出目を ${diceCount} 個入れてください`);
+      const canDodge = tChar ? canDodgeRanged(tChar.stats.ref - (tChar.armor_penalty ?? 0)) : false;
+      let def: number | string = 0;
+      if (canDodge && input.dodge_mode === 'dodge') {
+        def = d10(input.defense_roll, '回避');
+        if (typeof def === 'string') missing.push(def);
+      }
+      if (missing.length || !tChar || !targetPart || !entry) return fail(missing);
+      const table = getRuleConstant<DvTable>('dv_table.DV Grenade Launcher');
+      const dv = table ? rangedDv(table, dist!) : null;
+      const ath = actorChar.skills[skillNameToKey('athletics')] ?? 0;
+      const atk = actorDex + ath + actorWoundPen + luck + (a as number);
+      let hit: boolean;
+      let vs: string;
+      if (canDodge && input.dodge_mode === 'dodge') {
+        const tDex = tChar.stats.dex - (tChar.armor_penalty ?? 0);
+        const ev = tChar.skills[skillNameToKey('evasion')] ?? 0;
+        const dTotal = tDex + ev + woundPenalty(woundState(tChar.hp, tChar.hp_max)) + (def as number);
+        hit = atk > dTotal;
+        vs = `${targetPart.name} 回避 ${dTotal}`;
+      } else {
+        if (dv === null) return fail('グレネード・ランチャーの難易度表がありません');
+        hit = atk > dv;
+        vs = `難易度 ${dv}（${dist}m、グレネード・ランチャーの表）`;
+      }
+      let formula = `投げる（${entry.name}）: DEX ${actorDex} + 運動 ${ath}${actorWoundPen ? ` ${actorWoundPen}` : ''}${luckText} + 出目 ${a} = ${atk} vs ${vs} -> ${hit ? '命中' : '外れ'}`;
+      const changes: CombatChange[] = [
+        { target_id: actorPart.id, target_name: actorPart.name, field: 'state', ...useAction(actorPart), desc: `${actorPart.name} アクション使用 (投げる)${actionCountLabel(actorPart)}` },
+        {
+          target_id: actorChar.id,
+          target_name: actorChar.name,
+          field: 'inventory',
+          before: inv,
+          after: entry.qty > 1 ? inv.map((i) => (i === entry ? { ...i, qty: i.qty - 1 } : i)) : inv.filter((i) => i !== entry),
+          desc: `${actorChar.name} ${entry.name} を投げた（手元から 1 つ減る）`,
+        },
+      ];
+      if (!hit) return done(false, formula + '。投げた物は狙った場所の近くに落ちる', changes);
+      const dmg = resolveDamage({ dice: input.damage_dice!, location: 'body', sp: tChar.sp_body, currentHp: tChar.hp });
+      const after = Math.max(0, tChar.hp - dmg.hpLoss);
+      changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'hp', before: tChar.hp, after, desc: `${tChar.name} HP ${tChar.hp} → ${after} (${dmg.hpLoss} ダメージ)` });
+      if (dmg.spAfter !== tChar.sp_body) changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'sp_body', before: tChar.sp_body, after: dmg.spAfter, desc: `${tChar.name} SP 胴 ${tChar.sp_body} → ${dmg.spAfter}` });
+      const sc = woundStatusChange(tChar, tChar.status ?? [], tChar.hp, after);
+      if (sc) changes.push(sc);
+      formula += `。${dmg.hpLoss} ダメージ`;
+      if (dmg.critical) formula += '（6 が 2 個: 致命傷表は GM が振って足す）';
+      return done(true, formula, changes);
+    }
+
+    const tPart = targetPart ?? actorPart;
+    const tChar = tPart.character;
+    if (!tChar) return fail('対象を選択してください');
+    const tStatus = tChar.status ?? [];
+
+    // 環境の状態を終わらせる（火を消す・感電から離れる・空気を吸う など）
+    if (input.action_key === 'hazard_end') {
+      const target = input.hazard_status;
+      if (!target || !tStatus.includes(target)) return fail('終わらせる環境の状態を選んでください');
+      // 放射線は区域にいるあいだ消せない。区域を出たら GM がここで外す（p.181）
+      const changes: CombatChange[] = [statusChange(tChar, tStatus, tStatus.filter((s) => s !== target), `${tChar.name} 「${target}」が終わる`)];
+      // 火を消すのは本人のアクション 1 回（p.180）
+      if (target.startsWith('着火') && tPart.id === actorPart.id) {
+        changes.unshift({ target_id: actorPart.id, target_name: actorPart.name, field: 'state', ...useAction(actorPart), desc: `${actorPart.name} アクション使用 (火を消す)${actionCountLabel(actorPart)}` });
+      }
+      // 真空で減った能力値は空気を吸えばすぐ戻る
+      const loss = (tChar.extra?.vacuum_loss ?? {}) as Partial<Record<'int' | 'ref' | 'dex', number>>;
+      if (target === '真空' && Object.keys(loss).length > 0) {
+        const stats = { ...tChar.stats };
+        for (const [k, v] of Object.entries(loss)) (stats as any)[k] += v ?? 0;
+        changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'stats', before: tChar.stats, after: stats, desc: `${tChar.name} 空気を吸って能力値が戻る` });
+        const { vacuum_loss: _v, ...rest } = tChar.extra ?? {};
+        changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'extra', before: tChar.extra ?? {}, after: rest, desc: `${tChar.name} 真空の影響が消える` });
+      }
+      return done(true, `${tChar.name} の「${target}」が終わった`, changes);
+    }
+
+    // 環境ダメージを与える（GM。アクションは使わない）
+    const hz = HAZARDS.find((h) => h.key === input.hazard);
+    if (!hz) return fail('環境ダメージの種類を選んでください');
+    const level = (input.hazard_level ?? 'small') as HazardLevel;
+    const direct = (amount: number, label: string): CombatChange[] => {
+      const after = Math.max(0, tChar.hp - amount);
+      const out: CombatChange[] = [{ target_id: tChar.id, target_name: tChar.name, field: 'hp', before: tChar.hp, after, desc: `${tChar.name} HP ${tChar.hp} → ${after} (${label} ${amount}、HP に直接)` }];
+      const sc = woundStatusChange(tChar, tStatus, tChar.hp, after);
+      if (sc) out.push(sc);
+      return out;
+    };
+    const sum = (dice?: number[]) => (dice ?? []).reduce((a, b) => a + b, 0);
+    const ongoing = hazardStatus(hz.key, level);
+
+    if (ongoing && hz.key !== 'electric') {
+      if (tStatus.includes(ongoing)) return fail(`${tChar.name} はすでに「${ongoing}」です`);
+      const next = [...tStatus, ongoing];
+      const when = hz.key === 'drown' ? '自分のターンの始めごとに【体格】ぶんを HP に直接' : hz.key === 'vacuum' ? '自分のターンの終わりごとに【知力】【反応】【敏捷】が 1d6 ずつ減る（窒息もするので「溺れ・窒息」も付けてください）' : `自分のターンの終わりごとに HP に直接 ${burnDamage([ongoing])}`;
+      return done(true, `${tChar.name} が「${ongoing}」になった。${when}`, [statusChange(tChar, tStatus, next, `${tChar.name} 状態: ${ongoing}`)]);
+    }
+
+    if (hz.key === 'electric') {
+      if (!input.damage_dice || input.damage_dice.length !== 6) return fail('感電のダメージ 6d6 の出目を 6 個入れてください');
+      const dmg = resolveDamage({ dice: input.damage_dice, location: 'body', sp: tChar.sp_body, currentHp: tChar.hp, ablation: 0 });
+      const after = Math.max(0, tChar.hp - dmg.hpLoss);
+      const changes: CombatChange[] = [{ target_id: tChar.id, target_name: tChar.name, field: 'hp', before: tChar.hp, after, desc: `${tChar.name} HP ${tChar.hp} → ${after} (感電 ${dmg.hpLoss}、防具は損耗しない)` }];
+      const sc = woundStatusChange(tChar, tStatus, tChar.hp, after);
+      const base = (sc?.after as string[] | undefined) ?? tStatus;
+      if (sc) changes.push(sc);
+      if (!base.includes('感電')) changes.push(statusChange(tChar, base, [...base, '感電'], `${tChar.name} 状態: 感電（離れるまでターンの終わりごとに 6d6）`));
+      return done(true, `感電: 6d6 = ${sum(input.damage_dice)} − SP ${tChar.sp_body} → ${dmg.hpLoss} ダメージ（防具は損耗しない）。離れるまで続く`, changes);
+    }
+
+    if (hz.key === 'fall') {
+      const m = input.fall_m;
+      if (m === undefined || m === null) return fail('落ちた高さ (m) を入力してください');
+      const legs = (tChar.cyberware ?? []).filter((c) => /サイバーレッグ$|^cyberleg$/i.test((c.name ?? '').trim())).length;
+      if (m < 10) return done(true, `${m}m の落下。10m 未満なのでダメージなし`, []);
+      if (legs >= 2 && m <= 30) return done(true, `${m}m の落下。サイバーレッグ 2 本なのでダメージも片脚損傷もなし`, []);
+      const count = Math.floor(m / 10) * 2;
+      const missing: string[] = [];
+      if (!input.damage_dice || input.damage_dice.length !== count) missing.push(`落下ダメージ ${count}d6 の出目を ${count} 個入れてください`);
+      const a = d10(input.attack_roll, '〈運動〉');
+      if (typeof a === 'string') missing.push(a);
+      if (missing.length) return fail(missing);
+      const dmg = resolveDamage({ dice: input.damage_dice!, location: 'body', sp: tChar.sp_body, currentHp: tChar.hp });
+      const after = Math.max(0, tChar.hp - dmg.hpLoss);
+      const changes: CombatChange[] = [{ target_id: tChar.id, target_name: tChar.name, field: 'hp', before: tChar.hp, after, desc: `${tChar.name} HP ${tChar.hp} → ${after} (落下 ${dmg.hpLoss})` }];
+      if (dmg.spAfter !== tChar.sp_body) changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'sp_body', before: tChar.sp_body, after: dmg.spAfter, desc: `${tChar.name} SP 胴 ${tChar.sp_body} → ${dmg.spAfter}` });
+      const sc = woundStatusChange(tChar, tStatus, tChar.hp, after);
+      if (sc) changes.push(sc);
+      const ath = tChar.skills[skillNameToKey('athletics')] ?? 0;
+      const tDex = tChar.stats.dex - (tChar.armor_penalty ?? 0);
+      const total = tDex + ath + woundPenalty(woundState(tChar.hp, tChar.hp_max)) + (a as number);
+      let formula = `落下 ${m}m: ${count}d6 = ${sum(input.damage_dice)} − SP ${tChar.sp_body} → ${dmg.hpLoss} ダメージ。〈運動〉DEX ${tDex} + 運動 ${ath} + 出目 ${a} = ${total} vs 難易度 15 -> ${total > 15 ? '成功' : '失敗: 片脚損傷'}`;
+      if (total <= 15) {
+        const inj = rollInjury('body', 8);
+        if (inj) {
+          changes.push({ target_id: tChar.id, target_name: tChar.name, field: 'crit_injuries', before: tChar.crit_injuries, after: [...(tChar.crit_injuries ?? []), inj], desc: `${tChar.name} 致命傷: ${inj.name}` });
+          formula += ` [致命傷: ${inj.name}]`;
+        }
+      }
+      if (m > 30 && legs >= 2) formula += '（30m を超えたのでサイバーレッグでも防げない）';
+      return done(true, formula, changes);
+    }
+
+    if (hz.key === 'poison' || hz.key === 'drug') {
+      const dv = RESIST_DV[level];
+      const missing: string[] = [];
+      const a = d10(input.attack_roll, '〈拷問／薬物抵抗〉');
+      if (typeof a === 'string') missing.push(a);
+      if (hz.key === 'poison' && (!input.damage_dice || input.damage_dice.length !== POISON_DICE[level])) missing.push(`毒のダメージ ${POISON_DICE[level]}d6 の出目を入れてください（抵抗に成功すれば使いません）`);
+      if (missing.length) return fail(missing);
+      const res = tChar.skills[skillNameToKey('resist_torture_drugs')] ?? 0;
+      const total = tChar.stats.will + res + woundPenalty(woundState(tChar.hp, tChar.hp_max)) + (a as number);
+      const ok = total > dv;
+      let formula = `${hz.name}（${HAZARD_LEVEL_LABEL[level]}）: WILL ${tChar.stats.will} + 拷問／薬物抵抗 ${res} + 出目 ${a} = ${total} vs 難易度 ${dv} -> ${ok ? '抵抗した' : '効いた'}`;
+      if (ok) return done(true, formula, []);
+      if (hz.key === 'poison') {
+        formula += `。HP に直接 ${sum(input.damage_dice)}（防具を損耗させない）`;
+        return done(true, formula, direct(sum(input.damage_dice), '毒'));
+      }
+      const eff = DRUG_EFFECT[level];
+      formula += `。「${eff}」`;
+      return done(true, formula, [statusChange(tChar, tStatus, [...tStatus.filter((s) => s !== eff), eff], `${tChar.name} 状態: ${eff}`)]);
+    }
+
+    // 過酷な気候: 1 日の終わりに HP に直接 1d6
+    if (!input.damage_dice || input.damage_dice.length !== 1) return fail('過酷な気候の 1d6 の出目を入れてください');
+    return done(true, `過酷な気候: HP に直接 ${input.damage_dice[0]}（そのあいだは自然治癒しない）`, direct(input.damage_dice[0], '過酷な気候'));
+  }
+
   // Check brawl distance if on board
   if (input.action_key === 'brawl' && boardId && actorPart.character_id && targetPart?.character_id) {
     const actorToken = db
@@ -1246,7 +1462,7 @@ export function resolveCombatAction(
     const fa = actorChar.skills[skillNameToKey('first_aid')] ?? 0;
     const pm = actorChar.skills[skillNameToKey('paramedic')] ?? 0;
     const skillLabel = pm > fa ? '救急医療' : '応急手当';
-    const base = actorChar.stats.tech + Math.max(fa, pm) + actorWoundPen;
+    const base = actorChar.stats.tech + Math.max(fa, pm) + actorWoundPen + luck;
     const res = resolveCheck({ base, first: roll.first, extra: roll.extra, target: dv, mode: 'dv' }, rules);
     const changes: CombatChange[] = [
       {
@@ -1257,7 +1473,7 @@ export function resolveCombatAction(
         desc: `${actorPart.name} アクション使用 (応急手当)${actionCountLabel(actorPart)}`,
       },
     ];
-    let formula = `応急手当: TECH ${actorChar.stats.tech} + ${skillLabel} ${Math.max(fa, pm)}${actorWoundPen ? ` ${actorWoundPen}` : ''} + 出目 = ${res.total} vs 難易度 ${dv}（${wound === 'mortally' ? '瀕死' : wound === 'seriously' ? '重傷' : '軽傷'}）-> ${res.success ? '成功' : '失敗'}`;
+    let formula = `応急手当: TECH ${actorChar.stats.tech} + ${skillLabel} ${Math.max(fa, pm)}${actorWoundPen ? ` ${actorWoundPen}` : ''}${luckText} + 出目 = ${res.total} vs 難易度 ${dv}（${wound === 'mortally' ? '瀕死' : wound === 'seriously' ? '重傷' : '軽傷'}）-> ${res.success ? '成功' : '失敗'}`;
     if (res.success) {
       if (wound === 'mortally') {
         changes.push({
@@ -1714,7 +1930,7 @@ export function resolveCombatAction(
       const base = attackBase({
         stat,
         skillLevel,
-        woundPenalty: actorWoundPen,
+        woundPenalty: actorWoundPen + (i === 0 ? luck : 0),
         aimed: isAimed,
       });
 
@@ -1758,7 +1974,7 @@ export function resolveCombatAction(
         defFormula = `難易度 ${dv}`;
       }
 
-      let subFormula = `${prefix}REF ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${isAimed ? ' −8' : ''} = ${attackTotal} vs ${defFormula} -> ${isHit ? '命中' : '外れ'}`;
+      let subFormula = `${prefix}REF ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''}${isAimed ? ' −8' : ''} = ${attackTotal} vs ${defFormula} -> ${isHit ? '命中' : '外れ'}`;
 
       if (!isHit) {
         allHit = false;
@@ -2151,14 +2367,14 @@ export function resolveCombatAction(
       };
 
       const attD10 = resolveD10(att.attack_roll!.first, att.attack_roll!.extra).value;
-      const attackTotal = base + attD10;
+      const attackTotal = base + attD10 + (i === 0 ? luck : 0);
       const defStat = tChar.stats.dex - (tChar.armor_penalty ?? 0);
       const defSkill = tChar.skills[skillNameToKey('evasion')] ?? 0;
       const defWoundPen = woundPenalty(woundState(cur.hp, tChar.hp_max)) + grapplePenalty(cur.status);
       const defD10 = resolveD10(att.defense_roll!.first, att.defense_roll!.extra).value;
       const defTotal = defStat + defSkill + defWoundPen + defD10;
       const isHit = attackTotal > defTotal;
-      let sub = `${prefix}${label}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''} = ${attackTotal} vs ${tPart.name} 回避 DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
+      let sub = `${prefix}${label}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''} = ${attackTotal} vs ${tPart.name} 回避 DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
       if (!isHit) {
         formulaParts.push(sub);
         continue;
@@ -2283,4 +2499,48 @@ export function resolveCombatAction(
     breakdown: {},
     changes: [],
   };
+}
+
+/** 【運命】点を使える行動（自分が振る判定のあるもの） */
+const LUCK_ACTIONS = ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts', 'grab', 'martial_technique', 'stand', 'first_aid', 'throw_object'];
+
+/**
+ * 行動の結果を出す。【運命】点を使ったら、残りを確かめて、使った分を記録する変化を足す（Phase 5v。日本語版 p.130）
+ */
+export function resolveCombatAction(
+  db: AppDatabase,
+  input: ResolveInput,
+  actorPart: CombatParticipant,
+  targetPart?: CombatParticipant,
+  allParticipants?: CombatParticipant[],
+  boardId?: string | null,
+  combatSettings?: Record<string, any>,
+): ResolveResult {
+  const spend = Math.max(0, input.luck_spent ?? 0);
+  const ch = actorPart.character;
+  if (spend > 0 && ch) {
+    const used = Number(ch.extra?.luck_used ?? 0);
+    const left = Math.max(0, ch.stats.luck - used);
+    const msg = !LUCK_ACTIONS.includes(input.action_key)
+      ? 'この行動では【運命】点を使えません'
+      : spend > left
+        ? `【運命】点が足りません（残り ${left} 点）`
+        : null;
+    if (msg) {
+      return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: msg, breakdown: {}, changes: [], missing_inputs: [msg] };
+    }
+  }
+  const result = resolveCombatActionInner(db, input, actorPart, targetPart, allParticipants, boardId, combatSettings);
+  if (spend > 0 && ch && !(result.missing_inputs?.length) && result.changes.length > 0) {
+    const used = Number(ch.extra?.luck_used ?? 0);
+    result.changes.push({
+      target_id: ch.id,
+      target_name: ch.name,
+      field: 'extra',
+      before: ch.extra ?? {},
+      after: { ...(ch.extra ?? {}), luck_used: used + spend },
+      desc: `${ch.name} 【運命】点を ${spend} 点使った（残り ${ch.stats.luck - used - spend}）`,
+    });
+  }
+  return result;
 }
