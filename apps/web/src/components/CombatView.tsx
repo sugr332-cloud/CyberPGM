@@ -147,6 +147,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [defenseExtra, setDefenseExtra] = useState<number | undefined>(undefined);
   const [damageDiceStr, setDamageDiceStr] = useState<string>('');
   const [critRoll, setCritRoll] = useState<number | undefined>(undefined);
+  // 瀕死中の被弾と 6 が 2 個が重なったときの 2 つ目の致命傷（Phase 5r）
+  const [extraCritRoll, setExtraCritRoll] = useState<number | undefined>(undefined);
+  const [secondExtraCritRoll, setSecondExtraCritRoll] = useState<number | undefined>(undefined);
+  // 状態異常・弾切れなどの告知（Phase 5r）
+  const [notices, setNotices] = useState<Array<{ title: string; body: string; at: number }>>([]);
   const [deathSaveRoll, setDeathSaveRoll] = useState<number | undefined>(undefined);
 
   // Multi-attack for ROF 2
@@ -510,6 +515,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
           setInitInputs((prev) => ({ ...prev, [cid]: { first, extra } }));
         }
       }
+    } else if (wsMessage.type === 'combat:notice') {
+      setNotices((prev) => [wsMessage.payload, ...prev].slice(0, 20));
     } else if (wsMessage.type === 'board:update') {
       if (combat?.board_id) {
         refreshBoard(combat.board_id);
@@ -610,6 +617,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
     setDefenseExtra(undefined);
     setDamageDiceStr('');
     setCritRoll(undefined);
+    setExtraCritRoll(undefined);
+    setSecondExtraCritRoll(undefined);
     setDeathSaveRoll(undefined);
     setSecondAttackFirst(null);
     setSecondAttackExtra(undefined);
@@ -703,6 +712,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
           defense_roll: dodgeMode === 'dodge' && defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
           damage_dice: damageDice.length > 0 ? damageDice : undefined,
           crit_injury_roll: critRoll,
+          extra_crit_injury_roll: extraCritRoll,
           aimed_location: aimedLocation,
           held_item_id: heldItemId || undefined,
         },
@@ -721,6 +731,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
           defense_roll: dodgeMode === 'dodge' && secondDefenseFirst !== null ? { first: secondDefenseFirst } : undefined,
           damage_dice: secondDamageDice.length > 0 ? secondDamageDice : undefined,
           crit_injury_roll: secondCritRoll,
+          extra_crit_injury_roll: secondExtraCritRoll,
         });
       }
 
@@ -747,6 +758,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
         damage_dice: damageDice.length > 0 ? damageDice : undefined,
         crit_injury_roll: critRoll,
+        extra_crit_injury_roll: extraCritRoll,
         death_save_roll: deathSaveRoll,
         attacks,
         manual_changes: manualChanges,
@@ -791,6 +803,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
           defense_roll: dodgeMode === 'dodge' && defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
           damage_dice: damageDice.length > 0 ? damageDice : undefined,
           crit_injury_roll: critRoll,
+          extra_crit_injury_roll: extraCritRoll,
           aimed_location: aimedLocation,
           held_item_id: heldItemId || undefined,
         },
@@ -809,6 +822,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
           defense_roll: dodgeMode === 'dodge' && secondDefenseFirst !== null ? { first: secondDefenseFirst } : undefined,
           damage_dice: secondDamageDice.length > 0 ? secondDamageDice : undefined,
           crit_injury_roll: secondCritRoll,
+          extra_crit_injury_roll: secondExtraCritRoll,
         });
       }
 
@@ -835,6 +849,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
         damage_dice: damageDice.length > 0 ? damageDice : undefined,
         crit_injury_roll: critRoll,
+        extra_crit_injury_roll: extraCritRoll,
         death_save_roll: deathSaveRoll,
         attacks,
         manual_changes: previewResult.changes,
@@ -1409,6 +1424,62 @@ export const CombatView: React.FC<CombatViewProps> = ({
             >
               TVに出す: {isTvBroadcasting ? 'ON' : 'OFF'}
             </button>
+
+            {/* プレイヤーのスマホに残弾を見せるか（Phase 5r）。GM にはいつも見える */}
+            <button
+              type="button"
+              onClick={async () => {
+                if (!combat) return;
+                const nextVal = combat.settings?.playerAmmoVisible === false;
+                try {
+                  const res = await api.updateCombat(combat.id, { settings: { playerAmmoVisible: nextVal } });
+                  if (res?.combat) setCombat(res.combat);
+                } catch (err) {
+                  console.warn('Failed to update ammo visibility:', err);
+                }
+              }}
+              title="プレイヤーのスマホに自分の残弾を見せるか。GM にはいつも見えます"
+              style={{
+                backgroundColor: 'var(--color-surface-elevated)',
+                border: '1px solid var(--color-border-light)',
+                color: combat?.settings?.playerAmmoVisible === false ? 'var(--color-text-muted)' : 'var(--color-ally)',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              スマホに残弾: {combat?.settings?.playerAmmoVisible === false ? '見せない' : '見せる'}
+            </button>
+
+            {/* 状態異常・弾切れなどの告知（Phase 5r） */}
+            {notices.length > 0 && (
+              <div
+                data-testid="combat-notices"
+                style={{ position: 'fixed', right: '16px', bottom: '16px', zIndex: 50, display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: '360px' }}
+              >
+                {notices.slice(0, 5).map((n) => (
+                  <div
+                    key={n.at + n.body}
+                    style={{ padding: '8px 10px', backgroundColor: 'var(--color-surface-elevated)', border: '1px solid var(--color-warning)', borderRadius: '6px', fontSize: '0.85rem', boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                      <strong style={{ color: 'var(--color-warning)' }}>{n.title}</strong>
+                      <button
+                        type="button"
+                        aria-label="告知を閉じる"
+                        onClick={() => setNotices((prev) => prev.filter((x) => x !== n))}
+                        style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer' }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div>{n.body}</div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {sessionCode && (
               <a
@@ -1987,8 +2058,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     </div>
                   )}
 
-                  {/* Weapon Selection (for ranged / melee / reload) */}
-                  {['ranged', 'aimed', 'autofire', 'melee', 'reload'].includes(selectedActionKey) && (
+                  {/* Weapon Selection (for ranged / melee / reload / suppressive) */}
+                  {['ranged', 'aimed', 'autofire', 'suppressive', 'melee', 'reload'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>使用する武器を選択:</span>
                       <select
@@ -2067,8 +2138,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     );
                   })()}
 
-                  {/* フルオート射撃は毎回 10 発（日本語版 p.173） */}
-                  {selectedActionKey === 'autofire' && (
+                  {/* フルオート射撃・制圧射撃は毎回 10 発（日本語版 p.173・174） */}
+                  {(selectedActionKey === 'autofire' || selectedActionKey === 'suppressive') && (
                     <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>弾を 10 発使います（残りが 10 発未満なら撃てません）</div>
                   )}
 
@@ -2531,6 +2602,21 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           }}
                         />
                       </div>
+                      {(extraCritRoll !== undefined || (previewResult?.missing_inputs ?? []).some((m: string) => !m.startsWith('[#2]') && m.includes('2 つ目'))) && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--color-warning)' }}>2 つ目の致命傷 2d6:</span>
+                          <input
+                            aria-label="2 つ目の致命傷"
+                            type="number"
+                            min={2}
+                            max={12}
+                            value={extraCritRoll ?? ''}
+                            placeholder="2d6"
+                            onChange={(e) => setExtraCritRoll(e.target.value ? Number(e.target.value) : undefined)}
+                            style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-warning)', borderRadius: '4px', color: 'var(--color-text)' }}
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {/* ROF 2 multi-attack option */}
@@ -2631,6 +2717,21 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                 style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }}
                               />
                             </div>
+                            {(secondExtraCritRoll !== undefined || (previewResult?.missing_inputs ?? []).some((m: string) => m.startsWith('[#2]') && m.includes('2 つ目'))) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--color-warning)' }}>第2 の 2 つ目の致命傷 2d6:</span>
+                                <input
+                                  aria-label="第2 の 2 つ目の致命傷"
+                                  type="number"
+                                  min={2}
+                                  max={12}
+                                  placeholder="2d6"
+                                  value={secondExtraCritRoll ?? ''}
+                                  onChange={(e) => setSecondExtraCritRoll(e.target.value ? Number(e.target.value) : undefined)}
+                                  style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-warning)', borderRadius: '4px', color: 'var(--color-text)' }}
+                                />
+                              </div>
+                            )}
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>第2 ダメージ出目:</span>

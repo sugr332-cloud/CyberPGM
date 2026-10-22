@@ -35,6 +35,8 @@ export const CombatSettingsSchema = z.object({
   autoRollNpc: z.boolean().default(true),
   autoRollPc: z.boolean().default(false),
   hideEnemyStats: z.boolean().default(true),
+  // プレイヤーのスマホに自分の残弾を見せるか（Phase 5r）。GM にはいつも見える
+  playerAmmoVisible: z.boolean().default(true),
 }).catchall(z.unknown());
 
 export interface CombatInitiativeRoll {
@@ -273,6 +275,8 @@ export const SingleAttackInputSchema = z.object({
   }).optional(),
   damage_dice: z.array(z.number().int().min(1).max(6)).optional(),
   crit_injury_roll: z.number().int().min(2).max(12).optional(),
+  // 瀕死中の被弾と 6 が 2 個のクリティカルが重なったときの 2 つ目の致命傷表の出目（Phase 5r。日本語版 p.186・187）
+  extra_crit_injury_roll: z.number().int().min(2).max(12).optional(),
   ignore_armor_percent: z.number().min(0).max(100).optional(),
   aimed_location: z.enum(['head', 'held_item', 'leg']).optional(),
   held_item_id: z.string().optional(),
@@ -312,6 +316,8 @@ export const ResolveActionInputSchema = z.object({
   }).optional(),
   damage_dice: z.array(z.number().int().min(1).max(6)).optional(),
   crit_injury_roll: z.number().int().min(2).max(12).optional(),
+  // 瀕死中の被弾と 6 が 2 個のクリティカルが重なったときの 2 つ目の致命傷表の出目（Phase 5r。日本語版 p.186・187）
+  extra_crit_injury_roll: z.number().int().min(2).max(12).optional(),
   death_save_roll: z.number().int().min(1).max(10).optional(),
   // Multi-attack for ROF > 1
   attacks: z.array(SingleAttackInputSchema).optional(),

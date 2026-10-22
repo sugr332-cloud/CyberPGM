@@ -2035,6 +2035,16 @@ export const PlayerPage: React.FC = () => {
                             </button>
                           ))}
                         </div>
+                        {/* 残弾を見せる設定のときだけ、弾を使う攻撃の前に警告する（Phase 5r） */}
+                        {rangedWeapon && typeof rangedWeapon.ammo === 'number' && (rangedWeapon.ammo === 0 || rangedWeapon.ammo < 2 || (canAutofire && rangedWeapon.ammo < 10)) && (
+                          <div data-testid="ammo-warning" style={{ padding: '6px 8px', border: '1px solid var(--color-warning)', color: 'var(--color-warning)', fontSize: '0.8rem' }}>
+                            {rangedWeapon.ammo === 0
+                              ? `${rangedWeapon.name} は弾切れ。撃てません。リロード（アクション 1 回）するか、別の武器・行動を選んでください`
+                              : rangedWeapon.ammo < 2
+                                ? `${rangedWeapon.name} は残り ${rangedWeapon.ammo} 発。1 回しか撃てません`
+                                : `${rangedWeapon.name} は残り ${rangedWeapon.ammo} 発。フルオート射撃・制圧射撃は 10 発必要なので使えません`}
+                          </div>
+                        )}
                       </div>
                     )}
 

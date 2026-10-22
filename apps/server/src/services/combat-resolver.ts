@@ -70,6 +70,9 @@ const MOVE_ACTION_KEYS = ['move', 'take_cover'];
 // フルオート射撃・制圧射撃で使う弾数（日本語版 p.173・174）
 const AUTOFIRE_ROUNDS = 10;
 
+// 気絶の長さ。1 ラウンドは約 3 秒なので 1 分 = 20 ラウンド（日本語版 p.126・168・186）
+export const UNCONSCIOUS_ROUNDS = 20;
+
 // ログ・通知に出す行動の名前（Phase 5l。英語のキーを出さない）
 const ACTION_LABEL: Record<string, string> = {
   take_cover: '遮蔽に入る',
@@ -850,6 +853,16 @@ export function resolveCombatAction(
           after: [...statusBefore.filter((st) => st !== '気絶'), '気絶'],
           desc: `${tChar.name} 状態: 気絶（1 分間行動できない）`,
         });
+        // 1 ターン（1 ラウンド）は約 3 秒なので、1 分は 20 ラウンド（日本語版 p.126・168）。過ぎたら自動で外れる
+        const rounds = (tPart.state?.statusRounds as Record<string, number> | undefined) ?? null;
+        changes.push({
+          target_id: tPart.id,
+          target_name: tPart.name,
+          field: 'state',
+          before: { statusRounds: rounds },
+          after: { statusRounds: { ...(rounds ?? {}), 気絶: UNCONSCIOUS_ROUNDS } },
+          desc: `${tPart.name} 気絶は ${UNCONSCIOUS_ROUNDS} ラウンド（1 分）`,
+        });
         // 死亡セーヴの修正は基本値に戻る。致命的損傷で上がった基本値は治療するまで残る（p.188）
         const { base: basePenalty, added } = deathSavePenaltyOf(tPart);
         if (added !== 0) {
@@ -862,7 +875,7 @@ export function resolveCombatAction(
             desc: `${tPart.name} 死亡セーブの修正が基本値 ${basePenalty} に戻る`,
           });
         }
-        formula += '。HP 1 で安定し、気絶する（1 分間行動できない）。死亡セーブは要らなくなる';
+        formula += `。HP 1 で安定し、気絶する（1 分 = ${UNCONSCIOUS_ROUNDS} ラウンド行動できない）。死亡セーブは要らなくなる`;
       } else {
         formula += '。安定し、自然に治り始める';
       }
@@ -892,6 +905,60 @@ export function resolveCombatAction(
   ];
   if (unconfirmedKeys.includes(input.action_key)) {
     const manualChanges = input.manual_changes ?? [];
+    // 制圧射撃は弾を 10 発使う。残りが 10 発未満なら撃てない（日本語版 p.174。Phase 5r）
+    const ammoChanges: CombatChange[] = [];
+    if (input.action_key === 'suppressive') {
+      const inv: InventoryEntry[] = (actorChar.inventory as InventoryEntry[]) || [];
+      const invWeapon = input.weapon_entry_id
+        ? inv.find((i) => i.entry_id === input.weapon_entry_id)
+        : input.weapon_id
+          ? inv.find((i) => i.entry_id === input.weapon_id || i.item_id === input.weapon_id || i.name === input.weapon_id)
+          : undefined;
+      const wData = getWeaponData(invWeapon?.item_id || input.weapon_id || invWeapon?.name);
+      const problem = !wData
+        ? '制圧射撃に使う武器を選択してください'
+        : !wData.suppressive
+          ? `${wData.name_ja} では制圧射撃ができません`
+          : null;
+      const current = wData && typeof wData.magazine_max === 'number' ? (typeof invWeapon?.ammo === 'number' ? invWeapon.ammo : wData.magazine_max) : null;
+      const short = !problem && current !== null && current < AUTOFIRE_ROUNDS
+        ? `制圧射撃は 10 発使います。弾倉の残りが 10 発未満なので撃てません (残弾 ${current})`
+        : null;
+      if (problem || short) {
+        const msg = (problem || short)!;
+        return {
+          action_key: input.action_key,
+          actor_id: actorPart.id,
+          actor_name: actorPart.name,
+          success: false,
+          formula: msg,
+          breakdown: {},
+          changes: [],
+          missing_inputs: [msg],
+        };
+      }
+      if (wData && current !== null && invWeapon) {
+        const after = current - AUTOFIRE_ROUNDS;
+        ammoChanges.push(
+          {
+            target_id: actorChar.id,
+            target_name: actorChar.name,
+            field: 'ammo',
+            before: current,
+            after,
+            desc: `${actorChar.name} ${wData.name_ja} 弾数 ${current}/${wData.magazine_max} → ${after}/${wData.magazine_max} (-${AUTOFIRE_ROUNDS}発)`,
+          },
+          {
+            target_id: actorChar.id,
+            target_name: actorChar.name,
+            field: 'inventory',
+            before: inv,
+            after: inv.map((i) => (i.entry_id === invWeapon.entry_id ? { ...i, ammo: after } : i)),
+            desc: `${actorChar.name} 所持品更新 (${wData.name_ja} 弾数 ${after})`,
+          },
+        );
+      }
+    }
     const isMove = input.action_key === 'take_cover';
     const baseChanges: CombatChange[] = [
       {
@@ -901,6 +968,7 @@ export function resolveCombatAction(
         ...(isMove ? { before: { move_used: actorPart.move_used }, after: { move_used: true } } : useAction(actorPart)),
         desc: `${actorPart.name} ${isMove ? '移動' : 'アクション'}使用 (${ACTION_LABEL[input.action_key] ?? input.action_key})${isMove ? '' : actionCountLabel(actorPart)}`,
       },
+      ...ammoChanges,
       ...manualChanges,
     ];
 
@@ -1050,6 +1118,7 @@ export function resolveCombatAction(
               defense_roll: input.defense_roll,
               damage_dice: input.damage_dice,
               crit_injury_roll: input.crit_injury_roll,
+              extra_crit_injury_roll: input.extra_crit_injury_roll,
               aimed_location: input.aimed_location,
               held_item_id: input.held_item_id,
               manual_changes: input.manual_changes,
@@ -1057,12 +1126,19 @@ export function resolveCombatAction(
           ];
 
     // Ammo inventory verification
-    const currentAmmo: number | null =
+    const currentAmmoRaw: number | null =
       wData && wData.magazine_max !== null && wData.magazine_max !== undefined
         ? invWeapon && typeof invWeapon.ammo === 'number'
           ? invWeapon.ammo
           : wData.magazine_max
         : null;
+    const currentAmmo = currentAmmoRaw;
+    // 弾が足りないときは、残っている分だけ撃つ（ROF 2 で残り 1 発なら 1 回だけ）。0 発なら撃てない（Phase 5r）
+    let ammoNote = '';
+    if (!isAutofire && currentAmmo !== null && currentAmmo > 0 && currentAmmo < rawAttacks.length) {
+      ammoNote = `残弾 ${currentAmmo} 発なので ${currentAmmo} 回だけ撃つ`;
+      rawAttacks.splice(currentAmmo);
+    }
 
     // フルオート射撃は毎回 10 発。弾倉の残りが 10 発未満なら撃てない（日本語版 p.173）
     const totalAmmoNeeded = isAutofire ? AUTOFIRE_ROUNDS : rawAttacks.length;
@@ -1075,7 +1151,9 @@ export function resolveCombatAction(
       missing_inputs.push(
         isAutofire
           ? `フルオート射撃は 10 発使います。弾倉の残りが 10 発未満なので撃てません (残弾 ${currentAmmo})`
-          : `残弾が不足しています (残弾 ${currentAmmo} / 必要 ${totalAmmoNeeded})`,
+          : currentAmmo === 0
+            ? '弾切れです。リロード（アクション 1 回）するか、別の武器・行動を選んでください'
+            : `残弾が不足しています (残弾 ${currentAmmo} / 必要 ${totalAmmoNeeded})`,
       );
     }
 
@@ -1358,6 +1436,11 @@ export function resolveCombatAction(
               missing_inputs.push(`${prefix}致命傷表 (2d6) の出目を入力してください`);
               continue;
             }
+            // 6 が 2 個のクリティカルと瀕死中の被弾が重なると、致命的損傷は 2 つ（p.186・187）
+            if (mortalHit && dmgRes.criticalInjuryTable && (att.extra_crit_injury_roll === undefined || att.extra_crit_injury_roll === null)) {
+              missing_inputs.push(`${prefix}瀕死中の被弾で致命的損傷がもう 1 つ: 致命傷表 (2d6) の 2 つ目の出目を入力してください`);
+              continue;
+            }
           }
 
           // Apply damage
@@ -1403,20 +1486,24 @@ export function resolveCombatAction(
 
           // Critical injury application
           if (injuryTable && att.crit_injury_roll) {
-            const cleanEntry = rollInjury(injuryTable, att.crit_injury_roll);
-            if (cleanEntry) {
-              const critsAfter = [...critsBefore, cleanEntry];
+            const rolls = [att.crit_injury_roll, ...(mortalHit && dmgRes.criticalInjuryTable && att.extra_crit_injury_roll ? [att.extra_crit_injury_roll] : [])];
+            let critsAfter = critsBefore;
+            for (const roll of rolls) {
+              const cleanEntry = rollInjury(injuryTable, roll);
+              if (!cleanEntry) continue;
+              const next = [...critsAfter, cleanEntry];
               changes.push({
                 target_id: curTargetChar.id,
                 target_name: curTargetChar.name,
                 field: 'crit_injuries',
-                before: critsBefore,
-                after: critsAfter,
+                before: critsAfter,
+                after: next,
                 desc: `${curTargetChar.name} 致命傷: ${cleanEntry.name}${cleanEntry.summary ? ` (${cleanEntry.summary})` : ''}`,
               });
-              runningCritMap.set(curTargetId, critsAfter);
+              critsAfter = next;
               subFormula += ` [致命傷: ${cleanEntry.name}]`;
             }
+            runningCritMap.set(curTargetId, critsAfter);
           }
           if (mortalHit) {
             const added = runningPenaltyMap.get(curTargetPart.id) ?? deathSavePenaltyOf(curTargetPart).added;
@@ -1430,7 +1517,6 @@ export function resolveCombatAction(
             });
             runningPenaltyMap.set(curTargetPart.id, added + 1);
             subFormula += ' (瀕死で被弾: 致命的損傷 1 つ、死亡セーブの修正 +1)';
-            if (dmgRes.criticalInjuryTable) subFormula += '（6 が 2 個の致命的損傷はもう 1 つ。GM が表を振って追加）';
           }
 
           // Aimed leg: GM manual effect (Issue #4, do not auto-apply)
@@ -1468,7 +1554,7 @@ export function resolveCombatAction(
       target_id: targetPart?.id,
       target_name: targetPart?.name,
       success: allHit,
-      formula: formulaParts.join(' ｜ '),
+      formula: [ammoNote, ...formulaParts].filter(Boolean).join(' ｜ '),
       breakdown: {
         allHit,
         attacksResolved: rawAttacks.length,
@@ -1527,6 +1613,7 @@ export function resolveCombatAction(
               defense_roll: input.defense_roll,
               damage_dice: input.damage_dice,
               crit_injury_roll: input.crit_injury_roll,
+              extra_crit_injury_roll: input.extra_crit_injury_roll,
             },
           ];
     const rof = Number(wData?.rof ?? 1) || 1;
@@ -1663,6 +1750,10 @@ export function resolveCombatAction(
         missing_inputs.push(`${prefix}致命傷表 (2d6) の出目を入力してください`);
         continue;
       }
+      if (mortalHit && dmgRes.criticalInjuryTable && (att.extra_crit_injury_roll === undefined || att.extra_crit_injury_roll === null)) {
+        missing_inputs.push(`${prefix}瀕死中の被弾で致命的損傷がもう 1 つ: 致命傷表 (2d6) の 2 つ目の出目を入力してください`);
+        continue;
+      }
 
       const newHp = Math.max(0, cur.hp - dmgRes.hpLoss);
       changes.push({
@@ -1688,17 +1779,20 @@ export function resolveCombatAction(
 
       let critAfter = cur.crits;
       if (injuryTable && att.crit_injury_roll) {
-        const cleanEntry = rollInjury(injuryTable, att.crit_injury_roll);
-        if (cleanEntry) {
-          critAfter = [...critAfter, cleanEntry];
+        const rolls = [att.crit_injury_roll, ...(mortalHit && dmgRes.criticalInjuryTable && att.extra_crit_injury_roll ? [att.extra_crit_injury_roll] : [])];
+        for (const roll of rolls) {
+          const cleanEntry = rollInjury(injuryTable, roll);
+          if (!cleanEntry) continue;
+          const next = [...critAfter, cleanEntry];
           changes.push({
             target_id: tChar.id,
             target_name: tChar.name,
             field: 'crit_injuries',
-            before: cur.crits,
-            after: critAfter,
+            before: critAfter,
+            after: next,
             desc: `${tChar.name} 致命傷: ${cleanEntry.name}${cleanEntry.summary ? ` (${cleanEntry.summary})` : ''}`,
           });
+          critAfter = next;
           sub += ` [致命傷: ${cleanEntry.name}]`;
         }
       }
@@ -1714,7 +1808,6 @@ export function resolveCombatAction(
         });
         penaltyAdded += 1;
         sub += ' (瀕死で被弾: 致命的損傷 1 つ、死亡セーブの修正 +1)';
-        if (dmgRes.criticalInjuryTable) sub += '（6 が 2 個の致命的損傷はもう 1 つ。GM が表を振って追加）';
       }
       running.set(tChar.id, {
         hp: newHp,
