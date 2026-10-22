@@ -10,7 +10,7 @@ export interface RuleConstants {
   defaultAblation: number; // 既定 1（確認済み）
   metersPerSquare: number; // 既定 2
   diagonalRule: 'chebyshev' | 'alternate'; // 斜め移動（Issue #10）既定 'chebyshev'
-  initiativeCrit: boolean; // 既定 false（日本語版 p.126・168「【反応】＋1d10」。1d10 を 1 回振るだけで、10 と 1 の追加ロールはしない）
+  initiativeCrit: boolean; // 既定 false（日本語版 p.126・168「【反応】＋1d10」。10 と 1 の追加ロールはしない）
   humanityPerCyberware: number; // 既定 2（確認済み）
   humanityPerBorgware: number; // 既定 4（確認済み）
 }
