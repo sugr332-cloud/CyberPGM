@@ -1,3 +1,4 @@
+import { VehiclePanel } from './VehiclePanel.js';
 import { RolePanel } from './RolePanel.js';
 import { MedicalPanel } from './MedicalPanel.js';
 import { AddSpecializedSkill } from './AddSpecializedSkill.js';
@@ -639,6 +640,21 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
           <div style={panel}>
             <span style={heading}>ロール特技</span>
             <RolePanel
+              character={characters.find((c) => c.id === form.id)!}
+              characters={characters}
+              onChanged={() => {
+                reloadAfterMedical.current = form.id ?? null;
+                onSaved();
+              }}
+            />
+          </div>
+        )}
+
+        {/* ヴィークルと知名度（Phase 5y） */}
+        {form.id && characters.find((c) => c.id === form.id) && (
+          <div style={panel}>
+            <span style={heading}>ヴィークル・知名度</span>
+            <VehiclePanel
               character={characters.find((c) => c.id === form.id)!}
               characters={characters}
               onChanged={() => {

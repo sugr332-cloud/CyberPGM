@@ -241,6 +241,10 @@ export interface InventoryEntry {
 export interface CharacterExtra {
   /** このセッションで使った【運命】点。残り = 【運命】 − これ。セッションの始めに 0 に戻す（日本語版 p.130） */
   luck_used?: number;
+  /** 持っているヴィークル（Phase 5y） */
+  vehicles?: import('./vehicles.js').VehicleRec[];
+  /** 知名度（Phase 5y。p.193） */
+  reputation?: import('./vehicles.js').Reputation;
   /** 真空にさらされて減った能力値（空気を吸えば戻る。p.180） */
   vacuum_loss?: Partial<Record<'int' | 'ref' | 'dex', number>>;
   [key: string]: unknown;

@@ -19,6 +19,7 @@ import {
   roleRank,
   SOLO_ABILITIES,
   BACKUP_TIERS,
+  MANEUVERS,
 } from '@cyberpgm/shared';
 import {
   initiativeTotal,
@@ -137,6 +138,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
   // ソロの割り振り直し・支援要員（Phase 5x）
   const [soloAlloc, setSoloAlloc] = useState<Record<string, string>>({});
   const [backupTierSel, setBackupTierSel] = useState('3〜4');
+  // ヴィークル（Phase 5y）
+  const [vehRef, setVehRef] = useState('');
+  const [targetVeh, setTargetVeh] = useState('');
+  const [asDriver, setAsDriver] = useState(true);
+  const [maneuverKey, setManeuverKey] = useState('swerve');
+  const [weakpoint, setWeakpoint] = useState(false);
   
   // 出目を入れる前の計算式と成功ライン（仕様 §5.0.1。Phase 5n）
   const [attackLineText, setAttackLineText] = useState<string | null>(null);
@@ -790,7 +797,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         weapon_id: selectedWeaponId || undefined,
         weapon_entry_id: selectedWeaponId || undefined,
         ignore_armor_percent: ignoreArmorToSend,
-        aimed_location: aimedLocation,
+        aimed_location: selectedActionKey === 'attack_vehicle' ? (weakpoint ? 'weakpoint' : undefined) : aimedLocation,
         held_item_id: heldItemId || undefined,
         martial_style: martialStyle || undefined,
         technique: selectedActionKey === 'martial_technique' ? technique || undefined : selectedActionKey === 'stand' && kipUp ? 'kip_up' : undefined,
@@ -804,6 +811,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
         throw_entry_id: selectedActionKey === 'throw_object' ? throwEntryId || undefined : undefined,
         drug_entry_id: selectedActionKey === 'use_drug' ? drugEntryId || undefined : undefined,
         solo_alloc: selectedActionKey === 'solo_realloc' ? Object.fromEntries(Object.entries(soloAlloc).map(([k, v]) => [k, Number(v) || 0])) : undefined,
+        vehicle_ref: selectedActionKey === 'vehicle_board' && vehRef ? JSON.parse(vehRef) : undefined,
+        target_vehicle: ['vehicle_ram', 'attack_vehicle'].includes(selectedActionKey) && targetVeh ? JSON.parse(targetVeh) : undefined,
+        as_driver: selectedActionKey === 'vehicle_board' ? asDriver : undefined,
+        maneuver: selectedActionKey === 'vehicle_maneuver' ? maneuverKey : undefined,
         unwilling: selectedActionKey === 'use_drug' ? drugUnwilling : undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
@@ -894,7 +905,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         weapon_id: selectedWeaponId || undefined,
         weapon_entry_id: selectedWeaponId || undefined,
         ignore_armor_percent: ignoreArmorToSend,
-        aimed_location: aimedLocation,
+        aimed_location: selectedActionKey === 'attack_vehicle' ? (weakpoint ? 'weakpoint' : undefined) : aimedLocation,
         held_item_id: heldItemId || undefined,
         martial_style: martialStyle || undefined,
         technique: selectedActionKey === 'martial_technique' ? technique || undefined : selectedActionKey === 'stand' && kipUp ? 'kip_up' : undefined,
@@ -908,6 +919,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
         throw_entry_id: selectedActionKey === 'throw_object' ? throwEntryId || undefined : undefined,
         drug_entry_id: selectedActionKey === 'use_drug' ? drugEntryId || undefined : undefined,
         solo_alloc: selectedActionKey === 'solo_realloc' ? Object.fromEntries(Object.entries(soloAlloc).map(([k, v]) => [k, Number(v) || 0])) : undefined,
+        vehicle_ref: selectedActionKey === 'vehicle_board' && vehRef ? JSON.parse(vehRef) : undefined,
+        target_vehicle: ['vehicle_ram', 'attack_vehicle'].includes(selectedActionKey) && targetVeh ? JSON.parse(targetVeh) : undefined,
+        as_driver: selectedActionKey === 'vehicle_board' ? asDriver : undefined,
+        maneuver: selectedActionKey === 'vehicle_maneuver' ? maneuverKey : undefined,
         unwilling: selectedActionKey === 'use_drug' ? drugUnwilling : undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
@@ -2155,6 +2170,61 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     </div>
                   )}
 
+                  {/* ヴィークル（Phase 5y。日本語版 p.189〜193） */}
+                  {(selectedActionKey.startsWith('vehicle_') || selectedActionKey === 'attack_vehicle') && (() => {
+                    const all = combat.participants.flatMap((p) =>
+                      ((p.character?.extra?.vehicles ?? []) as Array<{ id: string; name: string; sdp: number; sdp_max: number; sp: number; out_of_control?: boolean }>).map((v) => ({ owner: p.character!.id, ownerName: p.name, v })),
+                    );
+                    const field: React.CSSProperties = { padding: '4px 6px', fontSize: '0.85rem', borderRadius: '4px', border: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' };
+                    const pick = (value: string, set: (s: string) => void, label: string) => (
+                      <select aria-label={label} value={value} onChange={(e) => set(e.target.value)} style={field}>
+                        <option value="">{label}</option>
+                        {all.map(({ owner, ownerName, v }) => (
+                          <option key={v.id} value={JSON.stringify({ owner_id: owner, vehicle_id: v.id })}>
+                            {v.name}（{ownerName}、SDP {v.sdp}/{v.sdp_max}{v.sp ? `、SP ${v.sp}` : ''}{v.out_of_control ? '、制御不能' : ''}）
+                          </option>
+                        ))}
+                      </select>
+                    );
+                    return (
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.85rem' }}>
+                        {all.length === 0 && <span style={{ color: 'var(--color-text-muted)' }}>参加者のだれもヴィークルを持っていません（PC タブの編集の「ヴィークル・知名度」で持たせる）</span>}
+                        {selectedActionKey === 'vehicle_board' && (
+                          <>
+                            {pick(vehRef, setVehRef, '乗るヴィークル')}
+                            <label>
+                              <input type="checkbox" checked={asDriver} onChange={(e) => setAsDriver(e.target.checked)} /> 運転席
+                            </label>
+                          </>
+                        )}
+                        {selectedActionKey === 'vehicle_maneuver' && (
+                          <select aria-label="特殊機動" value={maneuverKey} onChange={(e) => setManeuverKey(e.target.value)} style={field}>
+                            {MANEUVERS.map((m) => (
+                              <option key={m.key} value={m.key}>
+                                {m.name}（難易度 {m.dv}）
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {(selectedActionKey === 'vehicle_control' || selectedActionKey === 'vehicle_maneuver') && <span style={{ color: 'var(--color-text-muted)' }}>出目は「攻撃」の欄に入れます</span>}
+                        {selectedActionKey === 'vehicle_ram' && (
+                          <>
+                            {pick(targetVeh, setTargetVeh, '体当たりするヴィークル（人なら対象を選ぶ）')}
+                            <span style={{ color: 'var(--color-text-muted)' }}>6d6 は「ダメージ出目」、歩行者が避けるなら回避の出目を「回避」に</span>
+                          </>
+                        )}
+                        {selectedActionKey === 'attack_vehicle' && (
+                          <>
+                            {pick(targetVeh, setTargetVeh, '攻撃するヴィークル')}
+                            <label>
+                              <input type="checkbox" checked={weakpoint} onChange={(e) => setWeakpoint(e.target.checked)} /> 弱点を狙う（−8、SP を引いたあと 2 倍）
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* ソロ《コンバット・アウェアネス》の割り振り直し（Phase 5x。p.146） */}
                   {selectedActionKey === 'solo_realloc' && (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.85rem' }}>
@@ -2353,7 +2423,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   })()}
 
                   {/* Weapon Selection (for ranged / melee / reload / suppressive) */}
-                  {['ranged', 'aimed', 'autofire', 'suppressive', 'melee', 'reload'].includes(selectedActionKey) && (
+                  {['ranged', 'aimed', 'autofire', 'suppressive', 'melee', 'reload', 'attack_vehicle'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>使用する武器を選択:</span>
                       <select
@@ -2438,7 +2508,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   )}
 
                   {/* Target & Distance Selection (for ranged / melee / brawl) */}
-                  {['ranged', 'aimed', 'autofire', ...MELEE_LIKE, 'choke', 'throw', 'throw_object', 'first_aid', 'hazard', 'hazard_end', 'use_drug'].includes(selectedActionKey) && (
+                  {['ranged', 'aimed', 'autofire', ...MELEE_LIKE, 'choke', 'throw', 'throw_object', 'first_aid', 'hazard', 'hazard_end', 'use_drug', 'vehicle_ram'].includes(selectedActionKey) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{selectedActionKey === 'first_aid' ? '手当てする相手（自分も可）:' : '対象を選択:'}</span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -2464,7 +2534,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           ))}
                       </div>
 
-                      {['ranged', 'aimed', 'autofire', 'throw_object'].includes(selectedActionKey) && (
+                      {['ranged', 'aimed', 'autofire', 'throw_object', 'attack_vehicle'].includes(selectedActionKey) && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '0.85rem' }}>距離 (m):</span>

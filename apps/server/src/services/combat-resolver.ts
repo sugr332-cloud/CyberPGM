@@ -50,11 +50,16 @@ import {
   SoloAbility,
   soloAllocError,
   SOLO_ABILITIES,
+  VehicleRec,
+  DRIVE_SKILL,
+  MANEUVERS,
+  RAM_DICE,
+  WHIPLASH,
 } from '@cyberpgm/shared';
 import { useDrug } from './medical.js';
 import { z } from 'zod';
 import type { AppDatabase } from '../db/client.js';
-import { rule_constants, weapons, items, boards, board_tokens, board_objects, board_drops } from '../db/schema.js';
+import { rule_constants, weapons, items, boards, board_tokens, board_objects, board_drops, characters } from '../db/schema.js';
 import { eq, and, ne } from 'drizzle-orm';
 
 type ResolveInput = z.infer<typeof ResolveActionInputSchema>;
@@ -122,6 +127,14 @@ const ACTION_LABEL: Record<string, string> = {
   hazard_end: '環境の状態を終える',
   use_drug: 'ドラッグ・薬品を使う',
   call_backup: '支援を呼ぶ',
+  vehicle_board: 'ヴィークル搭乗',
+  vehicle_start: 'ヴィークル始動',
+  vehicle_stop: 'ヴィークル停止',
+  vehicle_exit: 'ヴィークルから降りる',
+  vehicle_control: '操縦',
+  vehicle_maneuver: '特殊機動',
+  vehicle_ram: '体当たり',
+  attack_vehicle: 'ヴィークルを攻撃',
   solo_realloc: 'コンバット・アウェアネスを割り振り直す',
 };
 
@@ -238,7 +251,7 @@ function resolveCombatActionInner(
   const usesMove = MOVE_ACTION_KEYS.includes(input.action_key);
   // つかみを放すのはアクションなしでできる（p.177）
   // 環境ダメージ（GM が与える）と、その終わり（火を消すときは中でアクションを使う）もアクションの残りに関係なく使える
-  const usesAction = !usesMove && !['death_save', 'release', 'hazard', 'hazard_end'].includes(input.action_key);
+  const usesAction = !usesMove && !['death_save', 'release', 'hazard', 'hazard_end', 'vehicle_exit'].includes(input.action_key);
   const spent =
     usesMove && actorPart.move_used
       ? '移動アクションは使用済みです（もう一度動くなら「走る」でアクションを使います）'
@@ -304,7 +317,13 @@ function resolveCombatActionInner(
   const actorArmorPen = actorChar.armor_penalty ?? 0;
   const actorRef = actorChar.stats.ref - actorArmorPen;
   const actorDex = actorChar.stats.dex - actorArmorPen;
-  const effectiveMove = Math.max(1, actorChar.stats.move - actorArmorPen - (actorWound === 'mortally' ? 6 : 0));
+  // 始動したヴィークルの操縦者は、【移動】がヴィークルの値になる（ペナルティは関係ない。p.192。Phase 5y）
+  const drivingIv = (actorPart.state as Record<string, any> | undefined)?.in_vehicle;
+  const drivenVehicle: VehicleRec | null =
+    drivingIv?.driver && drivingIv?.started
+      ? ((JSON.parse(db.select({ extra: characters.extra }).from(characters).where(eq(characters.id, drivingIv.owner_id)).get()?.extra || '{}').vehicles ?? []) as VehicleRec[]).find((v) => v.id === drivingIv.vehicle_id) ?? null
+      : null;
+  const effectiveMove = drivenVehicle ? drivenVehicle.move : Math.max(1, actorChar.stats.move - actorArmorPen - (actorWound === 'mortally' ? 6 : 0));
   const moveNote =
     effectiveMove !== actorChar.stats.move
       ? `（MOVE ${actorChar.stats.move}${actorArmorPen ? ` − 防具 ${actorArmorPen}` : ''}${actorWound === 'mortally' ? ' − 瀕死 6' : ''}）`
@@ -313,7 +332,9 @@ function resolveCombatActionInner(
   // 伏せ状態では移動できない（先に立ち上がる）。つかまれているあいだも自分では移動できない（日本語版 p.169・177。Phase 5u）
   if (['move', 'run', 'take_cover'].includes(input.action_key)) {
     const st = actorChar.status ?? [];
-    const msg = st.includes(PRONE)
+    const msg = input.action_key === 'run' && drivenVehicle
+      ? 'ヴィークルを操縦しているあいだは「走る」ができません（p.192）'
+      : st.includes(PRONE) && !drivenVehicle
       ? '伏せ状態です。先に「立ち上がる」をしてください'
       : (actorPart.state as Record<string, unknown> | undefined)?.grappled_by
         ? 'つかまれているので移動できません（「つかむ」で逃れるか、相手が放すまで）'
@@ -1576,6 +1597,198 @@ function resolveCombatActionInner(
     return { action_key: 'use_drug', actor_id: actorPart.id, actor_name: actorPart.name, target_id: tPart.id, target_name: tPart.name, success: true, formula, breakdown: {}, changes };
   }
 
+  // ── ヴィークル（Phase 5y。日本語版 p.189〜193） ──
+  if (input.action_key.startsWith('vehicle_') || input.action_key === 'attack_vehicle') {
+    const fail = (msg: string | string[]): ResolveResult => {
+      const list = Array.isArray(msg) ? msg : [msg];
+      return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: list.join(' / '), breakdown: {}, changes: [], missing_inputs: list };
+    };
+    const done = (success: boolean, formula: string, changes: CombatChange[]): ResolveResult => ({ action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, target_id: targetPart?.id, target_name: targetPart?.name, success, formula, breakdown: {}, changes });
+    const st = (actorPart.state ?? {}) as Record<string, any>;
+    const inVeh = st.in_vehicle as { owner_id: string; vehicle_id: string; driver?: boolean; started?: boolean } | undefined;
+    // ヴィークルは持ち主のキャラの extra.vehicles にある。同じ行動で 2 回変えるときは、変えたあとの値から
+    const extras = new Map<string, Record<string, any>>();
+    const ownerExtra = (ownerId: string): Record<string, any> | null => {
+      if (extras.has(ownerId)) return extras.get(ownerId)!;
+      const row = db.select().from(characters).where(eq(characters.id, ownerId)).get();
+      if (!row) return null;
+      const ex = JSON.parse(row.extra || '{}');
+      extras.set(ownerId, ex);
+      return ex;
+    };
+    const vehicleOf = (ref?: { owner_id: string; vehicle_id: string } | null): VehicleRec | null => {
+      if (!ref) return null;
+      return ((ownerExtra(ref.owner_id)?.vehicles ?? []) as VehicleRec[]).find((v) => v.id === ref.vehicle_id) ?? null;
+    };
+    const ownerName = (id: string) => db.select({ name: characters.name }).from(characters).where(eq(characters.id, id)).get()?.name ?? '';
+    const updateVehicle = (ref: { owner_id: string; vehicle_id: string }, patch: Partial<VehicleRec>, desc: string): CombatChange => {
+      const ex = ownerExtra(ref.owner_id)!;
+      const before = JSON.parse(JSON.stringify(ex));
+      ex.vehicles = ((ex.vehicles ?? []) as VehicleRec[]).map((v) => (v.id === ref.vehicle_id ? { ...v, ...patch } : v));
+      return { target_id: ref.owner_id, target_name: ownerName(ref.owner_id), field: 'extra', before, after: JSON.parse(JSON.stringify(ex)), desc };
+    };
+    const stateChange = (p: CombatParticipant, after: Record<string, unknown>, desc: string): CombatChange => {
+      const s0 = (p.state ?? {}) as Record<string, unknown>;
+      return { target_id: p.id, target_name: p.name, field: 'state', before: Object.fromEntries(Object.keys(after).map((k) => [k, s0[k] ?? null])), after, desc };
+    };
+    const actionChange = (label: string): CombatChange => ({ target_id: actorPart.id, target_name: actorPart.name, field: 'state', ...useAction(actorPart), desc: `${actorPart.name} アクション使用 (${label})${actionCountLabel(actorPart)}` });
+    const d10v = (roll?: { first: number; extra?: number }) => (roll ? ((roll.first === 10 || roll.first === 1) && roll.extra === undefined ? null : resolveD10(roll.first, roll.extra).value) : null);
+    const occupants = (ref: { owner_id: string; vehicle_id: string }) =>
+      (allParticipants ?? []).filter((p) => {
+        const iv = (p.state as Record<string, any> | undefined)?.in_vehicle;
+        return iv && iv.owner_id === ref.owner_id && iv.vehicle_id === ref.vehicle_id;
+      });
+
+    if (input.action_key === 'vehicle_board') {
+      const ref = input.vehicle_ref;
+      const v = vehicleOf(ref);
+      if (!ref || !v) return fail('乗るヴィークルを選んでください');
+      if (v.sdp <= 0) return fail(`${v.name} は壊れていて動きません（SDP 0。修理が要る）`);
+      if (occupants(ref).length >= v.seats) return fail(`${v.name} の座席（${v.seats}）は埋まっています`);
+      const driver = Boolean(input.as_driver) && !occupants(ref).some((p) => (p.state as any)?.in_vehicle?.driver);
+      return done(true, `${actorPart.name} が ${v.name} に乗った${driver ? '（運転席）' : ''}`, [actionChange('ヴィークル搭乗'), stateChange(actorPart, { in_vehicle: { ...ref, driver, started: false } }, `${actorPart.name} ${v.name} に乗る`)]);
+    }
+    const myVeh = inVeh ? vehicleOf(inVeh) : null;
+    if (input.action_key !== 'attack_vehicle') {
+      if (!inVeh) return fail('ヴィークルに乗っていません');
+      if (!myVeh) return fail('乗っているヴィークルが見つかりません');
+    }
+    // ここから下（ヴィークルを攻撃より前）は、乗っている人の行動
+    const veh = inVeh as NonNullable<typeof inVeh>;
+
+    if (input.action_key === 'vehicle_exit') {
+      // 降りるのは移動アクション（p.191）
+      if (actorPart.move_used) return fail('移動アクションは使用済みです');
+      return done(true, `${actorPart.name} が ${myVeh!.name} から降りた（続けて動くなら「走る」）`, [
+        { target_id: actorPart.id, target_name: actorPart.name, field: 'state', before: { move_used: actorPart.move_used }, after: { move_used: true }, desc: `${actorPart.name} 移動アクション使用 (降りる)` },
+        stateChange(actorPart, { in_vehicle: null }, `${actorPart.name} 降りた`),
+      ]);
+    }
+    if (input.action_key === 'vehicle_start' || input.action_key === 'vehicle_stop') {
+      if (!veh.driver) return fail('運転席にいません');
+      const start = input.action_key === 'vehicle_start';
+      const changes: CombatChange[] = [actionChange(start ? 'ヴィークル始動' : 'ヴィークル停止'), stateChange(actorPart, { in_vehicle: { ...veh, started: start } }, `${myVeh!.name} を${start ? '始動' : '停止'}`)];
+      // 始動すると操縦者は行動順の先頭に（p.192）
+      if (start) changes.push({ target_id: actorPart.id, target_name: actorPart.name, field: 'initiative_top', before: null, after: true, desc: `${actorPart.name} 行動順の先頭へ` });
+      return done(true, start ? `${myVeh!.name} を始動した。行動順の先頭になり、【移動】は ${myVeh!.move}（ヴィークルの値）。「走る」はできない` : `${myVeh!.name} を止めた`, changes);
+    }
+
+    const skillKey = myVeh ? DRIVE_SKILL[myVeh.kind] : 'drive_land_vehicle';
+    const skill = actorChar.skills[skillKey] ?? 0;
+    const driveBase = actorRef + skill;
+    if (input.action_key === 'vehicle_control' || input.action_key === 'vehicle_maneuver') {
+      if (!veh.driver || !veh.started) return fail('始動したヴィークルの運転席にいません');
+      const man = input.action_key === 'vehicle_maneuver' ? MANEUVERS.find((m) => m.key === input.maneuver) : null;
+      if (input.action_key === 'vehicle_maneuver' && !man) return fail('特殊機動を選んでください');
+      if (!man && driveBase >= 10) return done(true, `REF ${actorRef} + ${formatSkillName(skillKey)} ${skill} = ${driveBase}（10 以上）: 基本的な操縦は判定もアクションも要らない`, []);
+      const r = d10v(input.attack_roll);
+      if (r === null) return fail('操縦の出目 (1d10) を「攻撃」の欄に入れてください');
+      const dv = man ? man.dv : 10;
+      const total = driveBase + actorWoundPen + luck + r;
+      const ok = total > dv;
+      const changes: CombatChange[] = [actionChange(man ? `特殊機動: ${man.name}` : '操縦')];
+      if (man) changes.push({ target_id: actorPart.id, target_name: actorPart.name, field: 'state', before: { move_used: actorPart.move_used }, after: { move_used: true }, desc: `${actorPart.name} 移動アクション使用 (特殊機動)` });
+      if (!ok) changes.push(updateVehicle(veh, { out_of_control: true }, `${myVeh!.name} 制御不能（移動は GM が決める）`));
+      else if (myVeh!.out_of_control) changes.push(updateVehicle(veh, { out_of_control: false }, `${myVeh!.name} 制御を取り戻した`));
+      return done(ok, `${man ? `特殊機動「${man.name}」` : '基本的な操縦'}: REF ${actorRef} + ${formatSkillName(skillKey)} ${skill}${actorWoundPen ? ` ${actorWoundPen}` : ''}${luckText} + 出目 ${r} = ${total} vs 難易度 ${dv} -> ${ok ? '成功' : '失敗: 制御不能（移動は GM が決め、何かにぶつかれば体当たりと同じ）'}`, changes);
+    }
+
+    if (input.action_key === 'vehicle_ram') {
+      if (!veh.driver || !veh.started) return fail('始動したヴィークルの運転席にいません');
+      const dice = input.damage_dice ?? [];
+      if (dice.length !== RAM_DICE) return fail('体当たりのダメージ 6d6 の出目を 6 個入れてください（双方に同じ値）');
+      const plow = myVeh!.upgrades.includes('Combat Plow');
+      const total = dice.reduce((a, b) => a + b, 0);
+      const changes: CombatChange[] = [actionChange('体当たり')];
+      let formula = `体当たり（${myVeh!.name}）: 6d6 = ${total}`;
+      const whiplash = (p: CombatParticipant) => {
+        const ch = p.character;
+        if (!ch) return;
+        const inj = rollInjury(WHIPLASH.table, WHIPLASH.roll);
+        if (!inj || (ch.crit_injuries ?? []).some((c: any) => c.table === 'head' && c.range?.[0] === 8)) return;
+        changes.push({ target_id: ch.id, target_name: ch.name, field: 'crit_injuries', before: ch.crit_injuries, after: [...(ch.crit_injuries ?? []), inj], desc: `${ch.name} 致命傷: ${inj.name}（衝突）` });
+        // 致命的損傷を受けると 5 点のボーナス・ダメージ（p.187）
+        changes.push({ target_id: ch.id, target_name: ch.name, field: 'hp', before: ch.hp, after: Math.max(0, ch.hp - 5), desc: `${ch.name} HP ${ch.hp} → ${Math.max(0, ch.hp - 5)}（致命的損傷のボーナス 5）` });
+      };
+      // 自分のヴィークル（戦闘用プラウなら無傷で、乗員も頸椎損傷を受けない）
+      if (!plow) {
+        const after = Math.max(0, myVeh!.sdp - Math.max(0, total - myVeh!.sp));
+        changes.push(updateVehicle(veh, { sdp: after }, `${myVeh!.name} SDP ${myVeh!.sdp} → ${after}`));
+        for (const p of occupants(veh)) whiplash(p);
+        formula += `。${myVeh!.name} SDP ${myVeh!.sdp} → ${after}`;
+      } else formula += '。戦闘用プラウで自分のヴィークルと乗員は無傷';
+      const tv = input.target_vehicle;
+      if (tv) {
+        const v = vehicleOf(tv);
+        if (!v) return fail('体当たりする相手のヴィークルが見つかりません');
+        const after = Math.max(0, v.sdp - Math.max(0, total - v.sp));
+        changes.push(updateVehicle(tv, { sdp: after }, `${v.name} SDP ${v.sdp} → ${after}`));
+        for (const p of occupants(tv)) whiplash(p);
+        formula += `。${v.name} SDP ${v.sdp} → ${after}${after === 0 ? '（破壊。こちらは移動を続けられる）' : ''}`;
+      } else if (targetPart?.character) {
+        // 歩行者は【敏捷】＋〈回避〉＋1d10 が 13 を上回れば避けられる（p.193）
+        const tc = targetPart.character;
+        const dr = d10v(input.defense_roll);
+        const dodge = dr !== null ? tc.stats.dex - (tc.armor_penalty ?? 0) + (tc.skills[skillNameToKey('evasion')] ?? 0) + dr : null;
+        if (dodge !== null && dodge > 13) {
+          formula += `。${targetPart.name} は回避した（${dodge} vs 13。望むならヴィークルの上に乗れる）`;
+        } else {
+          const res = resolveDamage({ dice, location: 'body', sp: tc.sp_body, currentHp: tc.hp });
+          const after = Math.max(0, tc.hp - res.hpLoss);
+          changes.push({ target_id: tc.id, target_name: tc.name, field: 'hp', before: tc.hp, after, desc: `${tc.name} HP ${tc.hp} → ${after} (はねられた ${res.hpLoss})` });
+          if (res.spAfter !== tc.sp_body) changes.push({ target_id: tc.id, target_name: tc.name, field: 'sp_body', before: tc.sp_body, after: res.spAfter, desc: `${tc.name} SP 胴 ${tc.sp_body} → ${res.spAfter}` });
+          whiplash(targetPart);
+          formula += `。${targetPart.name} をはねた（${dodge !== null ? `回避 ${dodge} vs 13 失敗、` : ''}${res.hpLoss} ダメージ。HP が残れば上に乗れる。ヴィークルは移動を続けられる）`;
+        }
+      } else return fail('体当たりする相手（参加者かヴィークル）を選んでください');
+      return done(true, formula, changes);
+    }
+
+    // attack_vehicle: ヴィークルを撃つ・殴る。弱点を狙うと −8 で SP を引いた後 2 倍（p.191）
+    const tv = input.target_vehicle;
+    const v = vehicleOf(tv);
+    if (!tv || !v) return fail('攻撃するヴィークルを選んでください');
+    const inv = (actorChar.inventory as InventoryEntry[]) ?? [];
+    const entry = inv.find((i) => i.entry_id === input.weapon_entry_id);
+    const w = entry ? getWeaponData(entry.item_id || entry.name) : null;
+    if (!w) return fail('使う武器を選んでください');
+    const weak = input.aimed_location === 'weakpoint';
+    const missing: string[] = [];
+    const a = d10v(input.attack_roll);
+    if (a === null) missing.push('攻撃の出目 (1d10) を入力してください');
+    const n = /^(\d+)d6$/.exec(w.damage ?? '')?.[1];
+    if (!input.damage_dice || (n && input.damage_dice.length !== Number(n))) missing.push(`ダメージ ${w.damage} の出目を入れてください`);
+    const moving = occupants(tv).some((p) => (p.state as any)?.in_vehicle?.driver && (p.state as any)?.in_vehicle?.started);
+    let dv: number | null = null;
+    if (w.is_ranged) {
+      const table = w.dv_table_key ? getRuleConstant<DvTable>(`dv_table.${w.dv_table_key}`) ?? getRuleConstant<DvTable>(w.dv_table_key) : null;
+      if (input.distance_m === undefined || input.distance_m === null) missing.push('距離を入力してください');
+      else dv = table ? rangedDv(table, input.distance_m) : null;
+      if (input.distance_m !== undefined && dv === null) missing.push('射程外か、武器の難易度表がありません');
+    } else dv = moving ? 13 : null; // 停止中のヴィークルは近接なら自動で当たる
+    if (missing.length) return fail(missing);
+    const stat = w.is_ranged ? actorRef : actorDex;
+    const lvl = actorChar.skills[skillNameToKey(w.skill)] ?? 0;
+    const total = stat + lvl + actorWoundPen + luck + solo.precision + (weak ? -8 : 0) + (a as number);
+    const hit = dv === null ? true : total > dv;
+    let formula = `${v.name} を攻撃（${entry!.name}${weak ? '、弱点 −8' : ''}）: ${w.is_ranged ? 'REF' : 'DEX'} ${stat} + ${formatSkillName(skillNameToKey(w.skill))} ${lvl}${luckText}${precisionText} + 出目 ${a} = ${total} vs ${dv === null ? '停止中なので自動で命中' : `難易度 ${dv}`} -> ${hit ? '命中' : '外れ'}`;
+    const changes: CombatChange[] = [actionChange('ヴィークルを攻撃')];
+    if (w.is_ranged && typeof entry!.ammo === 'number') {
+      const after = Math.max(0, entry!.ammo - 1);
+      changes.push(
+        { target_id: actorChar.id, target_name: actorChar.name, field: 'ammo', before: entry!.ammo, after, desc: `${actorChar.name} ${entry!.name} 弾数 ${entry!.ammo} → ${after}` },
+        { target_id: actorChar.id, target_name: actorChar.name, field: 'inventory', before: inv, after: inv.map((i) => (i === entry ? { ...i, ammo: after } : i)), desc: `${actorChar.name} 所持品更新` },
+      );
+    }
+    if (!hit) return done(false, formula, changes);
+    const raw = input.damage_dice!.reduce((x, y) => x + y, 0);
+    const through = Math.max(0, raw - v.sp) * (weak ? 2 : 1);
+    const after = Math.max(0, v.sdp - through);
+    changes.push(updateVehicle(tv, { sdp: after }, `${v.name} SDP ${v.sdp} → ${after}${after === 0 ? '（破壊）' : ''}`));
+    formula += `。${raw}${v.sp ? ` − SP ${v.sp}` : ''}${weak ? ' × 2' : ''} = ${through} → SDP ${v.sdp} → ${after}${after === 0 ? '（破壊。修理するまで動かない）' : ''}`;
+    return done(true, formula, changes);
+  }
+
   // Check brawl distance if on board
   if (input.action_key === 'brawl' && boardId && actorPart.character_id && targetPart?.character_id) {
     const actorToken = db
@@ -2686,7 +2899,7 @@ function resolveCombatActionInner(
 }
 
 /** 【運命】点を使える行動（自分が振る判定のあるもの） */
-const LUCK_ACTIONS = ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts', 'grab', 'martial_technique', 'stand', 'first_aid', 'throw_object', 'use_drug'];
+const LUCK_ACTIONS = ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts', 'grab', 'martial_technique', 'stand', 'first_aid', 'throw_object', 'use_drug', 'vehicle_control', 'vehicle_maneuver', 'attack_vehicle'];
 
 /**
  * 行動の結果を出す。【運命】点を使ったら、残りを確かめて、使った分を記録する変化を足す（Phase 5v。日本語版 p.130）

@@ -15,3 +15,4 @@ export * from './martial.js';
 export * from './hazards.js';
 export * from './medical.js';
 export * from './role-abilities.js';
+export * from './vehicles.js';

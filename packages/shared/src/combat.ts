@@ -134,6 +134,7 @@ export interface CombatChange {
     | 'extra'
     | 'stats'
     | 'humanity'
+    | 'initiative_top'
     | 'dropped'
     | 'out'
     | 'state'
@@ -163,6 +164,7 @@ export const CombatChangeSchema = z.object({
     'extra',
     'stats',
     'humanity',
+    'initiative_top',
     'dropped',
     'out',
     'state',
@@ -285,7 +287,7 @@ export const SingleAttackInputSchema = z.object({
   // 瀕死中の被弾と 6 が 2 個のクリティカルが重なったときの 2 つ目の致命傷表の出目（Phase 5r。日本語版 p.186・187）
   extra_crit_injury_roll: z.number().int().min(2).max(12).optional(),
   ignore_armor_percent: z.number().min(0).max(100).optional(),
-  aimed_location: z.enum(['head', 'held_item', 'leg']).optional(),
+  aimed_location: z.enum(['head', 'held_item', 'leg', 'weakpoint']).optional(),
   held_item_id: z.string().optional(),
   manual_changes: z.array(CombatChangeSchema).optional(),
 });
@@ -309,7 +311,7 @@ export const ResolveActionInputSchema = z.object({
   weapon_entry_id: z.string().optional(),
   ammo_spent: z.number().int().nonnegative().optional(),
   ignore_armor_percent: z.number().min(0).max(100).optional(),
-  aimed_location: z.enum(['head', 'held_item', 'leg']).optional(),
+  aimed_location: z.enum(['head', 'held_item', 'leg', 'weakpoint']).optional(),
   held_item_id: z.string().optional(),
   dodge_mode: z.enum(['dv', 'dodge']).default('dv'),
   // Dice rolls
@@ -344,6 +346,11 @@ export const ResolveActionInputSchema = z.object({
   unwilling: z.boolean().optional(), // 同意しない相手（エアハイポで近接攻撃）
   // ソロ《コンバット・アウェアネス》の割り振り直し（Phase 5x。p.146）
   solo_alloc: z.record(z.string(), z.number().int().min(0)).optional(),
+  // ヴィークル（Phase 5y。p.189〜193）。どのキャラのどのヴィークルか
+  vehicle_ref: z.object({ owner_id: z.string(), vehicle_id: z.string() }).optional(),
+  target_vehicle: z.object({ owner_id: z.string(), vehicle_id: z.string() }).optional(),
+  maneuver: z.string().optional(),
+  as_driver: z.boolean().optional(),
   // Multi-attack for ROF > 1
   attacks: z.array(SingleAttackInputSchema).optional(),
   // Manual / unconfirmed adjustments
