@@ -4,6 +4,8 @@ export interface ResolveDamageInput {
   dice: number[];
   multiplier?: number;
   location: 'body' | 'head';
+  /** 頭部に当たったときの倍率。既定 2、致命的損傷「頭蓋損傷」があれば 3（日本語版 p.188） */
+  headMultiplier?: number;
   sp: number;
   ignoreArmorPercent?: number;
   ignoreBelowSP?: number;
@@ -88,7 +90,7 @@ export function resolveDamage(
     criticalInjuryTable = null;
   } else {
     const penetrationRaw = Math.max(0, remainingDamage - effectiveSp);
-    penetrating = input.location === 'head' ? penetrationRaw * 2 : penetrationRaw;
+    penetrating = input.location === 'head' ? penetrationRaw * (input.headMultiplier ?? 2) : penetrationRaw;
 
     if (penetrationRaw > 0) {
       const ablationAmt = input.ablation ?? rules.defaultAblation;
@@ -139,6 +141,8 @@ export interface CriticalInjuryEntry {
     [key: string]: unknown;
   } | null;
   sources?: unknown;
+  /** どちらの表の損傷か（Phase 5q から記録） */
+  table?: 'body' | 'head';
 }
 
 /**

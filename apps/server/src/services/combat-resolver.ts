@@ -7,6 +7,8 @@ import {
   resolveDamage,
   lookupCriticalInjury,
   deathSave,
+  deathSaveBase,
+  hasCrackedSkull,
   woundState,
   woundPenalty,
   resolveD10,
@@ -65,6 +67,9 @@ export const WEAPON_NAME_ALIASES: Record<string, string> = {
 
 const MOVE_ACTION_KEYS = ['move', 'take_cover'];
 
+// フルオート射撃・制圧射撃で使う弾数（日本語版 p.173・174）
+const AUTOFIRE_ROUNDS = 10;
+
 // ログ・通知に出す行動の名前（Phase 5l。英語のキーを出さない）
 const ACTION_LABEL: Record<string, string> = {
   take_cover: '遮蔽に入る',
@@ -109,6 +114,11 @@ function actionCountLabel(p: CombatParticipant): string {
   return allowed > 1 ? ` ${actionsTaken(p) + 1}/${allowed} 回目` : '';
 }
 
+/** サイバーアーム本体か（カヴァーリングなどの付属品は含めない） */
+function isCyberarm(c: { name?: string }): boolean {
+  return /^(medical grade )?cyberarm$/i.test((c.name ?? '').trim()) || /^(医療用)?サイバーアーム$/.test((c.name ?? '').trim());
+}
+
 /**
  * ダメージの出目の数が武器のダメージ（3d6 なら 3 個）と合っているか（Phase 5m）。合わなければ理由を返す
  */
@@ -142,6 +152,14 @@ function woundStatusChange(
     before: statusBefore,
     after,
     desc: `${ch.name} 状態: ${newWound === 'seriously' ? '重傷 (−2)' : newWound === 'mortally' ? '瀕死 (−4)' : '通常'}`,
+  };
+}
+
+/** 死亡セーヴの修正値: 致命的損傷による基本値 ＋ 瀕死になってから増えた分（日本語版 p.188） */
+function deathSavePenaltyOf(part: CombatParticipant): { base: number; added: number } {
+  return {
+    base: deathSaveBase(part.character?.crit_injuries as never),
+    added: (part.state?.deathSavePenalty as number) ?? 0,
   };
 }
 
@@ -230,6 +248,16 @@ export function resolveCombatAction(
     } catch {
       return null;
     }
+  };
+
+  /**
+   * 致命的損傷の表を引いて、受けた損傷の記録を作る。どちらの表かも残す（死亡セーヴの基本値・頭蓋損傷の判定に使う）
+   */
+  const rollInjury = (table: 'body' | 'head', roll: number): CriticalInjuryEntry | null => {
+    const critTable = getRuleConstant<CriticalInjuryEntry[]>(`critical_injury.${table}`) || [];
+    const critEntry = lookupCriticalInjury(critTable, roll);
+    if (!critEntry) return null;
+    return { ...critEntry, name: stripHtml(critEntry.name), summary: stripHtml(critEntry.summary || ''), table };
   };
 
   // Helper to load weapon data
@@ -448,21 +476,23 @@ export function resolveCombatAction(
       };
     }
     const roll = input.death_save_roll;
-    const penalty = (actorPart.state?.deathSavePenalty as number) ?? 0;
+    // 修正値 = 致命的損傷による基本値 + 瀕死になってから増えた分（日本語版 p.188）
+    const { base: basePenalty, added } = deathSavePenaltyOf(actorPart);
+    const penalty = basePenalty + added;
     const body = actorChar.stats.body;
     const res = deathSave({ roll, penalty, body });
     const changes: CombatChange[] = [];
 
-    let formula = `死亡セーブ: 出目 ${roll} + ペナルティ ${penalty} = ${roll + penalty} (BODY ${body} 未満で成功)`;
+    let formula = `死亡セーブ: 出目 ${roll} + ペナルティ ${penalty}${basePenalty ? `（致命的損傷 ${basePenalty}）` : ''} = ${roll + penalty} (BODY ${body} 未満で成功)`;
     if (res.success) {
       formula += ` -> 生存 (次回ペナルティ +1)`;
       changes.push({
         target_id: actorPart.id,
         target_name: actorPart.name,
         field: 'state',
-        before: { deathSavePenalty: penalty },
-        after: { deathSavePenalty: res.nextPenalty },
-        desc: `${actorPart.name} 死亡セーブ成功 (ペナルティ ${res.nextPenalty} に増加)`,
+        before: { deathSavePenalty: added },
+        after: { deathSavePenalty: added + 1 },
+        desc: `${actorPart.name} 死亡セーブ成功 (ペナルティ ${penalty + 1} に増加)`,
       });
     } else {
       formula += ` -> 死亡 (失敗)`;
@@ -491,7 +521,7 @@ export function resolveCombatAction(
       actor_name: actorPart.name,
       success: res.success,
       formula,
-      breakdown: { roll, penalty, body, success: res.success },
+      breakdown: { roll, penalty, basePenalty, body, success: res.success },
       changes,
     };
   }
@@ -808,20 +838,31 @@ export function resolveCombatAction(
           after: 1,
           desc: `${tChar.name} 安定化: HP ${tChar.hp} → 1`,
         });
+        // 瀕死から安定化すると HP 1 になり、気絶状態（1 分間意識を失い行動不能）になる（日本語版 p.186）
         const statusChange = woundStatusChange(tChar, tChar.status || [], tChar.hp, 1);
         if (statusChange) changes.push(statusChange);
-        const penalty = (tPart.state?.deathSavePenalty as number) ?? 0;
-        if (penalty !== 0) {
+        const statusBefore = (statusChange?.after as string[] | undefined) ?? tChar.status ?? [];
+        changes.push({
+          target_id: tChar.id,
+          target_name: tChar.name,
+          field: 'status',
+          before: statusBefore,
+          after: [...statusBefore.filter((st) => st !== '気絶'), '気絶'],
+          desc: `${tChar.name} 状態: 気絶（1 分間行動できない）`,
+        });
+        // 死亡セーヴの修正は基本値に戻る。致命的損傷で上がった基本値は治療するまで残る（p.188）
+        const { base: basePenalty, added } = deathSavePenaltyOf(tPart);
+        if (added !== 0) {
           changes.push({
             target_id: tPart.id,
             target_name: tPart.name,
             field: 'state',
-            before: { deathSavePenalty: penalty },
+            before: { deathSavePenalty: added },
             after: { deathSavePenalty: 0 },
-            desc: `${tPart.name} 死亡セーブの修正がもとに戻る`,
+            desc: `${tPart.name} 死亡セーブの修正が基本値 ${basePenalty} に戻る`,
           });
         }
-        formula += '。HP 1 で安定し、死亡セーブは要らなくなる';
+        formula += '。HP 1 で安定し、気絶する（1 分間行動できない）。死亡セーブは要らなくなる';
       } else {
         formula += '。安定し、自然に治り始める';
       }
@@ -916,9 +957,6 @@ export function resolveCombatAction(
         }
         if (typeof wData.autofire !== 'number' || wData.autofire <= 0) {
           missing_inputs.push('倍率の上限が不明です');
-        }
-        if (input.ammo_spent === undefined || input.ammo_spent === null || input.ammo_spent <= 0) {
-          missing_inputs.push('オートファイアの消費弾数を入力してください');
         }
       } else {
         if (!wData.dv_table_key) {
@@ -1026,14 +1064,19 @@ export function resolveCombatAction(
           : wData.magazine_max
         : null;
 
-    const totalAmmoNeeded = isAutofire ? (input.ammo_spent ?? 1) : rawAttacks.length;
+    // フルオート射撃は毎回 10 発。弾倉の残りが 10 発未満なら撃てない（日本語版 p.173）
+    const totalAmmoNeeded = isAutofire ? AUTOFIRE_ROUNDS : rawAttacks.length;
     // ROF を超える回数は撃てない（照準射撃・オートファイアは ROF に関係なく 1 回。Phase 5m）
     const maxShots = isAimed || isAutofire ? 1 : Number(wData?.rof ?? 1) || 1;
     if (wData && rawAttacks.length > maxShots) {
       missing_inputs.push(`この攻撃は 1 回のアクションで ${maxShots} 回までです`);
     }
     if (currentAmmo !== null && currentAmmo < totalAmmoNeeded) {
-      missing_inputs.push(`残弾が不足しています (残弾 ${currentAmmo} / 必要 ${totalAmmoNeeded})`);
+      missing_inputs.push(
+        isAutofire
+          ? `フルオート射撃は 10 発使います。弾倉の残りが 10 発未満なので撃てません (残弾 ${currentAmmo})`
+          : `残弾が不足しています (残弾 ${currentAmmo} / 必要 ${totalAmmoNeeded})`,
+      );
     }
 
     // Validate each attack
@@ -1125,6 +1168,8 @@ export function resolveCombatAction(
     const runningSpHeadMap = new Map<string, number>();
     const runningSpBodyMap = new Map<string, number>();
     const runningStatusMap = new Map<string, string[]>();
+    const runningCritMap = new Map<string, unknown[]>();
+    const runningPenaltyMap = new Map<string, number>();
     let allHit = true;
     const formulaParts: string[] = [];
 
@@ -1292,17 +1337,23 @@ export function resolveCombatAction(
             multiplier = autofireMultiplier({ attackTotal, dv, weaponCap: cap });
           }
 
+          const critsBefore = runningCritMap.get(curTargetId) ?? curTargetChar.crit_injuries ?? [];
           const dmgRes = resolveDamage({
             dice: att.damage_dice,
             multiplier,
             location,
+            // 「頭蓋損傷」があると頭部は 3 倍（日本語版 p.188）
+            headMultiplier: hasCrackedSkull(critsBefore as never) ? 3 : 2,
             sp: targetSp,
             ignoreArmorPercent: wData.ignore_armor_percent ?? 0,
             currentHp: runningHp,
           });
+          // 瀕死のあいだに攻撃でダメージを受けると、致命的損傷を 1 つ受け、死亡セーヴの修正値が 1 増える（日本語版 p.186・188）
+          const mortalHit = woundState(runningHp, curTargetChar.hp_max) === 'mortally' && dmgRes.hpLoss > 0;
+          const injuryTable = dmgRes.criticalInjuryTable ?? (mortalHit ? location : null);
 
           // Check for critical injury roll requirement
-          if (dmgRes.criticalInjuryTable) {
+          if (injuryTable) {
             if (att.crit_injury_roll === undefined || att.crit_injury_roll === null) {
               missing_inputs.push(`${prefix}致命傷表 (2d6) の出目を入力してください`);
               continue;
@@ -1351,26 +1402,35 @@ export function resolveCombatAction(
           }
 
           // Critical injury application
-          if (dmgRes.criticalInjuryTable && att.crit_injury_roll) {
-            const critTable =
-              getRuleConstant<CriticalInjuryEntry[]>(
-                `critical_injury.${dmgRes.criticalInjuryTable}`,
-              ) || [];
-            const critEntry = lookupCriticalInjury(critTable, att.crit_injury_roll);
-            if (critEntry) {
-              const injuryName = stripHtml(critEntry.name);
-              const summary = stripHtml(critEntry.summary || '');
-              const cleanEntry: CriticalInjuryEntry = { ...critEntry, name: injuryName, summary };
+          if (injuryTable && att.crit_injury_roll) {
+            const cleanEntry = rollInjury(injuryTable, att.crit_injury_roll);
+            if (cleanEntry) {
+              const critsAfter = [...critsBefore, cleanEntry];
               changes.push({
                 target_id: curTargetChar.id,
                 target_name: curTargetChar.name,
                 field: 'crit_injuries',
-                before: curTargetChar.crit_injuries,
-                after: [...(curTargetChar.crit_injuries || []), cleanEntry],
-                desc: `${curTargetChar.name} 致命傷: ${injuryName}${summary ? ` (${summary})` : ''}`,
+                before: critsBefore,
+                after: critsAfter,
+                desc: `${curTargetChar.name} 致命傷: ${cleanEntry.name}${cleanEntry.summary ? ` (${cleanEntry.summary})` : ''}`,
               });
-              subFormula += ` [致命傷: ${injuryName}]`;
+              runningCritMap.set(curTargetId, critsAfter);
+              subFormula += ` [致命傷: ${cleanEntry.name}]`;
             }
+          }
+          if (mortalHit) {
+            const added = runningPenaltyMap.get(curTargetPart.id) ?? deathSavePenaltyOf(curTargetPart).added;
+            changes.push({
+              target_id: curTargetPart.id,
+              target_name: curTargetPart.name,
+              field: 'state',
+              before: { deathSavePenalty: added },
+              after: { deathSavePenalty: added + 1 },
+              desc: `${curTargetPart.name} 瀕死で被弾: 死亡セーブの修正 +1`,
+            });
+            runningPenaltyMap.set(curTargetPart.id, added + 1);
+            subFormula += ' (瀕死で被弾: 致命的損傷 1 つ、死亡セーブの修正 +1)';
+            if (dmgRes.criticalInjuryTable) subFormula += '（6 が 2 個の致命的損傷はもう 1 つ。GM が表を振って追加）';
           }
 
           // Aimed leg: GM manual effect (Issue #4, do not auto-apply)
@@ -1434,8 +1494,10 @@ export function resolveCombatAction(
         : undefined;
     const weaponItemId = invWeapon?.item_id || input.weapon_id;
     // 格闘は武器なし: 技能は格闘、ROF 2、ダメージは BODY で決まる（4 以下 1d6、5〜6 2d6、7〜10 3d6、11 以上 4d6）、防具は普通に効く
+    // サイバーアームで殴るときは最低 2d6（日本語版 p.176）
     const body = actorChar.stats.body;
-    const brawlDice = body <= 4 ? 1 : body <= 6 ? 2 : body <= 10 ? 3 : 4;
+    const hasCyberarm = (actorChar.cyberware ?? []).some((c) => isCyberarm(c));
+    const brawlDice = Math.max(body <= 4 ? 1 : body <= 6 ? 2 : body <= 10 ? 3 : 4, hasCyberarm ? 2 : 0);
     const wData = isBrawl
       ? { skill: 'Brawling', damage: `${brawlDice}d6`, ignore_armor_percent: 0, rof: 2 }
       : getWeaponData(weaponItemId || invWeapon?.name);
@@ -1545,7 +1607,7 @@ export function resolveCombatAction(
       },
     ];
     // 同じ相手に 2 回当たったとき、2 回目は 1 回目のあとの HP・SP から計算する
-    const running = new Map<string, { hp: number; sp: number; status: string[] }>();
+    const running = new Map<string, { hp: number; sp: number; status: string[]; crits: unknown[]; penaltyAdded: number }>();
     const formulaParts: string[] = [];
     let anyHit = false;
 
@@ -1554,7 +1616,13 @@ export function resolveCombatAction(
       const prefix = rawAttacks.length > 1 ? `[#${i + 1}] ` : '';
       const tPart = targetOf(att)!;
       const tChar = tPart.character!;
-      const cur = running.get(tChar.id) ?? { hp: tChar.hp, sp: tChar.sp_body, status: tChar.status || [] };
+      const cur = running.get(tChar.id) ?? {
+        hp: tChar.hp,
+        sp: tChar.sp_body,
+        status: tChar.status || [],
+        crits: tChar.crit_injuries || [],
+        penaltyAdded: deathSavePenaltyOf(tPart).added,
+      };
 
       const attD10 = resolveD10(att.attack_roll!.first, att.attack_roll!.extra).value;
       const attackTotal = base + attD10;
@@ -1588,7 +1656,10 @@ export function resolveCombatAction(
         ignoreArmorPercent: ignoreArmorPercent!,
         currentHp: cur.hp,
       });
-      if (dmgRes.criticalInjuryTable && (att.crit_injury_roll === undefined || att.crit_injury_roll === null)) {
+      // 瀕死のあいだに攻撃でダメージを受けると、致命的損傷を 1 つ受け、死亡セーヴの修正値が 1 増える（日本語版 p.186・188）
+      const mortalHit = woundState(cur.hp, tChar.hp_max) === 'mortally' && dmgRes.hpLoss > 0;
+      const injuryTable = dmgRes.criticalInjuryTable ?? (mortalHit ? 'body' : null);
+      if (injuryTable && (att.crit_injury_roll === undefined || att.crit_injury_roll === null)) {
         missing_inputs.push(`${prefix}致命傷表 (2d6) の出目を入力してください`);
         continue;
       }
@@ -1615,29 +1686,42 @@ export function resolveCombatAction(
       const statusChange = woundStatusChange(tChar, cur.status, cur.hp, newHp);
       if (statusChange) changes.push(statusChange);
 
-      let critAfter = tChar.crit_injuries;
-      if (dmgRes.criticalInjuryTable && att.crit_injury_roll) {
-        const critTable = getRuleConstant<CriticalInjuryEntry[]>(`critical_injury.${dmgRes.criticalInjuryTable}`) || [];
-        const critEntry = lookupCriticalInjury(critTable, att.crit_injury_roll);
-        if (critEntry) {
-          const injuryName = stripHtml(critEntry.name);
-          const summary = stripHtml(critEntry.summary || '');
-          critAfter = [...(critAfter || []), { ...critEntry, name: injuryName, summary }];
+      let critAfter = cur.crits;
+      if (injuryTable && att.crit_injury_roll) {
+        const cleanEntry = rollInjury(injuryTable, att.crit_injury_roll);
+        if (cleanEntry) {
+          critAfter = [...critAfter, cleanEntry];
           changes.push({
             target_id: tChar.id,
             target_name: tChar.name,
             field: 'crit_injuries',
-            before: tChar.crit_injuries,
+            before: cur.crits,
             after: critAfter,
-            desc: `${tChar.name} 致命傷: ${injuryName}${summary ? ` (${summary})` : ''}`,
+            desc: `${tChar.name} 致命傷: ${cleanEntry.name}${cleanEntry.summary ? ` (${cleanEntry.summary})` : ''}`,
           });
-          sub += ` [致命傷: ${injuryName}]`;
+          sub += ` [致命傷: ${cleanEntry.name}]`;
         }
+      }
+      let penaltyAdded = cur.penaltyAdded;
+      if (mortalHit) {
+        changes.push({
+          target_id: tPart.id,
+          target_name: tPart.name,
+          field: 'state',
+          before: { deathSavePenalty: penaltyAdded },
+          after: { deathSavePenalty: penaltyAdded + 1 },
+          desc: `${tPart.name} 瀕死で被弾: 死亡セーブの修正 +1`,
+        });
+        penaltyAdded += 1;
+        sub += ' (瀕死で被弾: 致命的損傷 1 つ、死亡セーブの修正 +1)';
+        if (dmgRes.criticalInjuryTable) sub += '（6 が 2 個の致命的損傷はもう 1 つ。GM が表を振って追加）';
       }
       running.set(tChar.id, {
         hp: newHp,
         sp: dmgRes.spAfter,
         status: (statusChange?.after as string[] | undefined) ?? cur.status,
+        crits: critAfter,
+        penaltyAdded,
       });
       formulaParts.push(sub);
     }

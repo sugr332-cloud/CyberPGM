@@ -85,3 +85,45 @@ export function deathSave(input: DeathSaveInput): DeathSaveResult {
 export function hpMaxFromStats(body: number, will: number): number {
   return 10 + 5 * Math.ceil((body + will) / 2);
 }
+
+/**
+ * 死亡セーヴ修正値の基本値を 1 増やす致命的損傷（日本語版 p.187・188）。2d6 の目で表す。
+ * 身体: 片腕喪失・片手喪失・肺損傷・脊椎損傷・片脚喪失。頭部: 片目喪失・脳損傷・頸椎損傷・頭蓋損傷・気管損傷・片耳喪失
+ */
+export const DEATH_SAVE_BASE_INJURIES: Record<'body' | 'head', number[]> = {
+  body: [2, 3, 4, 10, 12],
+  head: [2, 3, 8, 9, 11, 12],
+};
+
+/** 頭部への致命的損傷「頭蓋損傷」の 2d6 の目。頭部への狙い撃ちが 3 倍になる（p.188） */
+export const CRACKED_SKULL_ROLL = 9;
+
+export interface InjuryRef {
+  range?: [number, number];
+  table?: 'body' | 'head';
+  sources?: Array<{ page?: number }> | unknown;
+}
+
+/**
+ * 致命的損傷がどちらの表のものか。table が無い古いデータは出典のページ（187 身体、188 頭部）で見分ける
+ */
+export function injuryTable(injury: InjuryRef): 'body' | 'head' | null {
+  if (injury.table) return injury.table;
+  const pages = Array.isArray(injury.sources) ? (injury.sources as Array<{ page?: number }>).map((s) => s?.page) : [];
+  if (pages.includes(188)) return 'head';
+  if (pages.includes(187)) return 'body';
+  return null;
+}
+
+/** 受けている致命的損傷から、死亡セーヴ修正値の基本値を数える */
+export function deathSaveBase(injuries: InjuryRef[] | null | undefined): number {
+  return (injuries ?? []).filter((inj) => {
+    const table = injuryTable(inj);
+    return table !== null && inj.range !== undefined && DEATH_SAVE_BASE_INJURIES[table].includes(inj.range[0]);
+  }).length;
+}
+
+/** 「頭蓋損傷」を受けているか */
+export function hasCrackedSkull(injuries: InjuryRef[] | null | undefined): boolean {
+  return (injuries ?? []).some((inj) => injuryTable(inj) === 'head' && inj.range?.[0] === CRACKED_SKULL_ROLL);
+}

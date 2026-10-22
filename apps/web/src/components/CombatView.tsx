@@ -104,7 +104,6 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [distanceM, setDistanceM] = useState<number | null>(null);
   const [selectedWeaponId, setSelectedWeaponId] = useState<string | null>(null);
   const [meleeIgnoreArmorInput, setMeleeIgnoreArmorInput] = useState<number | undefined>(undefined);
-  const [ammoSpent, setAmmoSpent] = useState<number>(10);
   const [dodgeMode, setDodgeMode] = useState<'dv' | 'dodge'>('dv');
   const [aimedLocation, setAimedLocation] = useState<'head' | 'held_item' | 'leg'>('head');
   const [heldItemId, setHeldItemId] = useState<string>('');
@@ -741,7 +740,6 @@ export const CombatView: React.FC<CombatViewProps> = ({
         weapon_id: selectedWeaponId || undefined,
         weapon_entry_id: selectedWeaponId || undefined,
         ignore_armor_percent: ignoreArmorToSend,
-        ammo_spent: selectedActionKey === 'autofire' ? ammoSpent : undefined,
         aimed_location: aimedLocation,
         held_item_id: heldItemId || undefined,
         dodge_mode: dodgeMode,
@@ -830,7 +828,6 @@ export const CombatView: React.FC<CombatViewProps> = ({
         weapon_id: selectedWeaponId || undefined,
         weapon_entry_id: selectedWeaponId || undefined,
         ignore_armor_percent: ignoreArmorToSend,
-        ammo_spent: selectedActionKey === 'autofire' ? ammoSpent : undefined,
         aimed_location: aimedLocation,
         held_item_id: heldItemId || undefined,
         dodge_mode: dodgeMode,
@@ -2070,26 +2067,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     );
                   })()}
 
-                  {/* Autofire Ammo Spent */}
+                  {/* フルオート射撃は毎回 10 発（日本語版 p.173） */}
                   {selectedActionKey === 'autofire' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>消費弾数 (発):</span>
-                      <input
-                        type="number"
-                        min={1}
-                        value={ammoSpent}
-                        onChange={(e) => setAmmoSpent(Number(e.target.value) || 0)}
-                        style={{
-                          width: '70px',
-                          padding: '4px 6px',
-                          backgroundColor: 'var(--color-bg)',
-                          border: '1px solid var(--color-border-light)',
-                          borderRadius: '4px',
-                          color: 'var(--color-text)',
-                          fontSize: '0.85rem',
-                        }}
-                      />
-                    </div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>弾を 10 発使います（残りが 10 発未満なら撃てません）</div>
                   )}
 
                   {/* Target & Distance Selection (for ranged / melee / brawl) */}
