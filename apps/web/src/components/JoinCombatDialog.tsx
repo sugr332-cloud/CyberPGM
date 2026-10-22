@@ -30,17 +30,15 @@ export function JoinCombatDialog({ combatId, characters, joinedCharacterIds, onC
   const [side, setSide] = useState<'ally' | 'enemy'>('enemy');
   const [count, setCount] = useState(1);
   const [first, setFirst] = useState('');
-  const [extra, setExtra] = useState('');
   const [error, setError] = useState<string | null>(null);
   const selected = characters.find((c) => c.id === characterId);
   const isMook = selected?.kind === 'mook';
   const firstNum = parseInt(first, 10);
-  const needsExtra = firstNum === 10 || firstNum === 1;
 
   const submit = async () => {
     if (!selected) return;
     setError(null);
-    const rolls = !isNaN(firstNum) && !isMook ? [{ first: firstNum, ...(needsExtra && extra ? { extra: parseInt(extra, 10) } : {}) }] : [];
+    const rolls = !isNaN(firstNum) && !isMook ? [{ first: firstNum }] : [];
     const res = await gmFetch(`/api/combats/${combatId}/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -100,7 +98,6 @@ export function JoinCombatDialog({ combatId, characters, joinedCharacterIds, onC
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '0.85rem' }}>
             <span>イニシアチブの出目</span>
             <input aria-label="イニシアチブの出目" type="number" min={1} max={10} value={first} onChange={(e) => setFirst(e.target.value)} placeholder="空欄はアプリで振る" style={{ ...field, width: '140px' }} />
-            {needsExtra && <input aria-label="追加の出目" type="number" min={1} max={10} value={extra} onChange={(e) => setExtra(e.target.value)} style={{ ...field, width: '64px' }} />}
           </div>
         )}
         <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
@@ -113,7 +110,7 @@ export function JoinCombatDialog({ combatId, characters, joinedCharacterIds, onC
           </button>
           <button
             type="button"
-            disabled={!selected || (needsExtra && !extra)}
+            disabled={!selected}
             onClick={submit}
             style={{ ...field, backgroundColor: 'var(--color-ally)', color: '#000', fontWeight: 700, cursor: 'pointer' }}
           >

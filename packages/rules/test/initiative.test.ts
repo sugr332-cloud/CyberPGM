@@ -3,35 +3,21 @@ import { initiativeTotal, sortInitiative } from '../src/initiative.js';
 import { DEFAULT_RULES } from '../src/constants.js';
 
 describe('initiative module (RULES_CHECK §2, settings.js criticalInitiative)', () => {
-  it('calculates initiative with exploding/fumbling d10 by default', () => {
-    // Normal roll
-    const normal = initiativeTotal(7, 5, undefined, DEFAULT_RULES);
-    expect(normal.total).toBe(12);
-    expect(normal.needsExtra).toBe(false);
+  it('calculates initiative as REF + 1d10 without extra rolls by default (p.126)', () => {
+    expect(initiativeTotal(7, 5, undefined, DEFAULT_RULES)).toEqual({ total: 12, needsExtra: false });
+    // 10 も 1 も振り足さない
+    expect(initiativeTotal(7, 10, undefined, DEFAULT_RULES)).toEqual({ total: 17, needsExtra: false });
+    expect(initiativeTotal(7, 1, undefined, DEFAULT_RULES)).toEqual({ total: 8, needsExtra: false });
 
-    // Exploding roll (10 + 3)
-    const crit = initiativeTotal(7, 10, 3, DEFAULT_RULES);
-    expect(crit.total).toBe(20);
-    expect(crit.needsExtra).toBe(false);
-
-    // Fumbling roll (1 - 4)
-    const fumble = initiativeTotal(7, 1, 4, DEFAULT_RULES);
-    expect(fumble.total).toBe(4);
-    expect(fumble.needsExtra).toBe(false);
-
-    // Pending extra
-    const pending = initiativeTotal(7, 10, undefined, DEFAULT_RULES);
-    expect(pending.needsExtra).toBe(true);
+    expect(() => initiativeTotal(7, 0, undefined, DEFAULT_RULES)).toThrow();
+    expect(() => initiativeTotal(7, 11, undefined, DEFAULT_RULES)).toThrow();
   });
 
-  it('calculates initiative without crits when initiativeCrit is false', () => {
-    const rules = { ...DEFAULT_RULES, initiativeCrit: false };
-    const res = initiativeTotal(7, 10, undefined, rules);
-    expect(res.total).toBe(17);
-    expect(res.needsExtra).toBe(false);
-
-    expect(() => initiativeTotal(7, 0, undefined, rules)).toThrow();
-    expect(() => initiativeTotal(7, 11, undefined, rules)).toThrow();
+  it('applies exploding/fumbling d10 when initiativeCrit is turned on', () => {
+    const rules = { ...DEFAULT_RULES, initiativeCrit: true };
+    expect(initiativeTotal(7, 10, 3, rules)).toEqual({ total: 20, needsExtra: false });
+    expect(initiativeTotal(7, 1, 4, rules)).toEqual({ total: 4, needsExtra: false });
+    expect(initiativeTotal(7, 10, undefined, rules).needsExtra).toBe(true);
   });
 
   it('sorts initiative by total descending, breaking ties with REF (tieBreak ref)', () => {
