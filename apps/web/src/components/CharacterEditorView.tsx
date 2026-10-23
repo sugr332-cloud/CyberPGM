@@ -404,6 +404,10 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
 
   const grouped = (['pc', 'npc', 'mook'] as Kind[]).map((k) => ({ kind: k, list: characters.filter((c) => c.kind === k) }));
   const weaponsInv = form.inventory.filter((i) => i.kind === 'weapon');
+  const weaponUpgrades = form.inventory.filter((i) => {
+    if (i.kind !== 'upgrade' || !i.item_id) return false;
+    try { return itemsById[i.item_id]?.kind === 'upgrade' && JSON.parse(itemsById[i.item_id]?.raw_system ?? '{}').type === 'weapon'; } catch { return false; }
+  });
   const armorInv = form.inventory.filter((i) => i.kind === 'armor');
   const otherInv = form.inventory.filter((i) => i.kind !== 'weapon' && i.kind !== 'armor');
 
@@ -425,6 +429,7 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
             装備
           </label>
         )}
+        {entry.kind === 'weapon' && weaponUpgrades.length > 0 && <div style={{display:'flex',gap:8,flexWrap:'wrap',width:'100%',paddingLeft:8}}><span style={muted}>付属品</span>{weaponUpgrades.filter((u) => u.entry_id !== entry.entry_id).map((upgrade) => <label key={upgrade.entry_id} style={{display:'flex',gap:4,alignItems:'center'}}><input type="checkbox" checked={entry.attachments?.includes(upgrade.entry_id) ?? false} onChange={(e) => updateEntry(entry,{attachments:e.target.checked ? [...new Set([...(entry.attachments ?? []),upgrade.entry_id])] : (entry.attachments ?? []).filter((id) => id !== upgrade.entry_id)})}/>{upgrade.name}</label>)}</div>}
         <label style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
           数
           <input aria-label={`${entry.name} の数`} type="number" min={1} value={entry.qty} onChange={(e) => updateEntry(entry, { qty: Math.max(1, Number(e.target.value) || 1) })} style={{ ...field, width: '56px', padding: '3px 6px' }} />

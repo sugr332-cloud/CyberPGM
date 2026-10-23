@@ -42,6 +42,7 @@ import {
   gridDistance,
   DEFAULT_RULES,
   LosStatus,
+  suppressiveTargetCandidates,
 } from '@cyberpgm/rules';
 import { BoardView } from './BoardView.js';
 import { findTokenPlacement, tokenPlacementError } from '../utils/board-placement.js';
@@ -190,7 +191,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [netAmbushRunnerRoll, setNetAmbushRunnerRoll] = useState<number | null>(null);
   
   // 出目を入れる前の計算式と成功ライン（仕様 §5.0.1。Phase 5n）
-  const [attackLineText, setAttackLineText] = useState<string | null>(null);
+  const [attackLineText, setAttackLineText] = useState<{ text: string; bands?: Array<{range:string;dv:number;needed:string;current?:boolean}> } | null>(null);
   useEffect(() => {
     const cur = combat?.participants?.[combat.turn_index];
     if (!combat || !cur || !['ranged', 'aimed', 'autofire', ...MELEE_LIKE].includes(selectedActionKey ?? '')) {
@@ -208,15 +209,16 @@ export const CombatView: React.FC<CombatViewProps> = ({
         weapon_entry_id: selectedWeaponId ?? undefined,
         distance_m: distanceM ?? undefined,
         dodge_mode: dodgeMode,
+        luck_spent: luckSpent || undefined,
       }),
     })
       .then((r) => r.json())
-      .then((res) => alive && setAttackLineText(res.line?.text ?? null))
+      .then((res) => alive && setAttackLineText(res.line ?? null))
       .catch(() => undefined);
     return () => {
       alive = false;
     };
-  }, [combat?.id, combat?.turn_index, selectedActionKey, targetParticipantId, selectedWeaponId, distanceM, dodgeMode]);
+  }, [combat?.id, combat?.turn_index, selectedActionKey, targetParticipantId, selectedWeaponId, distanceM, dodgeMode, luckSpent]);
 
   // 出目がどのスマホから届いたか（roll_type → 名前。Phase 5n）
   const [rollFrom, setRollFrom] = useState<Record<string, string>>({});
@@ -224,6 +226,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
   // Rolls in Guide. 決め打ちの出目は置かない（入れ忘れると計算が「出目を入力してください」で止まる。Phase 5l）
   const [attackFirst, setAttackFirst] = useState<number | null>(null);
   const [attackExtra, setAttackExtra] = useState<number | undefined>(undefined);
+  const [suppressiveFacing, setSuppressiveFacing] = useState<'N'|'NE'|'E'|'SE'|'S'|'SW'|'W'|'NW'>('N');
+  const [suppressiveTargetIds, setSuppressiveTargetIds] = useState<string[]>([]);
+  const [suppressiveRolls, setSuppressiveRolls] = useState<Record<string, { first?: number; extra?: number }>>({});
   const [defenseFirst, setDefenseFirst] = useState<number | null>(null);
   const [defenseExtra, setDefenseExtra] = useState<number | undefined>(undefined);
   const [damageDiceStr, setDamageDiceStr] = useState<string>('');
@@ -257,7 +262,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const actionInputSpec = combatActionInputs(selectedActionKey ?? '', selectedActionKey === 'net_action' ? netSubAction : selectedActionKey === 'hazard' ? hazardKey : undefined);
   const hasDiceInput = (field: 'attack_roll' | 'defense_roll' | 'damage_rolls' | 'crit_roll' | 'death_save_roll') => actionInputSpec.dice.some((d) => d.field === field);
   const targetForDefense = combat?.participants?.find((p) => p.id === targetParticipantId);
-  const showDefenseInput = hasDiceInput('defense_roll') && (!['ranged', 'aimed', 'autofire', 'throw_object'].includes(selectedActionKey ?? '') || (dodgeMode === 'dodge' && (targetForDefense?.character?.stats?.ref ?? 0) >= 8));
+  const showDefenseInput = selectedActionKey !== 'suppressive' && hasDiceInput('defense_roll') && (!['ranged', 'aimed', 'autofire', 'throw_object'].includes(selectedActionKey ?? '') || (dodgeMode === 'dodge' && (targetForDefense?.character?.stats?.ref ?? 0) >= 8));
   const [isResolving, setIsResolving] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
 
@@ -611,6 +616,23 @@ export const CombatView: React.FC<CombatViewProps> = ({
     };
   }, [boardData, activePart, targetParticipantId, combat, losOverride]);
 
+  const suppressiveCandidates = useMemo(() => {
+    if (!boardData || !activePart) return [] as string[];
+    const shooter = boardData.tokens.find((t) => t.character_id === activePart.character_id || t.character_id === activePart.id);
+    if (!shooter) return [];
+    const meters = boardData.board.grid?.cell_m || 2;
+    const rules = { ...DEFAULT_RULES, metersPerSquare: meters, diagonalRule: (combat?.settings?.diagonalRule as 'chebyshev'|'alternate') || 'chebyshev' };
+    const targets = (combat?.participants ?? []).filter((p) => !p.out).map((participant) => {
+      const token = boardData.tokens.find((t) => t.character_id === participant.character_id || t.character_id === participant.id);
+      return { id: participant.id, position: token ? { x: token.x, y: token.y } : undefined, inVehicle: Boolean((participant.state as any)?.in_vehicle), inCover: Boolean((participant.state as any)?.inCover) };
+    });
+    return suppressiveTargetCandidates({ shooterId: activePart.id, shooter: {x:shooter.x,y:shooter.y}, targets, facing: suppressiveFacing, objects: boardData.objects, metersPerSquare: meters, rules });
+  }, [boardData, activePart, combat, suppressiveFacing]);
+
+  useEffect(() => {
+    if (selectedActionKey === 'suppressive' && boardData) setSuppressiveTargetIds(suppressiveCandidates);
+  }, [selectedActionKey, boardData?.board.id, suppressiveFacing, suppressiveCandidates]);
+
   useEffect(() => {
     if (losInfo && ['ranged', 'aimed', 'autofire'].includes(selectedActionKey || '')) {
       setDistanceM(losInfo.autoDistanceM);
@@ -664,14 +686,17 @@ export const CombatView: React.FC<CombatViewProps> = ({
     const inv = (activePart?.character?.inventory as any[]) || [];
     return inv.filter((i: any) => i.kind === 'weapon');
   }, [activePart]);
+  const actionWeaponEntries = selectedActionKey === 'repair_weapon' ? weaponEntries.filter((w) => w.malfunctioned) : weaponEntries;
+  const selectedWeaponIsMalfunctioned = Boolean(weaponEntries.find((w) => w.entry_id === selectedWeaponId)?.malfunctioned && ['ranged','aimed','autofire','suppressive','melee'].includes(selectedActionKey ?? ''));
 
   // Auto-select first weapon entry for active participant if none or invalid is selected
   useEffect(() => {
     if (selectedActionKey && activePart?.character) {
-      const isValid = weaponEntries.some((w) => w.entry_id === selectedWeaponId);
+      const selectable = selectedActionKey === 'repair_weapon' ? weaponEntries.filter((w) => w.malfunctioned) : weaponEntries;
+      const isValid = selectable.some((w) => w.entry_id === selectedWeaponId);
       if (!isValid) {
-        if (weaponEntries.length > 0) {
-          setSelectedWeaponId(weaponEntries[0].entry_id);
+        if (selectable.length > 0) {
+          setSelectedWeaponId(selectable[0].entry_id);
         } else {
           setSelectedWeaponId(null);
         }
@@ -710,6 +735,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
       // どのスマホから届いたかを出目欄の横に出す（Phase 5n）
       const fromPart = combat?.participants.find((p) => p.character_id === wsMessage.payload.character_id);
       if (fromPart && roll_type !== 'initiative') setRollFrom((prev) => ({ ...prev, [roll_type]: fromPart.name }));
+      if (roll_type === 'suppressive_resistance' && typeof first === 'number' && typeof wsMessage.payload.target_id === 'string') {
+        const target = combat?.participants.find((p) => p.id === wsMessage.payload.target_id && p.character_id === wsMessage.payload.character_id);
+        if (target) setSuppressiveRolls((prev) => ({ ...prev, [target.id]: { first, extra } }));
+      }
       if (roll_type === 'attack' && typeof wsMessage.payload.luck_spent === 'number') setLuckSpent(wsMessage.payload.luck_spent);
       if (roll_type === 'attack' && typeof first === 'number') {
         setAttackFirst(first);
@@ -1029,6 +1058,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
         unwilling: selectedActionKey === 'use_drug' ? drugUnwilling : undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
+        suppressive_facing: selectedActionKey === 'suppressive' ? suppressiveFacing : undefined,
+        suppressive_targets: selectedActionKey === 'suppressive' ? suppressiveTargetIds.map((participant_id) => ({ participant_id, resistance_roll: suppressiveRolls[participant_id]?.first ? suppressiveRolls[participant_id] : undefined })) : undefined,
         defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
         damage_dice: damageDice.length > 0 ? damageDice : undefined,
         crit_injury_roll: critRoll,
@@ -1138,6 +1169,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
         unwilling: selectedActionKey === 'use_drug' ? drugUnwilling : undefined,
         dodge_mode: dodgeMode,
         attack_roll: attackFirst !== null ? { first: attackFirst, extra: attackExtra } : undefined,
+        suppressive_facing: selectedActionKey === 'suppressive' ? suppressiveFacing : undefined,
+        suppressive_targets: selectedActionKey === 'suppressive' ? suppressiveTargetIds.map((participant_id) => ({ participant_id, resistance_roll: suppressiveRolls[participant_id]?.first ? suppressiveRolls[participant_id] : undefined })) : undefined,
         defense_roll: defenseFirst !== null ? { first: defenseFirst, extra: defenseExtra } : undefined,
         damage_dice: damageDice.length > 0 ? damageDice : undefined,
         crit_injury_roll: critRoll,
@@ -2230,6 +2263,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
               <div>
                 <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>現在の手番:</span>
                 <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: '2px 0 0' }}>{activePart.name} のターンです</h2>
+                {Boolean(activePart.state?.suppressive_move_to_cover) && <div data-testid="suppressive-move-warning" role="alert" style={{padding:8,marginTop:6,border:'2px solid var(--color-warning)',borderRadius:6,color:'var(--color-warning)',fontWeight:700}}>制圧中: 次の移動アクションは遮蔽へ。1 回で届かなければ、可能な限り近づくため速足も必要です。</div>}
                 <div style={{ display: 'flex', gap: '12px', marginTop: '6px', fontSize: '0.85rem' }}>
                   <span style={{ color: activePart.move_used ? 'var(--color-text-muted)' : 'var(--color-ally)' }}>
                     移動アクション: {activePart.move_used ? '使用済み' : '未使用'}
@@ -3188,9 +3222,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         }}
                       >
                         <option value="">-- 武器を選択してください --</option>
-                        {weaponEntries.map((wOpt) => (
+                        {actionWeaponEntries.map((wOpt) => (
                           <option key={wOpt.entry_id} value={wOpt.entry_id}>
-                            {wOpt.name}（{combatDamageFormula('ranged', activePart.character, wOpt) ?? 'ダメージ不明'}） (残弾: {wOpt.ammo !== undefined && wOpt.ammo !== null ? wOpt.ammo : '—'})
+                            {wOpt.name}{wOpt.malfunctioned ? '（動作不良）' : `（${combatDamageFormula('ranged', activePart.character, wOpt) ?? 'ダメージ不明'}） (残弾: ${wOpt.ammo !== undefined && wOpt.ammo !== null ? wOpt.ammo : '—'})`}
                           </option>
                         ))}
                       </select>
@@ -3256,8 +3290,28 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>弾を 10 発使います（残りが 10 発未満なら撃てません）</div>
                   )}
 
+                  {selectedActionKey === 'suppressive' && (
+                    <div data-testid="suppressive-targets" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10, border: '1px solid var(--color-border-light)', borderRadius: 6 }}>
+                      <label>射手の前方:
+                        <select aria-label="制圧射撃の向き" value={suppressiveFacing} onChange={(e) => setSuppressiveFacing(e.target.value as typeof suppressiveFacing)}>
+                          {(['N','NE','E','SE','S','SW','W','NW'] as const).map((d) => <option key={d} value={d}>{({N:'北',NE:'北東',E:'東',SE:'南東',S:'南',SW:'南西',W:'西',NW:'北西'})[d]}</option>)}
+                        </select>
+                      </label>
+                      <strong>対象（盤面の自動候補を選択済み。GM は追加・解除できます）</strong>
+                      {combat.participants.filter((p) => p.id !== activePart.id && !p.out).map((p) => {
+                        const checked = suppressiveTargetIds.includes(p.id);
+                        const roll = suppressiveRolls[p.id] ?? {};
+                        return <div key={p.id} style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+                          <label style={{display:'flex',gap:5,alignItems:'center'}}><input type="checkbox" checked={checked} onChange={(e) => setSuppressiveTargetIds((prev) => e.target.checked ? [...prev,p.id] : prev.filter((id) => id !== p.id))}/>{p.name}{suppressiveCandidates.includes(p.id) ? ' (盤面候補)' : ''}</label>
+                          {checked && <><span>抵抗 1d10</span><input aria-label={`${p.name} の制圧抵抗出目`} type="number" min={1} max={10} value={roll.first ?? ''} onChange={(e) => setSuppressiveRolls((prev) => ({...prev,[p.id]:{...prev[p.id],first:e.target.value ? Number(e.target.value):undefined}}))} style={{width:54}}/>{[1,10].includes(roll.first ?? 0) && <input aria-label={`${p.name} の抵抗追加出目`} type="number" min={1} max={10} value={roll.extra ?? ''} onChange={(e) => setSuppressiveRolls((prev) => ({...prev,[p.id]:{...prev[p.id],extra:e.target.value ? Number(e.target.value):undefined}}))} style={{width:54}}/>}{p.character_id && <button type="button" onClick={() => void gmFetch(`/api/combats/${combat.id}/suppressive-resistance-request`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({participant_id:p.id})})}>スマホで出目を入力</button>}</>}
+                        </div>;
+                      })}
+                      {!boardData && <small>盤面がないため、GM が対象を手動で選びます。</small>}
+                    </div>
+                  )}
+
                   {/* Target & Distance Selection (for ranged / melee / brawl) */}
-                  {actionInputSpec.selectors.includes('target') && (
+                  {actionInputSpec.selectors.includes('target') && selectedActionKey !== 'suppressive' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{selectedActionKey === 'first_aid' ? '手当てする相手（自分も可）:' : '対象を選択:'}</span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -3555,7 +3609,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {attackLineText && (
                       <div data-testid="attack-line" style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: 'var(--color-ally)' }}>
-                        {attackLineText}
+                        {attackLineText.text}
+                        {attackLineText.bands?.length ? <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:4}}>{attackLineText.bands.map((b) => <span key={b.range} style={{padding:'2px 5px',background:b.current?'rgba(79,182,227,.25)':'transparent',fontWeight:b.current?800:400,border:b.current?'1px solid var(--color-ally)':'1px solid var(--color-border-light)'}}>{b.range}: DV {b.dv}, {b.needed}</span>)}</div> : null}
                       </div>
                     )}
                     <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>出目の入力:</span>
@@ -3937,17 +3992,17 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   {/* Calculate preview button */}
                   <button
                     onClick={handleCalculateAction}
-                    disabled={isResolving || isCoverHpNeededAndMissing}
-                    title={isCoverHpNeededAndMissing ? '遮蔽物のHPを入力するまで計算できません' : undefined}
+                    disabled={isResolving || isCoverHpNeededAndMissing || selectedWeaponIsMalfunctioned}
+                    title={selectedWeaponIsMalfunctioned ? '動作不良の武器は修理するまで使えません' : isCoverHpNeededAndMissing ? '遮蔽物のHPを入力するまで計算できません' : undefined}
                     style={{
                       backgroundColor: 'var(--color-surface)',
                       border: '1px solid var(--color-ally)',
-                      color: isCoverHpNeededAndMissing ? 'var(--color-text-muted)' : 'var(--color-ally)',
-                      opacity: isCoverHpNeededAndMissing ? 0.6 : 1,
+                      color: (isCoverHpNeededAndMissing || selectedWeaponIsMalfunctioned) ? 'var(--color-text-muted)' : 'var(--color-ally)',
+                      opacity: (isCoverHpNeededAndMissing || selectedWeaponIsMalfunctioned) ? 0.6 : 1,
                       padding: '8px',
                       borderRadius: '4px',
                       fontWeight: 700,
-                      cursor: isCoverHpNeededAndMissing ? 'not-allowed' : 'pointer',
+                      cursor: (isCoverHpNeededAndMissing || selectedWeaponIsMalfunctioned) ? 'not-allowed' : 'pointer',
                     }}
                   >
                     {isResolving ? '計算中...' : '判定と反映内容を計算'}
@@ -3957,6 +4012,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                       ※ 遮蔽物のHPを入力するまで計算できません
                     </div>
                   )}
+                  {selectedWeaponIsMalfunctioned && <div role="alert" style={{color:'var(--color-warning)',fontSize:'0.8rem'}}>※ 動作不良の武器は「動作不良を直す」まで使えません</div>}
 
                   {/* Preview of changes */}
                   {previewResult && (

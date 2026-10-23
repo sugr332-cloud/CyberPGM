@@ -311,6 +311,11 @@ export const ResolveActionInputSchema = z.object({
   pickup_drop_id: z.string().optional(),
   weapon_id: z.string().optional(),
   weapon_entry_id: z.string().optional(),
+  suppressive_facing: z.enum(['N','NE','E','SE','S','SW','W','NW']).optional(),
+  suppressive_targets: z.array(z.object({
+    participant_id: z.string(),
+    resistance_roll: z.object({ first: z.number().int().min(1).max(10), extra: z.number().int().optional() }).optional(),
+  })).optional(),
   ammo_spent: z.number().int().nonnegative().optional(),
   ignore_armor_percent: z.number().min(0).max(100).optional(),
   aimed_location: z.enum(['head', 'held_item', 'leg', 'weakpoint']).optional(),

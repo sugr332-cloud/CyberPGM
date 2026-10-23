@@ -6,6 +6,7 @@ import {
   characters,
   weapons,
   items,
+  combat_participants,
 } from '../src/db/schema.js';
 import { generateUlid } from '@cyberpgm/shared';
 import { registerDevice } from '../src/auth.js';
@@ -1488,8 +1489,12 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       setViperInventory([{ entry_id: 'e_rifle', item_id: weaponIdRifle, name: 'アサルト・ライフル', qty: 1, equipped: true, ammo: 25 }]);
       const combat = await createTestCombat();
       const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
-      const ok = await resolve(combat.id, { action_key: 'suppressive', actor_id: viper.id, weapon_entry_id: 'e_rifle' });
+      const targets = combat.participants.filter((p: any) => p.id !== viper.id).slice(0, 2);
+      const resistant = db.select().from(characters).where(eq(characters.id, targets[1].character_id)).get()!;
+      db.update(characters).set({ stats: JSON.stringify({ ...JSON.parse(resistant.stats), will: 50 }) }).where(eq(characters.id, resistant.id)).run();
+      const ok = await resolve(combat.id, { action_key: 'suppressive', actor_id: viper.id, weapon_entry_id: 'e_rifle', attack_roll: { first: 10, extra: 10 }, suppressive_facing: 'N', suppressive_targets: targets.map((p: any, idx: number) => ({ participant_id: p.id, resistance_roll: idx === 0 ? { first: 1, extra: 10 } : { first: 10, extra: 10 } })) });
       expect(ok.changes.find((ch: any) => ch.field === 'ammo').after).toBe(15);
+      expect(ok.changes.filter((ch: any) => ch.field === 'state' && ch.after?.suppressive_move_to_cover)).toHaveLength(1);
       const noWeapon = await resolve(combat.id, { action_key: 'suppressive', actor_id: viper.id });
       expect(noWeapon.missing_inputs.join()).toContain('武器を選択');
 
@@ -1741,13 +1746,14 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
         })
       ).json();
       // REF 8 + ハンドガン 6 = 14 vs 難易度 13 → 出目 0 以上 = 「2 以上で成功」
-      expect(res.line.text).toContain(`= 14 vs ${ganger.name}・距離 5m の難易度 13 → 出目 2 以上で成功`);
+      expect(res.line.text).toContain(`= 14 vs ${ganger.name}まで 5m（距離帯 0〜6m） → 難易度 13 → 出目 2 以上で成功`);
+      expect(res.line.bands[0].current).toBe(true);
 
       // formatNeeded は基本値込みの合計ではなく、1d10 の出目を返す。
       // 追加ロール・不可能のときも同じ接頭辞で表示できることを確認する。
       for (const [action, distance, expected] of [
-        ['ranged', 30, '距離 30m の難易度 25 → 出目 10 → 追加ロールで 2 以上'],
-        ['aimed', 80, '距離 80m の難易度 30 → 出目 成功しない'],
+        ['ranged', 30, '30m（距離帯 26〜50m） → 難易度 25 → 出目 10 → 追加ロールで 2 以上'],
+        ['aimed', 80, '80m（距離帯 51〜100m） → 難易度 30 → 出目 成功しない'],
       ] as const) {
         const line = await (await app.request(`/api/combats/${combat.id}/line`, {
           method: 'POST',
@@ -1760,6 +1766,62 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       const pdev = registerDevice({ role: 'player', label: 'p', characterId: pcId1 });
       const mine = await (await app.request('/api/combats/current/my-lines?weapon_entry_id=e1', { headers: { Authorization: `Bearer ${pdev.token}` } })).json();
       expect(mine.lines.ranged.bands[0]).toEqual({ range: '0〜6m', dv: 13, needed: '2 以上で成功' });
+    });
+  });
+
+  describe('Phase 6f: suppressive fire and ranged modifiers', () => {
+    const H = () => ({ ...authGm, 'Content-Type': 'application/json' });
+    it('uses the same high-quality and smartgun modifiers in the preview and resolved attack', async () => {
+      const smartId = 'smartgun-upgrade-test';
+      db.insert(items).values({ id: smartId, kind: 'upgrade', name_en: 'Smartgun Link', name_ja: 'スマートガン・リンク', raw_system: JSON.stringify({ type: 'weapon' }), origin: 'official_verified', verify_status: 'official_verified', created_at: Date.now(), updated_at: Date.now() }).run();
+      const row = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+      const inventory = JSON.parse(row.inventory);
+      inventory[0] = { ...inventory[0], quality: 'excellent', attachments: ['smart-link'] };
+      inventory.push({ entry_id: 'smart-link', item_id: smartId, name: 'スマートガン・リンク', kind: 'upgrade', qty: 1 });
+      db.update(characters).set({ inventory: JSON.stringify(inventory), cyberware: JSON.stringify([{ name: 'インターフェイス・プラグ' }]) }).where(eq(characters.id, pcId1)).run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const line = await (await app.request(`/api/combats/${combat.id}/line`, { method: 'POST', headers: H(), body: JSON.stringify({ action_key: 'ranged', actor_id: viper.id, target_id: ganger.id, weapon_entry_id: 'e1', distance_m: 5 }) })).json();
+      expect(line.line.text).toContain('+ 高品質 + スマートガン');
+      expect(line.line.text).toContain('= 16');
+      const resolved = await (await app.request(`/api/combats/${combat.id}/resolve`, { method: 'POST', headers: H(), body: JSON.stringify({ action_key: 'ranged', actor_id: viper.id, target_id: ganger.id, weapon_entry_id: 'e1', distance_m: 5, attack_roll: { first: 5 }, damage_dice: [1,1,1] }) })).json();
+      expect(resolved.result.formula).toContain('+1（高品質） +1（スマートガン）');
+      expect(resolved.result.formula).toContain('= 21');
+    });
+
+    it('removes the suppression state on movement and restores it with undo', async () => {
+      const combat = await createTestCombat();
+      const target = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      sqlite.prepare('UPDATE combat_participants SET state = ? WHERE id = ?').run(JSON.stringify({ suppressive_move_to_cover: { source_id: 'test' } }), target.id);
+      const move = await app.request(`/api/combats/${combat.id}/apply`, { method: 'POST', headers: H(), body: JSON.stringify({ action_key: 'move', actor_id: target.id }) });
+      expect(move.status).toBe(200);
+      expect(JSON.parse(db.select().from(combat_participants).where(eq(combat_participants.id, target.id)).get()!.state)).not.toHaveProperty('suppressive_move_to_cover');
+      const undone = await app.request(`/api/combats/${combat.id}/undo`, { method: 'POST', headers: authGm });
+      expect(undone.status).toBe(200);
+      expect(JSON.parse(db.select().from(combat_participants).where(eq(combat_participants.id, target.id)).get()!.state)).toHaveProperty('suppressive_move_to_cover');
+    });
+
+    it('marks a low-quality weapon as malfunctioned on a fumble and repairs it without a roll', async () => {
+      const row = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
+      const inventory = JSON.parse(row.inventory);
+      inventory.find((entry: any) => entry.entry_id === 'e1').quality = 'poor';
+      db.update(characters).set({ inventory: JSON.stringify(inventory) }).where(eq(characters.id, pcId1)).run();
+      const combat = await createTestCombat();
+      const viper = combat.participants.find((p: any) => p.name === 'ヴァイパー');
+      const ganger = combat.participants.find((p: any) => p.name.startsWith('ガンガー'));
+      const shot = await app.request(`/api/combats/${combat.id}/apply`, { method: 'POST', headers: H(), body: JSON.stringify({ action_key:'ranged', actor_id:viper.id, target_id:ganger.id, weapon_entry_id:'e1', distance_m:5, attack_roll:{first:1,extra:10} }) });
+      expect(shot.status).toBe(200);
+      expect(JSON.parse(db.select().from(characters).where(eq(characters.id, pcId1)).get()!.inventory).find((entry: any) => entry.entry_id === 'e1').malfunctioned).toBe(true);
+      sqlite.prepare('UPDATE combat_participants SET action_used = 0 WHERE id = ?').run(viper.id);
+      const blocked = await (await app.request(`/api/combats/${combat.id}/resolve`, {method:'POST',headers:H(),body:JSON.stringify({action_key:'ranged',actor_id:viper.id,target_id:ganger.id,weapon_entry_id:'e1',distance_m:5,attack_roll:{first:5}})})).json();
+      expect(blocked.result.formula).toContain('動作不良');
+      const repair = await app.request(`/api/combats/${combat.id}/apply`, { method:'POST', headers:H(), body:JSON.stringify({action_key:'repair_weapon',actor_id:viper.id,weapon_entry_id:'e1'}) });
+      expect(repair.status).toBe(200);
+      const fixed = JSON.parse(db.select().from(characters).where(eq(characters.id, pcId1)).get()!.inventory).find((entry: any) => entry.entry_id === 'e1');
+      expect(fixed.malfunctioned).toBe(false);
+      sqlite.prepare('UPDATE combat_participants SET action_used = 0 WHERE id = ?').run(viper.id);
+      expect((await (await app.request(`/api/combats/${combat.id}/resolve`, {method:'POST',headers:H(),body:JSON.stringify({action_key:'ranged',actor_id:viper.id,target_id:ganger.id,weapon_entry_id:'e1',distance_m:5,attack_roll:{first:5},damage_dice:[1,1,1]})})).json()).result.success).toBe(true);
     });
   });
 });

@@ -234,6 +234,8 @@ export interface InventoryEntry {
   ignore_armor_percent?: number | null;
   notes?: string;
   quality?: string;
+  attachments?: string[];
+  malfunctioned?: boolean;
   damage?: string;
   armor_penalty?: number;
 }

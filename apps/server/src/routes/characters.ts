@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { eq, desc, and, notLike } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { characters, images, money_log, char_log } from '../db/schema.js';
+import { characters, images, money_log, char_log, items } from '../db/schema.js';
 import { requireAuth, requireGm } from '../auth.js';
 import { sessionManager } from '../session.js';
 import {
@@ -59,6 +59,32 @@ charactersRoutes.get('/me', requireAuth, async (c) => {
     sheet: role === 'gm' ? sheet : maskAmmoForPlayer(sheet),
     logs,
   });
+});
+
+/** Players may only change attachment IDs on their own weapon inventory entries. */
+charactersRoutes.patch('/me/weapon-attachments', requireAuth, async (c) => {
+  const characterId = c.get('characterId');
+  if (!characterId || c.get('role') !== 'player') return c.json({ error: 'Player character required' }, 403);
+  const body = await c.req.json();
+  if (typeof body?.weapon_entry_id !== 'string' || !Array.isArray(body.attachments) || !body.attachments.every((id: unknown) => typeof id === 'string')) return c.json({ error: 'Invalid attachment update' }, 400);
+  const row = db.select().from(characters).where(eq(characters.id, characterId)).get();
+  if (!row) return c.json({ error: 'Character not found' }, 404);
+  const inventory = JSON.parse(row.inventory || '[]') as Array<Record<string, any>>;
+  const weapon = inventory.find((entry) => entry.entry_id === body.weapon_entry_id && entry.kind === 'weapon');
+  if (!weapon) return c.json({ error: 'Weapon not found' }, 400);
+  const requested = [...new Set(body.attachments as string[])];
+  for (const id of requested) {
+    const upgrade = inventory.find((entry) => entry.entry_id === id && entry.kind === 'upgrade');
+    const item = upgrade?.item_id ? db.select().from(items).where(eq(items.id, upgrade.item_id)).get() : undefined;
+    let raw: Record<string, unknown> = {};
+    try { raw = JSON.parse(item?.raw_system ?? '{}') as Record<string, unknown>; } catch { /* invalid item metadata */ }
+    if (!upgrade || item?.kind !== 'upgrade' || raw.type !== 'weapon') return c.json({ error: 'Attachment must be an owned weapon upgrade' }, 400);
+  }
+  const next = inventory.map((entry) => entry.entry_id === weapon.entry_id ? { ...entry, attachments: requested } : entry);
+  db.update(characters).set({ inventory: JSON.stringify(next), updated_at: Date.now() }).where(eq(characters.id, characterId)).run();
+  triggerAutoSave();
+  sessionManager.updateCharacterSheet(characterId);
+  return c.json({ ok: true });
 });
 
 /**

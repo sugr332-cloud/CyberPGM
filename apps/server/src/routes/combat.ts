@@ -244,6 +244,19 @@ combatRoutes.get('/combat-actions', async (c) => {
 });
 
 /**
+ * POST /api/combats/:id/suppressive-resistance-request: ask one player's phone for its 1d10.
+ */
+combatRoutes.post('/combats/:id/suppressive-resistance-request', requireGm, async (c) => {
+  const combat = getHydratedCombat(c.req.param('id')!);
+  if (!combat) return c.json({ error: 'Combat not found' }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const target = combat.participants.find((p) => p.id === body.participant_id && p.character_id);
+  if (!target?.character_id) return c.json({ error: 'Player target not found' }, 400);
+  sessionManager.sendToCharacter(target.character_id, { type: 'combat:choose', payload: { action_key: 'suppressive_resistance', participant_id: target.id } });
+  return c.json({ ok: true });
+});
+
+/**
  * POST /api/combats/:id/line（GM）: 出目を入れる前の計算式と成功ライン（Phase 5n）
  */
 combatRoutes.post('/combats/:id/line', requireGm, async (c) => {
@@ -266,6 +279,7 @@ combatRoutes.get('/combats/current/my-lines', async (c) => {
   if (!combat || !me) return c.json({ lines: {} });
   const weapon_entry_id = c.req.query('weapon_entry_id') || undefined;
   const targetId = c.req.query('target_id');
+  const luckSpent = Math.max(0, Math.min(10, Number(c.req.query('luck_spent')) || 0));
   const target = targetId ? combat.participants.find((p) => p.id === targetId) : undefined;
   if (!charId) return c.json({ lines: {} });
   let distance_m: number | undefined;
@@ -280,8 +294,8 @@ combatRoutes.get('/combats/current/my-lines', async (c) => {
     }
   }
   const lines: Record<string, unknown> = {};
-  for (const key of ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts']) {
-    lines[key] = attackLine({ action_key: key, weapon_entry_id, distance_m }, me, target);
+  for (const key of ['ranged', 'aimed', 'autofire', 'suppressive', 'melee', 'brawl', 'martial_arts']) {
+    lines[key] = attackLine({ action_key: key, weapon_entry_id, distance_m, luck_spent: luckSpent }, me, target);
   }
   return c.json({ lines });
 });
