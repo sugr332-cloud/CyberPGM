@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { findReachableSquares } from '@cyberpgm/rules';
 import { api } from '../api.js';
 import { BoardView } from './BoardView.js';
+import type { Combat } from '@cyberpgm/shared';
 
 type MapData = Awaited<ReturnType<typeof api.getPlayerCombatMap>>;
 
@@ -18,11 +19,14 @@ export interface PlayerMoveResult {
 export const PlayerMoveMap: React.FC<{
   token: string;
   actionKey: 'move' | 'run';
+  combat?: Combat | null;
+  activeParticipantId?: string | null;
+  selectedWeaponEntryId?: string | null;
   refreshKey: unknown;
   result: PlayerMoveResult | null;
   onSend: (dest: { x: number; y: number }) => void;
   onClose: () => void;
-}> = ({ token, actionKey, refreshKey, result, onSend, onClose }) => {
+}> = ({ token, actionKey, combat, activeParticipantId, selectedWeaponEntryId, refreshKey, result, onSend, onClose }) => {
   const [data, setData] = useState<MapData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sent, setSent] = useState<{ x: number; y: number } | null>(null);
@@ -111,6 +115,9 @@ export const PlayerMoveMap: React.FC<{
             objects={board.objects ?? []}
             tokens={board.tokens ?? []}
             drops={board.drops ?? []}
+            combat={combat}
+            activeParticipantId={activeParticipantId}
+            selectedWeaponEntryId={selectedWeaponEntryId}
             mode="move"
             reachableCells={reachableCells}
             destination={shown}

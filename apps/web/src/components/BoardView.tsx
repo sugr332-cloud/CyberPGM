@@ -11,6 +11,7 @@ import {
 import { woundState, LosStatus } from '@cyberpgm/rules';
 import { BoardSettingsPanel } from './BoardSettingsPanel.js';
 import { api, getGmToken } from '../api.js';
+import { createRangeRings } from '../utils/range-rings.js';
 
 export interface BoardViewProps {
   board: Board;
@@ -19,6 +20,7 @@ export interface BoardViewProps {
   drops?: BoardDrop[];
   combat?: Combat | null;
   activeParticipantId?: string | null;
+  selectedWeaponEntryId?: string | null;
   targetParticipantId?: string | null;
   focusedParticipantId?: string | null;
   mode?: 'view' | 'move' | 'attack' | 'pickup' | 'setup';
@@ -59,6 +61,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   drops = [],
   combat,
   activeParticipantId,
+  selectedWeaponEntryId,
   targetParticipantId,
   focusedParticipantId,
   mode = 'view',
@@ -98,6 +101,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   }, [board.grid]);
 
   const [showGrid, setShowGrid] = useState<boolean>(grid.show ?? true);
+  const [showRangeRings, setShowRangeRings] = useState(true);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [draggingTokenId, setDraggingTokenId] = useState<string | null>(null);
   const [draggingObjectId, setDraggingObjectId] = useState<string | null>(null);
@@ -176,6 +180,57 @@ export const BoardView: React.FC<BoardViewProps> = ({
   const cellPx = grid.cell_px || 40;
   const boardWidth = cols * cellPx;
   const boardHeight = rows * cellPx;
+
+  const activeParticipant = combat?.participants.find((part) => part.id === activeParticipantId);
+  const activeToken = activeParticipant?.character_id
+    ? tokens.find((token) => token.character_id === activeParticipant.character_id)
+    : undefined;
+  const activeInventory = (activeParticipant?.character?.inventory ?? []) as Array<{
+    entry_id: string; kind?: string; is_ranged?: boolean; dv_table?: import('@cyberpgm/shared').DvTable | null;
+  }>;
+  const rangedWeapons = activeInventory.filter((entry) => entry.kind === 'weapon' && entry.is_ranged !== false);
+  const rangeWeapon = selectedWeaponEntryId
+    ? rangedWeapons.find((entry) => entry.entry_id === selectedWeaponEntryId)
+    : isScreen ? rangedWeapons[0] : undefined;
+  const rangeRings = combat?.status === 'active' && activeToken
+    ? createRangeRings(
+        rangeWeapon?.dv_table,
+        grid.cell_m || 2,
+        (activeParticipant?.character?.stats?.move ?? 6) * 2,
+      )
+    : [];
+  const ringLabelFontSize = Math.min(18, Math.max(12, cellPx * 0.2));
+  const ringLabelWidth = Math.min(
+    boardWidth - 12,
+    Math.max(72, ...rangeRings.map((ring) => ring.label.length * ringLabelFontSize * 0.95)),
+  );
+  const ringLabelHeight = rangeRings.length * (ringLabelFontSize + 4);
+  const ringLabelOrigin = [
+    { x: 6, y: 6 },
+    { x: Math.max(6, boardWidth - ringLabelWidth - 6), y: 6 },
+    { x: 6, y: Math.max(6, boardHeight - ringLabelHeight - 6) },
+    { x: Math.max(6, boardWidth - ringLabelWidth - 6), y: Math.max(6, boardHeight - ringLabelHeight - 6) },
+  ].sort((a, b) => {
+    const obstructionCount = (x: number, y: number) => {
+      const hitsTokens = tokens.filter((token) => {
+        if (isScreen && token.gm_only) return false;
+        if (isScreen && combat) {
+          const participant = combat.participants.find((part) => part.character_id === token.character_id || part.id === token.character_id);
+          const status = (participant?.character?.status as string[] | undefined) ?? [];
+          if (participant?.side === 'enemy' && status.includes('隠れている')) return false;
+        }
+        const tx = (token.x + 0.5) * cellPx;
+        const ty = (token.y + 0.5) * cellPx;
+        return x < tx + cellPx && x + ringLabelWidth > tx - cellPx && y < ty + cellPx && y + ringLabelHeight > ty - cellPx;
+      }).length;
+      const hitsObjects = objects.filter((obj) =>
+        x < (obj.x + obj.w) * cellPx && x + ringLabelWidth > obj.x * cellPx &&
+        y < (obj.y + obj.h) * cellPx && y + ringLabelHeight > obj.y * cellPx,
+      ).length;
+      return hitsTokens + hitsObjects;
+    };
+    return obstructionCount(a.x, a.y) - obstructionCount(b.x, b.y);
+  })[0];
 
   // Filter tokens and objects for screen view
   const visibleTokens = useMemo(() => {
@@ -497,6 +552,12 @@ export const BoardView: React.FC<BoardViewProps> = ({
               />
               <span>グリッド表示</span>
             </label>
+            {isGm && combat?.status === 'active' && (
+              <label data-testid="range-rings-toggle" style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
+                <input type="checkbox" checked={showRangeRings} onChange={(e) => setShowRangeRings(e.target.checked)} />
+                <span>距離の円</span>
+              </label>
+            )}
             {isGm && onUpdateBoard && (
               <button
                 type="button"
@@ -1412,6 +1473,26 @@ export const BoardView: React.FC<BoardViewProps> = ({
           })()}
 
           {/* Fog of War Layer */}
+          {rangeRings.length > 0 && (isScreen || !isGm || showRangeRings) && activeToken && (
+            <g data-testid="range-rings" pointerEvents="none">
+              {rangeRings.map((ring, index) => {
+                const cx = (activeToken.x + 0.5) * cellPx;
+                const cy = (activeToken.y + 0.5) * cellPx;
+                const radius = ring.radiusSquares * cellPx;
+                const colors = ['var(--color-ally)', 'var(--color-accent)', 'var(--color-warning)', 'var(--color-enemy)'];
+                const fontSize = ringLabelFontSize;
+                const labelY = ringLabelOrigin.y + index * (fontSize + 4);
+                return (
+                  <g key={`${ring.meters}-${index}`} data-range-meters={ring.meters}>
+                    <circle cx={cx} cy={cy} r={radius} fill="none" stroke={colors[index % colors.length]} strokeWidth={Math.max(0.8, cellPx * 0.025)} strokeDasharray={`${Math.max(3, cellPx * 0.14)} ${Math.max(2, cellPx * 0.1)}`} opacity={0.72} />
+                    <rect x={ringLabelOrigin.x} y={labelY} width={ringLabelWidth} height={fontSize + 4} rx={3} fill="var(--color-surface)" opacity={0.92} />
+                    <text x={ringLabelOrigin.x + 6} y={labelY + fontSize} fill={colors[index % colors.length]} fontSize={fontSize} fontWeight={700}>{ring.label}</text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
+
           <g className="fog-layer">
             {fogCells.map((f, i) => (
               <rect

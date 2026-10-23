@@ -1,12 +1,13 @@
 import { test, expect, type Page } from '@playwright/test';
 import { createDb } from '../apps/server/src/db/client.js';
-import { characters, boards, board_tokens, items, weapons } from '../apps/server/src/db/schema.js';
+import { characters, boards, board_tokens, items, weapons, rule_constants } from '../apps/server/src/db/schema.js';
 import { joinAsPlayer } from './join.js';
 
 const ids = ['flow-pc1', 'flow-pc2', 'flow-npc'];
 const names = ['進行PC1', '進行PC2', '進行NPC'];
 const boardId = 'flow-board';
 const weaponId = 'flow-weapon';
+const secondWeaponId = 'flow-second-weapon';
 
 async function moveTo(page: Page, x: number, y: number) {
   await page.getByTestId('action-btn-move').click();
@@ -35,15 +36,28 @@ test('combat flow: GM and mobile attacks, HP, automatic/manual turns, rounds, un
     sqlite.prepare('DELETE FROM boards WHERE id = ?').run(boardId);
     for (const id of ids) sqlite.prepare('DELETE FROM characters WHERE id = ?').run(id);
     sqlite.prepare('DELETE FROM items WHERE id = ?').run(weaponId);
+    sqlite.prepare('DELETE FROM items WHERE id = ?').run(secondWeaponId);
+    sqlite.prepare("DELETE FROM rule_constants WHERE key IN ('dv_table.Flow Test Pistol', 'dv_table.Flow Test Rifle')").run();
     const now = Date.now();
     // 自作の試験武器。カタログの名前やダメージ式に依存しない。
     db.insert(items).values({ id: weaponId, kind: 'weapon', name_en: 'Flow Test Pistol', name_ja: '進行試験銃', origin: 'homebrew', verify_status: 'homebrew', created_at: now, updated_at: now }).run();
-    db.insert(weapons).values({ item_id: weaponId, weapon_type: 'heavyPistol', skill: 'Handgun', damage: '2d6', rof: 1, magazine_max: 8, dv_table_key: 'DV Pistol', is_ranged: true }).run();
+    db.insert(items).values({ id: secondWeaponId, kind: 'weapon', name_en: 'Flow Test Rifle', name_ja: '進行試験ライフル', origin: 'homebrew', verify_status: 'homebrew', created_at: now, updated_at: now }).run();
+    db.insert(weapons).values([
+      { item_id: weaponId, weapon_type: 'heavyPistol', skill: 'Handgun', damage: '2d6', rof: 1, magazine_max: 8, dv_table_key: 'Flow Test Pistol', is_ranged: true },
+      { item_id: secondWeaponId, weapon_type: 'assaultRifle', skill: 'Shoulder Arms', damage: '2d6', rof: 1, magazine_max: 8, dv_table_key: 'Flow Test Rifle', is_ranged: true },
+    ] as any).run();
+    db.insert(rule_constants).values([
+      { key: 'dv_table.Flow Test Pistol', value: JSON.stringify([{ range: [0, 6], dv: 13 }, { range: [7, 12], dv: 15 }, { range: [13, 25], dv: 20 }]) },
+      { key: 'dv_table.Flow Test Rifle', value: JSON.stringify([{ range: [0, 4], dv: 11 }, { range: [5, 10], dv: 14 }, { range: [11, 30], dv: 19 }]) },
+    ]).run();
     db.insert(characters).values(ids.map((id, i) => ({
       id, kind: i === 2 ? 'npc' : 'pc', name: names[i], role: '',
       stats: JSON.stringify({ int: 6, ref: i === 2 ? 2 : 8, dex: 6, tech: 6, cool: 6, will: 6, luck: 6, move: 6, body: 6, emp: 6 }),
       skills: JSON.stringify({ handgun: 6, evasion: 0 }), hp: 40, hp_max: 40, sp_head: 0, sp_body: 0, humanity: 60, emp_max: 6,
-      inventory: JSON.stringify([{ entry_id: `gun-${id}`, item_id: weaponId, kind: 'weapon', name: '進行試験銃', qty: 1, equipped: true, ammo: 8 }]),
+      inventory: JSON.stringify([
+        { entry_id: `gun-${id}`, item_id: weaponId, kind: 'weapon', name: '進行試験銃', qty: 1, equipped: true, ammo: 8 },
+        ...(i === 0 ? [{ entry_id: `rifle-${id}`, item_id: secondWeaponId, kind: 'weapon', name: '進行試験ライフル', qty: 1, equipped: true, ammo: 8 }] : []),
+      ]),
       created_at: now, updated_at: now,
     }))).run();
     db.insert(boards).values({ id: boardId, name: '戦闘進行の試験盤面', grid: JSON.stringify({ show: true, cell_m: 2, cell_px: 80, origin_x: 0, origin_y: 0, cols: 6, rows: 4 }), created_at: now, updated_at: now }).run();
@@ -111,6 +125,27 @@ test('combat flow: GM and mobile attacks, HP, automatic/manual turns, rounds, un
     };
     await turn(0, 1);
 
+    await gm.getByTestId('action-btn-ranged').click();
+    await expect(gm.getByTestId('range-rings')).toBeVisible();
+    await expect(gm.getByTestId('range-rings').locator('g[data-range-meters]')).toHaveCount(3);
+    const rangeToggle = gm.getByTestId('range-rings-toggle').getByRole('checkbox');
+    await rangeToggle.uncheck();
+    await expect(gm.getByTestId('range-rings')).toHaveCount(0);
+    await rangeToggle.check();
+    await gm.locator('select').filter({ hasText: '進行試験銃' }).selectOption(`rifle-${ids[0]}`);
+    const gmRangeCircle = gm.getByTestId('range-rings').locator('[data-range-meters="4"] circle');
+    await expect(gmRangeCircle).toBeVisible();
+    await expect(gmRangeCircle).toHaveAttribute('cx', '120');
+    await expect(gmRangeCircle).toHaveAttribute('cy', '120');
+    await gm.screenshot({ path: 'docs/agy/reports/img/phase6g-range-rings-gm-1440.png', fullPage: true });
+
+    await phone.getByTestId('attack-weapon').filter({ hasText: '進行試験ライフル' }).click();
+    await phone.getByTestId('player-action-move').click();
+    await expect(phone.getByTestId('range-rings').locator('[data-range-meters="4"]')).toBeVisible();
+    await expect(phone.getByTestId('range-rings').locator('g[data-range-meters]')).toHaveCount(3);
+    await phone.screenshot({ path: 'docs/agy/reports/img/phase6g-range-rings-mobile-390.png', fullPage: true });
+    await phone.getByRole('button', { name: '閉じる', exact: true }).click();
+
     // GM が攻撃の出目とダメージを入力。計算だけでは HP は変化しない。
     await gm.getByTestId('action-btn-ranged').click();
     await expect(gm.locator('select').filter({ hasText: '進行試験銃' }).locator('option:checked')).toContainText('2d6');
@@ -134,6 +169,10 @@ test('combat flow: GM and mobile attacks, HP, automatic/manual turns, rounds, un
     // NPC がPC1を撃つ。GMカード・盤面・TV・スマホシートの4か所を再読み込みなしで照合。
     const screen = await gmContext.newPage();
     await screen.goto(`/screen?code=${health.session}`);
+    const tvNearRing = screen.getByTestId('range-rings').locator('[data-range-meters="6"] circle');
+    await expect(tvNearRing).toHaveAttribute('cx', '280');
+    await expect(tvNearRing).toHaveAttribute('cy', '120');
+    await screen.screenshot({ path: 'docs/agy/reports/img/phase6g-range-rings-tv.png', fullPage: true });
     const checkPcBars = async (value: number) => {
       await expect(gm.getByTestId(`gm-hp-${ids[0]}`)).toHaveAttribute('aria-valuenow', String(value));
       await expect(gm.getByTestId(`board-hp-${ids[0]}`)).toHaveAttribute('aria-valuenow', String(value));
@@ -186,8 +225,8 @@ test('combat flow: GM and mobile attacks, HP, automatic/manual turns, rounds, un
     await moveTo(gm, 1, 1);
     await turn(0, 2);
     await phone.getByTestId('attack-target').filter({ hasText: names[2] }).click();
-    await phone.getByTestId('attack-weapon').click();
-    await expect(phone.getByTestId('attack-weapon')).toContainText('ダメージ 2d6');
+    await phone.getByTestId('attack-weapon').first().click();
+    await expect(phone.getByTestId('attack-weapon').first()).toContainText('ダメージ 2d6');
     await phone.getByTestId('player-action-ranged').click();
     await phone.getByRole('button', { name: '8', exact: true }).click();
     await phone.getByRole('button', { name: 'GM に出目を送信', exact: true }).click();
@@ -232,6 +271,8 @@ test('combat flow: GM and mobile attacks, HP, automatic/manual turns, rounds, un
     sqlite.prepare('DELETE FROM boards WHERE id = ?').run(boardId);
     for (const id of ids) sqlite.prepare('DELETE FROM characters WHERE id = ?').run(id);
     sqlite.prepare('DELETE FROM items WHERE id = ?').run(weaponId);
+    sqlite.prepare('DELETE FROM items WHERE id = ?').run(secondWeaponId);
+    sqlite.prepare("DELETE FROM rule_constants WHERE key IN ('dv_table.Flow Test Pistol', 'dv_table.Flow Test Rifle')").run();
     sqlite.close();
   }
 });

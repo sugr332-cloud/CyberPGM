@@ -2275,6 +2275,9 @@ export const PlayerPage: React.FC = () => {
                       <PlayerMoveMap
                         token={token}
                         actionKey={moveMapAction}
+                        combat={currentCombat}
+                        activeParticipantId={activePart.id}
+                        selectedWeaponEntryId={weaponId}
                         refreshKey={currentCombat}
                         result={moveResult}
                         onSend={(dest) => sendMessage({ type: 'combat:move', payload: { action_key: moveMapAction, x: dest.x, y: dest.y } })}
