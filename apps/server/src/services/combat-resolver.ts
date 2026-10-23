@@ -30,6 +30,7 @@ import {
   generateUlid,
   MARTIAL_TECHNIQUES,
   martialArtsDice,
+  brawlingDamageDice,
   splitSkillKey,
   formatSkillName,
   HAZARDS,
@@ -205,11 +206,6 @@ export function grapplePenalty(status: string[] | null | undefined): number {
 export const GRAPPLED = 'つかみ';
 export const NO_BULLET_DODGE = '弾丸を回避できない';
 export const PRONE = '伏せ';
-
-/** サイバーアーム本体か（カヴァーリングなどの付属品は含めない） */
-function isCyberarm(c: { name?: string }): boolean {
-  return /^(medical grade )?cyberarm$/i.test((c.name ?? '').trim()) || /^(医療用)?サイバーアーム$/.test((c.name ?? '').trim());
-}
 
 /**
  * ダメージの出目の数が武器のダメージ（3d6 なら 3 個）と合っているか（Phase 5m）。合わなければ理由を返す
@@ -2757,8 +2753,7 @@ function resolveCombatActionInner(
     // 格闘は武器なし: 技能は格闘、ROF 2、ダメージは BODY で決まる（4 以下 1d6、5〜6 2d6、7〜10 3d6、11 以上 4d6）、防具は普通に効く
     // サイバーアームで殴るときは最低 2d6（日本語版 p.176）
     const body = actorChar.stats.body;
-    const hasCyberarm = (actorChar.cyberware ?? []).some((c) => isCyberarm(c));
-    const brawlDice = Math.max(body <= 4 ? 1 : body <= 6 ? 2 : body <= 10 ? 3 : 4, hasCyberarm ? 2 : 0);
+    const brawlDice = brawlingDamageDice(body, actorChar.cyberware);
     const wData = isMartial
       ? martialStyle
         ? { skill: martialStyle.key, damage: `${martialArtsDice(body)}d6`, ignore_armor_percent: 50, rof: 2 }

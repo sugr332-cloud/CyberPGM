@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   CharacterSheet,
+  combatDamageFormula,
   CharLogEntry,
   WsNotifyPayload,
   formatSkillName,
@@ -2199,7 +2200,7 @@ export const PlayerPage: React.FC = () => {
                               style={chip(w.entry_id === weaponId, 'var(--color-ally)')}
                             >
                               {w.name}
-                              {w.damage && `（ダメージ ${w.damage}）`}
+                              {`（ダメージ ${combatDamageFormula('ranged', sheet, w) ?? '不明'}）`}
                               {typeof w.ammo === 'number' && ` (残弾 ${w.ammo})`}
                             </button>
                           ))}
