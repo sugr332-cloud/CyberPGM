@@ -399,18 +399,18 @@ test('Phase 6a E2E (C): player moves own token on the phone map, GM sees the des
     { id: 'part-ganger-6c', combat_id: 'combat-6c', character_id: 'char-ganger-6c', side: 'enemy', name: 'ガンガー6c', initiative: 10, order_index: 1, active: true, out: false, move_used: false, action_used: false, state: '{}' },
   ] as any).run();
 
-  // GM: 弾 0 の射撃はグレーで、押すと理由が出る
+  // GM: 弾 0 の射撃は無効で、理由がボタン内に出る
   const gmContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const gmPage = await gmContext.newPage();
   await gmPage.goto('/gm');
   await gmPage.getByRole('button', { name: '戦闘' }).click();
   const gmShoot = gmPage.getByTestId('action-btn-ranged');
   await expect(gmShoot).toHaveAttribute('aria-disabled', 'true');
-  await gmShoot.click({ force: true }); // aria-disabled は Playwright では押せない扱いなので force
-  await expect(gmPage.getByTestId('action-blocked-message')).toContainText('「射撃」はできません: 弾切れです');
+  await expect(gmShoot).toBeDisabled();
+  await expect(gmShoot.getByTestId('action-disabled-reason')).toContainText('弾切れです');
   await expect(gmPage.getByTestId('action-btn-move')).not.toHaveAttribute('aria-disabled', 'true');
 
-  // プレイヤー: 同じく射撃はグレー、押すと理由
+  // プレイヤー: 同じ理由をボタン内に表示する
   const sessionCode = (await (await gmPage.request.get('/api/health')).json()).session;
   const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   const phone = await phoneContext.newPage();
@@ -418,9 +418,9 @@ test('Phase 6a E2E (C): player moves own token on the phone map, GM sees the des
   await phone.getByRole('button', { name: '行動' }).click();
   const phoneShoot = phone.getByTestId('player-action-ranged');
   await expect(phoneShoot).toHaveAttribute('aria-disabled', 'true');
-  await phoneShoot.click({ force: true });
-  await expect(phone.getByTestId('player-action-blocked')).toContainText('「射撃」はできません: 弾切れです');
-  await phone.getByTestId('player-action-blocked').scrollIntoViewIfNeeded();
+  await expect(phoneShoot).toBeDisabled();
+  await expect(phoneShoot.getByTestId('action-disabled-reason')).toContainText('弾切れです');
+  await phoneShoot.scrollIntoViewIfNeeded();
   await phone.screenshot({ path: 'docs/agy/reports/img/phase6a-player-blocked-390.png' });
 
   // プレイヤー: 「移動」でマップが出る。自分のコマを緑のマスへドラッグすると、GM の移動先に入る
@@ -478,10 +478,10 @@ test('Phase 6a E2E (C): player moves own token on the phone map, GM sees the des
     })
     .toBe('3,2');
 
-  // 移動したあとは「移動」もグレーになり、押すと理由が出る
+  // 移動したあとは「移動」も無効になり、同じ理由が表示される
   await expect(phone.getByTestId('player-action-move')).toHaveAttribute('aria-disabled', 'true');
-  await phone.getByTestId('player-action-move').click({ force: true });
-  await expect(phone.getByTestId('player-action-blocked')).toContainText('「移動」はできません: 移動アクションは使用済みです');
+  await expect(phone.getByTestId('player-action-move')).toBeDisabled();
+  await expect(phone.getByTestId('player-action-move').getByTestId('action-disabled-reason')).toContainText('移動アクションは使用済みです');
 
   await phoneContext.close();
   await gmContext.close();

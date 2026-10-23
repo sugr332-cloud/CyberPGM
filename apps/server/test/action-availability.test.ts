@@ -4,6 +4,7 @@ import { db, sqlite } from '../src/db/client.js';
 import { characters, items, weapons, boards, board_tokens, board_objects, combats, combat_participants } from '../src/db/schema.js';
 import { registerDevice } from '../src/auth.js';
 import { validatePlayerMove } from '../src/routes/combat.js';
+import { eq } from 'drizzle-orm';
 
 /**
  * Phase 6a: できない行動の理由（画面のグレー表示）と、スマホのマップで選んだ移動先の確認
@@ -123,6 +124,31 @@ describe('Phase 6a: action availability & player map move', () => {
     const off = await availability(PL);
     expect(off.actions.move).toContain('自分の手番ではありません');
     expect(off.actions.dodge).toBeNull();
+  });
+
+  it('blocks untrained martial arts with the same availability and resolver reason, while first aid remains available at skill 0', async () => {
+    const noStyle = await availability(GM);
+    const denied = await resolve({ action_key: 'martial_arts', actor_id: 'p-a', target_id: 'p-b' });
+    const reason = '〈武術〉を 1 レベル以上修得していないと使えません（p.178）';
+    expect(noStyle.actions.martial_arts).toBe(reason);
+    expect(noStyle.actions.martial_technique).toBe(reason);
+    expect(denied.missing_inputs).toContain(reason);
+
+    db.update(characters).set({ skills: JSON.stringify({ handgun: 4, evasion: 2, 'martial_arts:karate': 1 }) }).where(eq(characters.id, 'pc-a')).run();
+    const trained = await availability(GM);
+    expect(trained.actions.martial_arts).toBeNull();
+    const permitted = await resolve({ action_key: 'martial_arts', actor_id: 'p-a', target_id: 'p-b' });
+    expect(permitted.missing_inputs ?? []).not.toContain(reason);
+    expect(permitted.missing_fields).toContainEqual({ field: 'attack_roll', attack_index: 0 });
+
+    expect(trained.actions.first_aid).toBeNull();
+  });
+
+  it('returns stable missing field identifiers for death save and first aid rolls', async () => {
+    const death = await resolve({ action_key: 'death_save', actor_id: 'p-a' });
+    expect(death.missing_fields).toContainEqual({ field: 'death_save_roll', attack_index: 0 });
+    const aid = await resolve({ action_key: 'first_aid', actor_id: 'p-a', target_id: 'p-b' });
+    expect(aid.missing_fields).toContainEqual({ field: 'attack_roll', attack_index: 0 });
   });
 
   it('validates a destination chosen on the phone map', async () => {

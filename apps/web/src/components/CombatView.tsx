@@ -28,6 +28,9 @@ import {
   NET_PROGRAMS,
   BLACK_ICE_CATALOG,
   netActionsForRank,
+  combatActionInputs,
+  VEHICLE_ACTIONS,
+  isVehicleAction,
 } from '@cyberpgm/shared';
 import {
   initiativeTotal,
@@ -45,6 +48,7 @@ import { findTokenPlacement, tokenPlacementError } from '../utils/board-placemen
 import { ItemDetailPopup } from './ItemDetail.js';
 import { JoinCombatDialog } from './JoinCombatDialog.js';
 import { useActionAvailability, blockedButtonStyle } from '../hooks/useActionAvailability.js';
+import { ActionButton } from './ActionButton.js';
 
 interface CombatViewProps {
   characters: CharacterSheet[];
@@ -137,6 +141,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
   // Active Combat: Turn Guide State
   const [selectedActionKey, setSelectedActionKey] = useState<string | null>(null);
+  const [showVehicleActions, setShowVehicleActions] = useState(false);
   const [targetParticipantId, setTargetParticipantId] = useState<string | null>(null);
   // 距離は盤面から自動で入るか、GM が入れる（決め打ちの値を置かない。4a §11.1）
   const [distanceM, setDistanceM] = useState<number | null>(null);
@@ -246,10 +251,13 @@ export const CombatView: React.FC<CombatViewProps> = ({
   // Resolution preview
   const [previewResult, setPreviewResult] = useState<any | null>(null);
   // 足りない入力を赤枠で示す（Phase 5s）。second は ROF 2 の 2 回目の攻撃の欄
-  const missingMsgs: string[] = previewResult?.missing_inputs ?? [];
-  const isMissing = (second: boolean, ...keys: string[]) =>
-    missingMsgs.some((m) => /^(\[#2\]|第2攻撃)/.test(m) === second && keys.some((k) => m.includes(k)));
-  const missBorder = (miss: boolean) => (miss ? '2px solid var(--color-danger)' : '1px solid var(--color-border-light)');
+  const missingFields: Array<{ field: string; attack_index?: number }> = previewResult?.missing_fields ?? [];
+  const isMissing = (second: boolean, ...fields: string[]) => missingFields.some((m) => (m.attack_index ?? 0) === (second ? 1 : 0) && fields.includes(m.field));
+  const missBorder = (miss: boolean) => (miss ? '2px solid var(--color-warning)' : '1px solid var(--color-border-light)');
+  const actionInputSpec = combatActionInputs(selectedActionKey ?? '', selectedActionKey === 'net_action' ? netSubAction : selectedActionKey === 'hazard' ? hazardKey : undefined);
+  const hasDiceInput = (field: 'attack_roll' | 'defense_roll' | 'damage_rolls' | 'crit_roll' | 'death_save_roll') => actionInputSpec.dice.some((d) => d.field === field);
+  const targetForDefense = combat?.participants?.find((p) => p.id === targetParticipantId);
+  const showDefenseInput = hasDiceInput('defense_roll') && (!['ranged', 'aimed', 'autofire', 'throw_object'].includes(selectedActionKey ?? '') || (dodgeMode === 'dodge' && (targetForDefense?.character?.stats?.ref ?? 0) >= 8));
   const [isResolving, setIsResolving] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
 
@@ -681,7 +689,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       refreshCombat();
     } else if (wsMessage.type === 'combat:choose') {
       // Player selected an action
-      const { action_key, weapon_id, target_id, distance_m, aimed_location, destination: dest, from_player_map } = wsMessage.payload;
+      const { action_key, weapon_id, target_id, distance_m, aimed_location, destination: dest, from_player_map, vehicle_ref, target_vehicle, maneuver } = wsMessage.payload;
       if (action_key) setSelectedActionKey(action_key);
       // スマホのマップで選んだ移動先（Phase 6a）。サーバーで本人・手番・届くマスを確かめ済み。確定は GM
       if (from_player_map && dest && typeof dest.x === 'number' && typeof dest.y === 'number') {
@@ -693,6 +701,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
       if (target_id) setTargetParticipantId(target_id);
       if (distance_m) setDistanceM(distance_m);
       if (aimed_location) setAimedLocation(aimed_location);
+      if (vehicle_ref) setVehRef(JSON.stringify(vehicle_ref));
+      if (target_vehicle) setTargetVeh(JSON.stringify(target_vehicle));
+      if (maneuver) setManeuverKey(maneuver);
     } else if (wsMessage.type === 'combat:roll') {
       // Player submitted dice roll
       const { roll_type, first, extra, dice } = wsMessage.payload;
@@ -2271,22 +2282,19 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-muted)', display: 'block', marginBottom: '8px' }}>
                   行動を選択:
                 </span>
+                {showVehicleActions ? <button type="button" onClick={() => setShowVehicleActions(false)} style={{ marginBottom: 8 }}>← 戻る</button> : null}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {actions.map((act) => {
+                  {(showVehicleActions ? VEHICLE_ACTIONS : actions.filter((act) => !isVehicleAction(act.key))).map((act) => {
                     const isSelected = selectedActionKey === act.key;
                     const blocked = blockedMessage(act.key, act.label);
+                    const diceFormula = ['brawl', 'martial_arts'].includes(act.key) ? combatDamageFormula(act.key, activePart.character) : null;
                     return (
-                      <button
+                      <ActionButton
                         key={act.key}
                         data-testid={`action-btn-${act.key}`}
-                        aria-disabled={blocked ? 'true' : undefined}
-                        title={blocked ?? undefined}
+                        reason={blocked}
                         onClick={() => {
-                          // できない行動は選ばずに理由を出す（Phase 6a）
-                          if (blocked) {
-                            setBlockedActionMsg(blocked);
-                            return;
-                          }
+                          if (blocked) return;
                           setBlockedActionMsg(null);
                           setSelectedActionKey(act.key);
                           setPreviewResult(null);
@@ -2303,10 +2311,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           cursor: blocked ? 'not-allowed' : 'pointer',
                         }}
                       >
-                        {act.label}
-                      </button>
+                        {act.label}{diceFormula ? ` ${diceFormula}` : ''}
+                      </ActionButton>
                     );
                   })}
+                  {!showVehicleActions && <button data-testid="action-btn-vehicle" onClick={() => setShowVehicleActions(true)} style={{ padding: '6px 12px', borderRadius: 4, fontSize: '0.85rem' }}>車両</button>}
                 </div>
                 {blockedActionMsg && (
                   <div
@@ -3163,7 +3172,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   })()}
 
                   {/* Weapon Selection (for ranged / melee / reload / suppressive) */}
-                  {['ranged', 'aimed', 'autofire', 'suppressive', 'melee', 'reload', 'attack_vehicle'].includes(selectedActionKey) && (
+                  {actionInputSpec.selectors.includes('weapon') && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>使用する武器を選択:</span>
                       <select
@@ -3172,7 +3181,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         style={{
                           padding: '6px 10px',
                           backgroundColor: 'var(--color-bg)',
-                          border: '1px solid var(--color-border-light)',
+                          border: missBorder(isMissing(false, 'weapon')),
                           borderRadius: '4px',
                           color: 'var(--color-text)',
                           fontSize: '0.85rem',
@@ -3248,7 +3257,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   )}
 
                   {/* Target & Distance Selection (for ranged / melee / brawl) */}
-                  {['ranged', 'aimed', 'autofire', ...MELEE_LIKE, 'choke', 'throw', 'throw_object', 'first_aid', 'hazard', 'hazard_end', 'use_drug', 'vehicle_ram', 'net_ice_attack'].includes(selectedActionKey) && (
+                  {actionInputSpec.selectors.includes('target') && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{selectedActionKey === 'first_aid' ? '手当てする相手（自分も可）:' : '対象を選択:'}</span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -3261,7 +3270,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                               style={{
                                 padding: '4px 10px',
                                 borderRadius: '4px',
-                                border: targetParticipantId === p.id ? '2px solid var(--color-enemy)' : '1px solid var(--color-border-light)',
+                                border: isMissing(false, 'target') ? '2px solid var(--color-warning)' : targetParticipantId === p.id ? '2px solid var(--color-enemy)' : '1px solid var(--color-border-light)',
                                 backgroundColor: targetParticipantId === p.id ? 'rgba(242, 140, 56, 0.15)' : 'var(--color-bg)',
                                 color: 'var(--color-text)',
                                 fontSize: '0.8rem',
@@ -3274,7 +3283,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           ))}
                       </div>
 
-                      {['ranged', 'aimed', 'autofire', 'throw_object', 'attack_vehicle'].includes(selectedActionKey) && (
+                      {actionInputSpec.selectors.includes('distance') && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '0.85rem' }}>距離 (m):</span>
@@ -3287,7 +3296,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                 width: '60px',
                                 padding: '4px 6px',
                                 backgroundColor: 'var(--color-bg)',
-                                border: missBorder(isMissing(false, '距離')),
+                                border: missBorder(isMissing(false, 'distance')),
                                 borderRadius: '4px',
                                 color: 'var(--color-text)',
                               }}
@@ -3473,7 +3482,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                       )}
 
                       {/* Dodge mode if applicable（近接攻撃・格闘はいつも回避で受けるので出さない。Phase 5l） */}
-                      {!MELEE_LIKE.includes(selectedActionKey) && !['choke', 'throw', 'hazard', 'hazard_end', 'use_drug', 'net_ice_attack'].includes(selectedActionKey) && (
+                      {['ranged', 'aimed', 'autofire', 'throw_object'].includes(selectedActionKey) && (targetForDefense?.character?.stats?.ref ?? 0) >= 8 && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
                         <span style={{ fontSize: '0.85rem' }}>受け方:</span>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', cursor: 'pointer' }}>
@@ -3583,13 +3592,13 @@ export const CombatView: React.FC<CombatViewProps> = ({
                           placeholder="1d10"
                           value={deathSaveRoll ?? ''}
                           onChange={(e) => setDeathSaveRoll(e.target.value ? Number(e.target.value) : undefined)}
-                          style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-bg)', border: missBorder(isMissing(false, '死亡セーブ')), borderRadius: '4px', color: 'var(--color-text)' }}
+                          style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-bg)', border: missBorder(isMissing(false, 'death_save_roll')), borderRadius: '4px', color: 'var(--color-text)' }}
                         />
                       </div>
                     )}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{selectedActionKey === 'first_aid' ? '判定 1d10:' : '攻撃 1d10:'}</span>
+                      {hasDiceInput('attack_roll') && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{actionInputSpec.dice.find((d) => d.field === 'attack_roll')?.purpose ?? '判定'} — {activePart.name} 1d10:</span>
                         {rollSourceTag('attack')}
                         <input
                           data-testid="attack-roll-input"
@@ -3604,34 +3613,20 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             padding: '4px',
                             textAlign: 'center',
                             backgroundColor: 'var(--color-bg)',
-                            border: missBorder(
-                              isMissing(
-                                false,
-                                '攻撃の出目',
-                                '判定の出目',
-                                'パスファインダーの出目',
-                                'バックドアの出目',
-                                'アイディールの出目',
-                                'コントロールの出目',
-                                'スライドの出目',
-                                'クロークの出目',
-                                'ウイルスの出目',
-                                'ブラック ICE 攻撃の出目',
-                                '〈電子／セキュリティ技術〉の出目',
-                              ),
-                            ),
+                            border: missBorder(isMissing(false, 'attack_roll')),
                             borderRadius: '4px',
                             color: 'var(--color-text)',
                           }}
                         />
-                      </div>
+                      </div>}
 
-                      {(attackFirst === 10 || attackFirst === 1) && (
+                      {actionInputSpec.dice.some((d) => d.field === 'attack_extra') && (attackFirst === 10 || attackFirst === 1) && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span style={{ fontSize: '0.8rem', color: attackFirst === 10 ? 'var(--color-ally)' : 'var(--color-warning)' }}>
-                            {attackFirst === 10 ? '攻撃クリティカル追加 (1d10):' : '攻撃ファンブル追加 (1d10):'}
+                            {actionInputSpec.dice.find((d) => d.field === 'attack_roll')?.purpose ?? '判定'}追加出目 — {activePart.name} (1d10):
                           </span>
                           <input
+                            data-testid="attack-extra-input"
                             type="number"
                             min={1}
                             max={10}
@@ -3643,7 +3638,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                               padding: '4px',
                               textAlign: 'center',
                               backgroundColor: 'var(--color-bg)',
-                              border: missBorder(isMissing(false, '攻撃クリティカル', '攻撃ファンブル', '追加の出目')),
+                              border: missBorder(isMissing(false, 'attack_extra')),
                               borderRadius: '4px',
                               color: 'var(--color-text)',
                             }}
@@ -3651,10 +3646,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         </div>
                       )}
 
-                      {(dodgeMode === 'dodge' || selectedActionKey === 'net_action' || selectedActionKey === 'net_ice_attack') && (
+                      {showDefenseInput && (
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>回避 1d10:</span>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{actionInputSpec.dice.find((d) => d.field === 'defense_roll')?.purpose ?? '回避'} — {targetForDefense?.name ?? activePart.name} 1d10:</span>
                             {rollSourceTag('defense')}
                             <input
                               data-testid="defense-roll-input"
@@ -3669,19 +3664,20 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                 padding: '4px',
                                 textAlign: 'center',
                                 backgroundColor: 'var(--color-bg)',
-                                border: missBorder(isMissing(false, '回避の出目', '防御の出目', 'PERの出目')),
+                                border: missBorder(isMissing(false, 'defense_roll')),
                                 borderRadius: '4px',
                                 color: 'var(--color-text)',
                               }}
                             />
                           </div>
 
-                          {(defenseFirst === 10 || defenseFirst === 1) && (
+                          {actionInputSpec.dice.some((d) => d.field === 'defense_extra') && (defenseFirst === 10 || defenseFirst === 1) && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <span style={{ fontSize: '0.8rem', color: defenseFirst === 10 ? 'var(--color-ally)' : 'var(--color-warning)' }}>
                                 {defenseFirst === 10 ? '回避クリティカル追加 (1d10):' : '回避ファンブル追加 (1d10):'}
                               </span>
                               <input
+                                data-testid="defense-extra-input"
                                 type="number"
                                 min={1}
                                 max={10}
@@ -3693,7 +3689,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                   padding: '4px',
                                   textAlign: 'center',
                                   backgroundColor: 'var(--color-bg)',
-                                  border: missBorder(isMissing(false, '回避クリティカル', '回避ファンブル')),
+                                  border: missBorder(isMissing(false, 'defense_extra')),
                                   borderRadius: '4px',
                                   color: 'var(--color-text)',
                                 }}
@@ -3703,12 +3699,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         </>
                       )}
 
-                      {['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts'].includes(selectedActionKey) && (
+                      {hasDiceInput('damage_rolls') && (
                         <div data-testid="gm-damage-guide" style={{ fontSize: '0.85rem', color: 'var(--color-ally)' }}>
                           ダメージ: {damageDiceGuide(combatDamageFormula(selectedActionKey, activePart.character, weaponEntries.find((w) => w.entry_id === selectedWeaponId)))}
                         </div>
                       )}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {hasDiceInput('damage_rolls') && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>ダメージ出目:</span>
                         {rollSourceTag('damage')}
                         <input
@@ -3721,15 +3717,15 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             width: '90px',
                             padding: '4px 6px',
                             backgroundColor: 'var(--color-bg)',
-                            border: missBorder(isMissing(false, 'ダメージ', '効果ダイス')),
+                            border: missBorder(isMissing(false, 'damage_rolls')),
                             borderRadius: '4px',
                             color: 'var(--color-text)',
                             fontSize: '0.85rem',
                           }}
                         />
-                      </div>
+                      </div>}
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {hasDiceInput('crit_roll') && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>致命傷 2d6:</span>
                         <input
                           type="number"
@@ -3743,13 +3739,13 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             padding: '4px',
                             textAlign: 'center',
                             backgroundColor: 'var(--color-bg)',
-                            border: missBorder(isMissing(false, '致命傷表 (2d6) の出目を入力')),
+                            border: missBorder(isMissing(false, 'crit_roll')),
                             borderRadius: '4px',
                             color: 'var(--color-text)',
                           }}
                         />
-                      </div>
-                      {(extraCritRoll !== undefined || (previewResult?.missing_inputs ?? []).some((m: string) => !m.startsWith('[#2]') && m.includes('2 つ目'))) && (
+                      </div>}
+                      {hasDiceInput('crit_roll') && (extraCritRoll !== undefined || isMissing(false, 'extra_crit_roll')) && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span style={{ fontSize: '0.8rem', color: 'var(--color-warning)' }}>2 つ目の致命傷 2d6:</span>
                           <input
@@ -3805,7 +3801,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                   padding: '4px',
                                   textAlign: 'center',
                                   backgroundColor: 'var(--color-surface)',
-                                  border: missBorder(isMissing(true, '攻撃の出目')),
+                                  border: missBorder(isMissing(true, 'attack_roll')),
                                   borderRadius: '4px',
                                   color: 'var(--color-text)',
                                 }}
@@ -3829,7 +3825,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                     padding: '4px',
                                     textAlign: 'center',
                                     backgroundColor: 'var(--color-surface)',
-                                    border: missBorder(isMissing(true, '攻撃クリティカル', '攻撃ファンブル')),
+                                    border: missBorder(isMissing(true, 'attack_extra')),
                                     borderRadius: '4px',
                                     color: 'var(--color-text)',
                                   }}
@@ -3847,7 +3843,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                   placeholder="1d10"
                                   value={secondDefenseFirst ?? ''}
                                   onChange={(e) => setSecondDefenseFirst(e.target.value ? Number(e.target.value) : null)}
-                                  style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: missBorder(isMissing(true, '回避の出目')), borderRadius: '4px', color: 'var(--color-text)' }}
+                                  style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: missBorder(isMissing(true, 'defense_roll')), borderRadius: '4px', color: 'var(--color-text)' }}
                                 />
                               </div>
                             )}
@@ -3861,7 +3857,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                 placeholder="2d6"
                                 value={secondCritRoll ?? ''}
                                 onChange={(e) => setSecondCritRoll(e.target.value ? Number(e.target.value) : undefined)}
-                                style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: missBorder(isMissing(true, '致命傷表 (2d6) の出目を入力')), borderRadius: '4px', color: 'var(--color-text)' }}
+                                style={{ width: '46px', padding: '4px', textAlign: 'center', backgroundColor: 'var(--color-surface)', border: missBorder(isMissing(true, 'crit_roll')), borderRadius: '4px', color: 'var(--color-text)' }}
                               />
                             </div>
                             {(secondExtraCritRoll !== undefined || (previewResult?.missing_inputs ?? []).some((m: string) => m.startsWith('[#2]') && m.includes('2 つ目'))) && (
@@ -3891,7 +3887,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                                   width: '90px',
                                   padding: '4px 6px',
                                   backgroundColor: 'var(--color-surface)',
-                                  border: missBorder(isMissing(true, 'ダメージ')),
+                                  border: missBorder(isMissing(true, 'damage_rolls')),
                                   borderRadius: '4px',
                                   color: 'var(--color-text)',
                                   fontSize: '0.85rem',

@@ -47,6 +47,15 @@ describe('Phase 4b: Board API, Combat Integration & TV Broadcast (§1, §2, §3,
       )
       .run('w-pistol-1', 'pistol', 'Handgun', '3d6', 2, 8, 'Pistol', 1, 0);
 
+    sqlite.prepare(
+      `INSERT OR REPLACE INTO items (id, kind, name_ja, name_en, origin, verify_status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run('w-melee-test', 'weapon', 'テスト用ナイフ', 'Test Knife', 'core', 'verified', now, now);
+    sqlite.prepare(
+      `INSERT OR REPLACE INTO weapons (item_id, weapon_type, skill, damage, rof, magazine_max, dv_table_key, is_ranged, autofire)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run('w-melee-test', 'melee', 'Melee Weapon', '1d6', 2, null, null, 0, 0);
+
     // 3. Fetch or create Viper (PC) and Ganger (NPC)
     const allChars = db.select().from(characters).all();
     let viper = allChars.find((c) => c.name === 'ヴァイパー');
@@ -84,6 +93,11 @@ describe('Phase 4b: Board API, Combat Integration & TV Broadcast (§1, §2, §3,
       viper = db.select().from(characters).where(eq(characters.id, vId)).get()!;
     }
     viperCharId = viper.id;
+    const viperInventory = JSON.parse(viper.inventory || '[]');
+    if (!viperInventory.some((entry: { item_id?: string }) => entry.item_id === 'w-melee-test')) {
+      viperInventory.push({ entry_id: 'w-melee-test-entry', item_id: 'w-melee-test', name: 'テスト用ナイフ', kind: 'weapon', equipped: true });
+      db.update(characters).set({ inventory: JSON.stringify(viperInventory) }).where(eq(characters.id, viper.id)).run();
+    }
 
     let ganger = allChars.find((c) => c.name.includes('ガンガー'));
     if (!ganger) {
@@ -520,7 +534,7 @@ describe('Phase 4b: Board API, Combat Integration & TV Broadcast (§1, §2, §3,
         action_key: 'melee',
         actor_id: viperPart.id,
         target_id: gangerPart.id,
-        weapon_id: 'w-pistol-1',
+        weapon_id: 'w-melee-test',
         ignore_armor_percent: 50,
         attack_roll: { first: 5 },
         defense_roll: { first: 5 },

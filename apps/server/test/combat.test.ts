@@ -228,6 +228,14 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
             ammo: 8,
           },
           {
+            entry_id: 'e_knife',
+            item_id: weaponIdMelee,
+            name: 'コンバット・ナイフ',
+            kind: 'weapon',
+            qty: 1,
+            equipped: true,
+          },
+          {
             entry_id: 'e_ammo',
             name: '大型拳銃用弾薬',
             kind: 'ammo',
@@ -792,7 +800,7 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       });
 
       const json = await res.json();
-      expect(json.result.missing_inputs.join()).toContain('フルオート射撃ができません');
+      expect(json.result.missing_inputs.join()).toContain('フルオート射撃ができる武器を持っていません');
     });
 
     it('12.1: requires GM input for ignore_armor_percent when weapon value is missing, and resolves once provided', async () => {
@@ -1704,7 +1712,7 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
       );
       const row = db.select().from(characters).where(eq(characters.id, pcId1)).get()!;
       db.update(characters)
-        .set({ inventory: JSON.stringify([...JSON.parse(row.inventory), { entry_id: 'knife', item_id: weaponIdMelee, name: 'コンバット・ナイフ', kind: 'weapon', qty: 1, equipped: true }]) })
+        .set({ inventory: JSON.stringify([...JSON.parse(row.inventory).filter((i: any) => i.entry_id !== 'knife'), { entry_id: 'knife', item_id: weaponIdMelee, name: 'コンバット・ナイフ', kind: 'weapon', qty: 1, equipped: true }]) })
         .where(eq(characters.id, pcId1))
         .run();
       const combat = await createTestCombat();

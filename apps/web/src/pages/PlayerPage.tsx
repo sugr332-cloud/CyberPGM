@@ -4,6 +4,9 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   CharacterSheet,
   combatDamageFormula,
+  damageDiceGuide,
+  combatActionInputs,
+  VEHICLE_ACTIONS,
   CharLogEntry,
   WsNotifyPayload,
   formatSkillName,
@@ -109,6 +112,7 @@ export const PlayerPage: React.FC = () => {
   const [actionBlockedMsg, setActionBlockedMsg] = useState<string | null>(null);
   /** clientReason: 画面で選んでいる武器などによる理由（サーバーに聞く前にわかるもの） */
   const actionBlocked = (key: string, clientReason: string | null) => Boolean(clientReason || actionReasons[key]);
+  const actionBlockReasonFor = (key: string, clientReason: string | null) => clientReason ? `「${combatActionInputs(key).label}」はできません: ${clientReason}` : actionReasons[key] ?? null;
   const guardAction = (key: string, label: string, clientReason: string | null): boolean => {
     const msg = clientReason ? `「${label}」はできません: ${clientReason}` : blockedMessage(key, label);
     setActionBlockedMsg(msg);
@@ -127,6 +131,10 @@ export const PlayerPage: React.FC = () => {
   // Dice pad state
   const [showDicePad, setShowDicePad] = useState(false);
   const [padRollType, setPadRollType] = useState<'initiative' | 'attack' | 'defense' | 'death_save'>('attack');
+  const [selectedPadActionKey, setSelectedPadActionKey] = useState('');
+  const [showPlayerVehicleActions, setShowPlayerVehicleActions] = useState(false);
+  const [playerVehicleRef, setPlayerVehicleRef] = useState('');
+  const [playerTargetVehicleRef, setPlayerTargetVehicleRef] = useState('');
   const [padFirstRoll, setPadFirstRoll] = useState<number | null>(null);
   const [padExtraRoll, setPadExtraRoll] = useState<number | null>(null);
   const [needsExtraRoll, setNeedsExtraRoll] = useState(false);
@@ -143,6 +151,8 @@ export const PlayerPage: React.FC = () => {
   const [playerNetArch, setPlayerNetArch] = useState<NetArchitecture | null>(null);
 
   const myCombatPart = currentCombat?.participants?.find((p: any) => p.character_id === sheet?.id);
+  const myVehicles = (sheet?.extra?.vehicles ?? []) as Array<{ id: string; name: string; sdp: number; sdp_max: number }>;
+  const combatVehicles: Array<{ owner_id: string; owner_name: string; vehicle: { id: string; name: string; sdp: number; sdp_max: number } }> = ((currentCombat?.participants ?? []) as Array<any>).flatMap((p: any) => ((p.character?.extra?.vehicles ?? []) as Array<{ id: string; name: string; sdp: number; sdp_max: number }>).map((vehicle) => ({ owner_id: p.character_id, owner_name: p.name, vehicle })));
   const myNetState = (myCombatPart?.state as any)?.net as Partial<NetRunState> | undefined;
   const myRevealedKey = (myNetState?.revealed ?? []).join(',');
 
@@ -765,6 +775,10 @@ export const PlayerPage: React.FC = () => {
   // 2. Character Sheet Screen
   const hpPercent = Math.max(0, Math.min(100, Math.round((sheet.hp / sheet.hp_max) * 100)));
   const seriouslyThreshold = Math.ceil(sheet.hp_max / 2) - 1;
+  const padActionSpec = combatActionInputs(selectedPadActionKey);
+  const padDice = padActionSpec.dice[0];
+  const resolvedPadRollType = selectedPadActionKey === 'death_save' ? 'death_save' : selectedPadActionKey === 'dodge' ? 'defense' : padDice?.field === 'defense_roll' ? 'defense' : 'attack';
+  const padDamageFormula = ['brawl', 'martial_arts'].includes(selectedPadActionKey) ? combatDamageFormula(selectedPadActionKey, sheet) : null;
 
   let hpBarColor = 'var(--color-success)';
   if (sheet.woundState === 'mortally') {
@@ -789,7 +803,7 @@ export const PlayerPage: React.FC = () => {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                      出目パッド: {chosenActionLabel || padRollType}
+                      出目パッド: {chosenActionLabel || padRollType}{padDice ? ` — ${padDice.purpose}（${sheet.name}、${padDice.dice}）` : ''}
                     </div>
                     <button
                       onClick={() => setShowDicePad(false)}
@@ -811,6 +825,7 @@ export const PlayerPage: React.FC = () => {
                       padding: '10px',
                       backgroundColor: 'var(--color-bg)',
                       borderRadius: '6px',
+                      border: padFirstRoll === null ? '2px solid var(--color-warning)' : '1px solid var(--color-border-light)',
                       textAlign: 'center',
                       fontSize: '1.2rem',
                       fontWeight: 800,
@@ -831,6 +846,7 @@ export const PlayerPage: React.FC = () => {
                       </span>
                     )}
                   </div>
+                  {padDamageFormula && <div data-testid="phone-pad-damage-guide" style={{ color: 'var(--color-ally)', fontSize: '0.85rem', textAlign: 'center' }}>ダメージ: {damageDiceGuide(padDamageFormula)}</div>}
 
                   {/* 10-Key Pad (1 - 10) */}
                   <div
@@ -849,7 +865,7 @@ export const PlayerPage: React.FC = () => {
                             if (!needsExtraRoll) {
                               setPadFirstRoll(num);
                               // 死亡セーブは振り足さない（10 は必ず失敗）
-                              if ((num === 10 || num === 1) && padRollType !== 'death_save') {
+                              if ((num === 10 || num === 1) && resolvedPadRollType !== 'death_save') {
                                 setNeedsExtraRoll(true);
                               } else {
                                 setNeedsExtraRoll(false);
@@ -894,10 +910,10 @@ export const PlayerPage: React.FC = () => {
                       sendMessage({
                         type: 'combat:roll',
                         payload: {
-                          roll_type: padRollType,
+                          roll_type: resolvedPadRollType,
                           first: padFirstRoll,
                           extra: padExtraRoll ?? undefined,
-                          ...(padRollType === 'attack' && luckToSpend > 0 ? { luck_spent: luckToSpend } : {}),
+                          ...(resolvedPadRollType === 'attack' && luckToSpend > 0 ? { luck_spent: luckToSpend } : {}),
                         },
                       });
                       setLuckToSpend(0);
@@ -2248,12 +2264,13 @@ export const PlayerPage: React.FC = () => {
                     )}
                     {isMyTurn && (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <button data-testid="player-action-move" aria-disabled={actionBlocked('move', null) ? 'true' : undefined}
+                        <button data-testid="player-action-move" aria-disabled={actionBlocked('move', null) ? 'true' : undefined} disabled={actionBlocked('move', null)}
                           onClick={() => {
                             if (guardAction('move', '移動', null)) return;
                             setMoveMapAction('move');
                             setMoveResult(null);
                             setChosenActionLabel('移動');
+                            setSelectedPadActionKey('move');
                             sendMessage({ type: 'combat:choose', payload: { action_key: 'move' } });
                           }}
                           style={{
@@ -2271,12 +2288,15 @@ export const PlayerPage: React.FC = () => {
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                             MOVE {sheet.stats.move}マス (2m/マス)
                           </div>
+                          {actionBlockReasonFor('move', null) && <div data-testid="action-disabled-reason" style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>{actionBlockReasonFor('move', null)}</div>}
                         </button>
 
                         <button data-testid="player-action-ranged" aria-disabled={actionBlocked('ranged', !rangedWeapon ? '射撃武器を選んでください' : null) ? 'true' : undefined}
+                          disabled={actionBlocked('ranged', !rangedWeapon ? '射撃武器を選んでください' : null)}
                           onClick={() => {
                             if (guardAction('ranged', '射撃', !rangedWeapon ? '射撃武器を選んでください' : null)) return;
                             setChosenActionLabel('射撃');
+                            setSelectedPadActionKey('ranged');
                             setPadRollType('attack');
                             setShowDicePad(true);
                             setPadFirstRoll(null);
@@ -2307,12 +2327,15 @@ export const PlayerPage: React.FC = () => {
                             )}
                           </div>
                           {rangedWeapon && bandsText('ranged')}
+                          {actionBlockReasonFor('ranged', !rangedWeapon ? '射撃武器を選んでください' : null) && <div data-testid="action-disabled-reason" style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>{actionBlockReasonFor('ranged', !rangedWeapon ? '射撃武器を選んでください' : null)}</div>}
                         </button>
 
                         <button data-testid="player-action-aimed" aria-disabled={actionBlocked('aimed', !rangedWeapon ? '射撃武器を選んでください' : null) ? 'true' : undefined}
+                          disabled={actionBlocked('aimed', !rangedWeapon ? '射撃武器を選んでください' : null)}
                           onClick={() => {
                             if (guardAction('aimed', '照準射撃', !rangedWeapon ? '射撃武器を選んでください' : null)) return;
                             setChosenActionLabel('照準射撃');
+                            setSelectedPadActionKey('aimed');
                             setPadRollType('attack');
                             setShowDicePad(true);
                             setPadFirstRoll(null);
@@ -2336,12 +2359,15 @@ export const PlayerPage: React.FC = () => {
                             {rangedWeapon ? `${attackBaseRanged} − 8（狙う分）= ${attackBaseRanged - 8} + 1d10` : '射撃武器がありません'}
                           </div>
                           {rangedWeapon && bandsText('aimed')}
+                          {actionBlockReasonFor('aimed', !rangedWeapon ? '射撃武器を選んでください' : null) && <div data-testid="action-disabled-reason" style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>{actionBlockReasonFor('aimed', !rangedWeapon ? '射撃武器を選んでください' : null)}</div>}
                         </button>
 
                         <button data-testid="player-action-autofire" aria-disabled={actionBlocked('autofire', !canAutofire ? 'この武器ではフルオート射撃ができません' : null) ? 'true' : undefined}
+                          disabled={actionBlocked('autofire', !canAutofire ? 'この武器ではフルオート射撃ができません' : null)}
                           onClick={() => {
                             if (guardAction('autofire', 'フルオート射撃', !canAutofire ? 'この武器ではフルオート射撃ができません' : null)) return;
                             setChosenActionLabel('フルオート射撃');
+                            setSelectedPadActionKey('autofire');
                             setPadRollType('attack');
                             setShowDicePad(true);
                             setPadFirstRoll(null);
@@ -2366,12 +2392,15 @@ export const PlayerPage: React.FC = () => {
                               ? `REF ${refVal} + フルオート射撃 ${sk('autofire')}${woundPen !== 0 ? ` ${woundPen}` : ''} = ${attackBaseAutofire} + 1d10`
                               : 'この武器ではできません'}
                           </div>
+                          {actionBlockReasonFor('autofire', !canAutofire ? 'この武器ではフルオート射撃ができません' : null) && <div style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>{actionBlockReasonFor('autofire', !canAutofire ? 'この武器ではフルオート射撃ができません' : null)}</div>}
                         </button>
 
                         <button aria-disabled={actionBlocked(meleeWeapon ? 'melee' : 'brawl', null) ? 'true' : undefined}
+                          disabled={actionBlocked(meleeWeapon ? 'melee' : 'brawl', null)}
                           onClick={() => {
                             if (guardAction(meleeWeapon ? 'melee' : 'brawl', meleeWeapon ? '近接攻撃' : '格闘', null)) return;
                             setChosenActionLabel(meleeWeapon ? '近接攻撃' : '格闘');
+                            setSelectedPadActionKey(meleeWeapon ? 'melee' : 'brawl');
                             setPadRollType('attack');
                             setShowDicePad(true);
                             setPadFirstRoll(null);
@@ -2390,12 +2419,14 @@ export const PlayerPage: React.FC = () => {
                             cursor: 'pointer',
                           }}
                         >
-                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{meleeWeapon ? '近接攻撃' : '格闘（素手）'}</div>
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{meleeWeapon ? '近接攻撃' : `格闘（素手） ${combatDamageFormula('brawl', sheet)}`}</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                             DEX {dexVal} + {formatSkillName(meleeSkillKey)} {sk(meleeSkillKey)}
                             {woundPen !== 0 && ` ${woundPen}`} = {attackBaseMelee} + 1d10
                             {meleeWeapon ? '（SP半減）' : ''}
                           </div>
+                          {!meleeWeapon && <div data-testid="phone-damage-guide" style={{ color: 'var(--color-ally)', fontSize: '0.75rem' }}>ダメージ: {damageDiceGuide(combatDamageFormula('brawl', sheet))}</div>}
+                          {actionBlockReasonFor(meleeWeapon ? 'melee' : 'brawl', null) && <div style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>{actionBlockReasonFor(meleeWeapon ? 'melee' : 'brawl', null)}</div>}
                         </button>
 
                         {/* 武術攻撃（〈武術〉を持っているときだけ。Phase 5u） */}
@@ -2403,13 +2434,14 @@ export const PlayerPage: React.FC = () => {
                           const style = Object.entries((sheet.skills ?? {}) as Record<string, number>)
                             .filter(([k, v]) => k.split(':')[0] === 'martial_arts' && v >= 1)
                             .sort((a, b) => b[1] - a[1])[0];
-                          if (!style) return null;
                           return (
                             <button aria-disabled={actionBlocked('martial_arts', null) ? 'true' : undefined}
+                              disabled={actionBlocked('martial_arts', null)}
                               data-testid="martial-arts-button"
                               onClick={() => {
                                 if (guardAction('martial_arts', '武術攻撃', null)) return;
                                 setChosenActionLabel('武術攻撃');
+                                setSelectedPadActionKey('martial_arts');
                                 setPadRollType('attack');
                                 setShowDicePad(true);
                                 setPadFirstRoll(null);
@@ -2422,17 +2454,35 @@ export const PlayerPage: React.FC = () => {
                             >
                               <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>武術攻撃</div>
                               <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                                DEX {dexVal} + {formatSkillName(style[0])} {style[1]}
-                                {woundPen !== 0 && ` ${woundPen}`} = {dexVal + style[1] + woundPen} + 1d10（SP半減）
+                                {style ? <>DEX {dexVal} + {formatSkillName(style[0])} {style[1]}{woundPen !== 0 && ` ${woundPen}`} = {dexVal + style[1] + woundPen} + 1d10（SP半減）</> : '〈武術〉の流派を 1 レベル以上修得してください'}
                               </div>
+                              <div data-testid="phone-damage-guide" style={{ color: 'var(--color-ally)', fontSize: '0.75rem' }}>武術攻撃 {combatDamageFormula('martial_arts', sheet)}。ダメージ: {damageDiceGuide(combatDamageFormula('martial_arts', sheet))}</div>
+                              {actionBlockReasonFor('martial_arts', null) && <div data-testid="action-disabled-reason" style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>{actionBlockReasonFor('martial_arts', null)}</div>}
                             </button>
                           );
                         })()}
 
-                        <button data-testid="player-action-reload" aria-disabled={actionBlocked('reload', !rangedWeapon ? 'リロードする射撃武器を選んでください' : null) ? 'true' : undefined}
+                        <button type="button" data-testid="player-action-first-aid" disabled={actionBlocked('first_aid', null)} onClick={() => {
+                          if (guardAction('first_aid', '応急手当', null)) return;
+                          setChosenActionLabel('応急手当');
+                          setSelectedPadActionKey('first_aid');
+                          setPadRollType('attack');
+                          setShowDicePad(true);
+                          setPadFirstRoll(null);
+                          setPadExtraRoll(null);
+                          setNeedsExtraRoll(false);
+                          sendMessage({ type: 'combat:choose', payload: { action_key: 'first_aid', target_id: attackTargetId ?? undefined } });
+                        }} style={{ padding: '12px 10px', background: 'var(--color-surface)', border: '1px solid var(--color-border-light)', borderRadius: 6, color: 'var(--color-text)', textAlign: 'left', opacity: actionBlocked('first_aid', null) ? 0.5 : 1 }}>
+                          <div style={{ fontWeight: 700 }}>応急手当</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>TECH + 応急手当または救急医療 + 1d10</div>
+                          {actionBlockReasonFor('first_aid', null) && <div data-testid="action-disabled-reason" style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>{actionBlockReasonFor('first_aid', null)}</div>}
+                        </button>
+
+                        <button data-testid="player-action-reload" aria-disabled={actionBlocked('reload', !rangedWeapon ? 'リロードする射撃武器を選んでください' : null) ? 'true' : undefined} disabled={actionBlocked('reload', !rangedWeapon ? 'リロードする射撃武器を選んでください' : null)}
                           onClick={() => {
                             if (guardAction('reload', 'リロード', !rangedWeapon ? 'リロードする射撃武器を選んでください' : null)) return;
                             setChosenActionLabel('リロード');
+                            setSelectedPadActionKey('reload');
                             sendMessage({ type: 'combat:choose', payload: { action_key: 'reload' } });
                           }}
                           style={{
@@ -2450,14 +2500,16 @@ export const PlayerPage: React.FC = () => {
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                             弾を満タンにする
                           </div>
+                          {actionBlockReasonFor('reload', !rangedWeapon ? 'リロードする射撃武器を選んでください' : null) && <div data-testid="action-disabled-reason" style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>{actionBlockReasonFor('reload', !rangedWeapon ? 'リロードする射撃武器を選んでください' : null)}</div>}
                         </button>
 
-                        <button data-testid="player-action-run" aria-disabled={actionBlocked('run', null) ? 'true' : undefined}
+                        <button data-testid="player-action-run" aria-disabled={actionBlocked('run', null) ? 'true' : undefined} disabled={actionBlocked('run', null)}
                           onClick={() => {
                             if (guardAction('run', '走る', null)) return;
                             setMoveMapAction('run');
                             setMoveResult(null);
                             setChosenActionLabel('走る');
+                            setSelectedPadActionKey('run');
                             sendMessage({ type: 'combat:choose', payload: { action_key: 'run' } });
                           }}
                           style={{
@@ -2475,14 +2527,16 @@ export const PlayerPage: React.FC = () => {
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                             さらに MOVE 分移動
                           </div>
+                          {actionBlockReasonFor('run', null) && <div data-testid="action-disabled-reason" style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>{actionBlockReasonFor('run', null)}</div>}
                         </button>
 
                         {netrunnerRank > 0 && (
-                          <button aria-disabled={actionBlocked('net_action', null) ? 'true' : undefined}
+                          <button aria-disabled={actionBlocked('net_action', null) ? 'true' : undefined} disabled={actionBlocked('net_action', null)}
                             data-testid="player-net-action-btn"
                             onClick={() => {
                               if (guardAction('net_action', 'NET アクション', null)) return;
                               setChosenActionLabel('NET アクション');
+                              setSelectedPadActionKey('net_action');
                               setPadRollType('attack');
                               setShowDicePad(true);
                               setPadFirstRoll(null);
@@ -2505,14 +2559,16 @@ export const PlayerPage: React.FC = () => {
                             <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                               インタフェース {netrunnerRank} + 1d10
                             </div>
+                            {actionBlockReasonFor('net_action', null) && <div data-testid="action-disabled-reason" style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>{actionBlockReasonFor('net_action', null)}</div>}
                           </button>
                         )}
 
                         {sheet.woundState === 'mortally' && (
-                          <button data-testid="player-action-death_save" aria-disabled={actionBlocked('death_save', null) ? 'true' : undefined}
+                          <button data-testid="player-action-death_save" aria-disabled={actionBlocked('death_save', null) ? 'true' : undefined} disabled={actionBlocked('death_save', null)}
                             onClick={() => {
                               if (guardAction('death_save', '死亡セーブ', null)) return;
                               setChosenActionLabel('死亡セーブ');
+                              setSelectedPadActionKey('death_save');
                               setPadRollType('death_save'); // GM の死亡セーブ欄に入る（Phase 5l。前は回避の欄に入っていた）
                               setShowDicePad(true);
                               setPadFirstRoll(null);
@@ -2536,17 +2592,51 @@ export const PlayerPage: React.FC = () => {
                             <div style={{ fontSize: '0.75rem', marginTop: '2px' }}>
                               BODY {sheet.stats.body} 未満
                             </div>
+                            {actionBlockReasonFor('death_save', null) && <div data-testid="action-disabled-reason" style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>{actionBlockReasonFor('death_save', null)}</div>}
                           </button>
                         )}
                       </div>
                     )}
 
+                    <div style={{ marginTop: '8px' }}>
+                      <button type="button" data-testid="player-vehicle-toggle" onClick={() => setShowPlayerVehicleActions((show) => !show)} style={{ width: '100%', padding: '12px', textAlign: 'left', background: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border-light)', borderRadius: 6, fontWeight: 700 }}>車両</button>
+                      {showPlayerVehicleActions && <div data-testid="player-vehicle-actions" style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8, padding: 10, border: '1px solid var(--color-border-light)', borderRadius: 6 }}>
+                        <button type="button" onClick={() => setShowPlayerVehicleActions(false)} style={{ alignSelf: 'flex-start' }}>← 戻る</button>
+                        {(myCombatPart?.state as any)?.in_vehicle ? <div>乗車中: {(myCombatPart?.state as any).in_vehicle.driver ? '運転席' : '助手席'}</div> : <label>乗る車両:
+                          <select aria-label="乗る車両" value={playerVehicleRef} onChange={(e) => setPlayerVehicleRef(e.target.value)} style={{ display: 'block', width: '100%', padding: 8, background: 'var(--color-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border-light)' }}>
+                            <option value="">車両を選択</option>{myVehicles.map((v) => <option key={v.id} value={JSON.stringify({ owner_id: sheet.id, vehicle_id: v.id })}>{v.name}（SDP {v.sdp}/{v.sdp_max}）</option>)}
+                          </select>
+                        </label>}
+                        <label>攻撃・体当たりの対象車両:
+                          <select aria-label="対象車両" value={playerTargetVehicleRef} onChange={(e) => setPlayerTargetVehicleRef(e.target.value)} style={{ display: 'block', width: '100%', padding: 8, background: 'var(--color-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border-light)' }}>
+                            <option value="">対象車両を選択</option>{combatVehicles.map(({ owner_id, owner_name, vehicle }) => <option key={`${owner_id}:${vehicle.id}`} value={JSON.stringify({ owner_id, vehicle_id: vehicle.id })}>{vehicle.name}（{owner_name}）</option>)}
+                          </select>
+                        </label>
+                        {VEHICLE_ACTIONS.map(({ key, label }) => {
+                          const localReason = key === 'vehicle_board' && !playerVehicleRef ? '乗る車両を選んでください' : ['vehicle_ram', 'attack_vehicle'].includes(key) && !playerTargetVehicleRef ? '対象車両を選んでください' : null;
+                          const reason = actionBlockReasonFor(key, localReason);
+                          return <button key={key} type="button" data-testid={`player-vehicle-${key}`} disabled={Boolean(reason)} title={reason ?? undefined} onClick={() => {
+                            if (reason) return;
+                            const vehicle_ref = key === 'vehicle_board' && playerVehicleRef ? JSON.parse(playerVehicleRef) : undefined;
+                            const target_vehicle = ['vehicle_ram', 'attack_vehicle'].includes(key) && playerTargetVehicleRef ? JSON.parse(playerTargetVehicleRef) : undefined;
+                            setSelectedPadActionKey(key);
+                            setChosenActionLabel(label);
+                            if (combatActionInputs(key).dice.length) { setPadRollType('attack'); setShowDicePad(true); setPadFirstRoll(null); setPadExtraRoll(null); setNeedsExtraRoll(false); }
+                            sendMessage({ type: 'combat:choose', payload: { action_key: key, vehicle_ref, target_vehicle } });
+                          }} style={{ padding: 10, textAlign: 'left', background: 'var(--color-surface)', color: reason ? 'var(--color-text-muted)' : 'var(--color-text)', border: '1px solid var(--color-border-light)', borderRadius: 5, opacity: reason ? 0.5 : 1 }}>
+                            {label}{reason && <span data-testid="action-disabled-reason" style={{ display: 'block', color: 'var(--color-warning)', fontSize: '0.75rem' }}>{reason}</span>}
+                          </button>;
+                        })}
+                      </div>}
+                    </div>
+
                     {/* Dodge Button (always accessible) */}
                     <div style={{ marginTop: '8px' }}>
-                      <button data-testid="player-action-dodge" aria-disabled={actionBlocked('dodge', null) ? 'true' : undefined}
+                      <button data-testid="player-action-dodge" aria-disabled={actionBlocked('dodge', null) ? 'true' : undefined} disabled={actionBlocked('dodge', null)}
                         onClick={() => {
                           if (guardAction('dodge', '回避', null)) return;
                           setChosenActionLabel('回避');
+                          setSelectedPadActionKey('dodge');
                           setPadRollType('defense');
                           setShowDicePad(true);
                           setPadFirstRoll(null);
