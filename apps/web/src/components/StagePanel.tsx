@@ -26,6 +26,7 @@ interface DisplayState {
 
 interface Props {
   characters: CharacterSheet[];
+  section?: 'all' | 'visual' | 'audio';
 }
 
 const panel: React.CSSProperties = {
@@ -60,7 +61,7 @@ const input: React.CSSProperties = {
  * 舞台パネル（Phase 5e）: 表示ウィンドウの背景・立ち絵・BGM を決める。GM のメインウィンドウだけに置く
  * （表示ウィンドウ /screen・戦闘の別ウィンドウ・スマホには出さない）。
  */
-export function StagePanel({ characters }: Props) {
+export function StagePanel({ characters, section = 'all' }: Props) {
   const [display, setDisplay] = useState<DisplayState | null>(null);
   const [imageList, setImageList] = useState<ImageRow[]>([]);
   const [audioList, setAudioList] = useState<AudioRow[]>([]);
@@ -68,6 +69,7 @@ export function StagePanel({ characters }: Props) {
   const [gmBgmOn, setGmBgmOnState] = useState(getGmBgmOn());
   const [sessionCode, setSessionCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const latestUpdate = useRef(0);
   const previewRef = useRef<HTMLDivElement>(null);
   const dragging = useRef<{ index: number } | null>(null);
 
@@ -90,10 +92,14 @@ export function StagePanel({ characters }: Props) {
   }, [load]);
 
   const put = async (path: string, body: unknown) => {
+    const version = ++latestUpdate.current;
     setError(null);
     const res = await gmFetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
-    if (res.error) setError(res.error);
-    else setDisplay(res.display);
+    if (version !== latestUpdate.current) return;
+    if (res.error) {
+      setError(res.error);
+      await load();
+    } else setDisplay(res.display);
   };
 
   const imageById = (id?: string | null) => imageList.find((i) => i.id === id);
@@ -135,7 +141,7 @@ export function StagePanel({ characters }: Props) {
   if (!display) {
     return (
       <div style={panel}>
-        <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>舞台（表示ウィンドウ）</span>
+        <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{section === 'audio' ? 'BGM・音量' : '舞台（表示ウィンドウ）'}</span>
         <span style={{ color: 'var(--color-text-muted)' }}>{error ?? '進行を始めると使えます'}</span>
       </div>
     );
@@ -145,14 +151,15 @@ export function StagePanel({ characters }: Props) {
   const token = encodeURIComponent(getGmToken() ?? '');
 
   return (
-    <div data-testid="stage-panel" style={panel}>
+    <div data-testid={section === 'audio' ? 'scenario-bgm-panel' : 'stage-panel'} style={{ ...panel, minWidth: 0 }}>
+      {error && <span role="alert" style={{ color: 'var(--color-accent)' }}>{error}</span>}
+      {section !== 'audio' && <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>舞台（表示ウィンドウ）</span>
         <button type="button" style={btn} onClick={() => window.open(`/screen?code=${sessionCode}`, 'cyberpgm-display')}>
           表示ウィンドウを開く
         </button>
       </div>
-      {error && <span style={{ color: 'var(--color-accent)' }}>{error}</span>}
 
       {/* プレビュー（16:9）。立ち絵はドラッグで動かす */}
       <div
@@ -225,7 +232,7 @@ export function StagePanel({ characters }: Props) {
             if (!e.target.value) return;
             savePortraits([...portraits, { character_id: e.target.value, x: 0.5, y: 1, scale: 1, flip: false, z: portraits.length, show_name: true }]);
           }}
-          style={{ ...input, flex: 1 }}
+          style={{ ...input, flex: 1, minWidth: 0 }}
         >
           <option value="">登場させるキャラを選ぶ</option>
           {withPortrait.map((c) => (
@@ -270,6 +277,9 @@ export function StagePanel({ characters }: Props) {
         );
       })}
 
+      </>}
+      {section !== 'visual' && <>
+      {section === 'audio' && <strong style={{ fontSize: '0.9rem' }}>BGM・音量</strong>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
         <span style={{ whiteSpace: 'nowrap' }}>BGM</span>
         <select
@@ -278,7 +288,7 @@ export function StagePanel({ characters }: Props) {
           onChange={(e) =>
             put('/api/display/bgm', e.target.value ? { audio_id: e.target.value, loop: display.bgm?.loop ?? true, volume: display.bgm?.volume ?? 70, playing: true } : { audio_id: null })
           }
-          style={{ ...input, flex: 1 }}
+          style={{ ...input, flex: 1, minWidth: 0 }}
         >
           <option value="">なし</option>
           {audioList.map((a) => (
@@ -289,7 +299,7 @@ export function StagePanel({ characters }: Props) {
         </select>
         {display.bgm && (
           <>
-            <button type="button" style={btn} onClick={() => put('/api/display/bgm', { playing: !display.bgm!.playing })}>
+            <button type="button" style={btn} onClick={() => { const playing = !display.bgm!.playing; setDisplay({ ...display, bgm: { ...display.bgm!, playing } }); void put('/api/display/bgm', { playing }); }}>
               {display.bgm.playing ? '停止' : '再生'}
             </button>
             <input
@@ -300,9 +310,10 @@ export function StagePanel({ characters }: Props) {
               value={display.bgm.volume}
               onChange={(e) => setDisplay({ ...display, bgm: { ...display.bgm!, volume: Number(e.target.value) } })}
               onPointerUp={(e) => put('/api/display/bgm', { volume: Number((e.target as HTMLInputElement).value) })}
+              onKeyUp={(e) => put('/api/display/bgm', { volume: Number((e.target as HTMLInputElement).value) })}
             />
             <label style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
-              <input type="checkbox" checked={display.bgm.loop} onChange={(e) => put('/api/display/bgm', { loop: e.target.checked })} />
+              <input type="checkbox" checked={display.bgm.loop} onChange={(e) => { const loop = e.target.checked; setDisplay({ ...display, bgm: { ...display.bgm!, loop } }); void put('/api/display/bgm', { loop }); }} />
               ループ
             </label>
           </>
@@ -321,20 +332,24 @@ export function StagePanel({ characters }: Props) {
         />
         この PC（GM 画面）で鳴らす（表示ウィンドウを開かないとき）
       </label>
+      <details>
+        <summary style={{ cursor: 'pointer', color: 'var(--color-text-muted)' }}>曲の追加・再読込</summary>
       <div style={{ display: 'flex', gap: '6px', alignItems: 'center', color: 'var(--color-text-muted)', fontSize: '0.75rem', flexWrap: 'wrap' }}>
         <span>曲は BGM フォルダ{audioFolder ? `（${audioFolder}）` : ''}に入れると一覧に出ます（mp3 / ogg / m4a / wav。サブフォルダも可）</span>
         <button type="button" style={btn} onClick={() => load().catch(() => setError('BGM フォルダを読めませんでした'))}>
           読み直す
         </button>
       </div>
+      </details>
       <label style={{ display: 'flex', gap: '4px', alignItems: 'center', color: 'var(--color-text-muted)' }}>
         <input
           type="checkbox"
           checked={display.keep_bgm_on_silent_scene}
-          onChange={(e) => put('/api/display/settings', { keep_bgm_on_silent_scene: e.target.checked })}
+          onChange={(e) => { const keep = e.target.checked; setDisplay({ ...display, keep_bgm_on_silent_scene: keep }); void put('/api/display/settings', { keep_bgm_on_silent_scene: keep }); }}
         />
         BGM のないシーンでは前の曲を流し続ける
       </label>
+      </>}
     </div>
   );
 }

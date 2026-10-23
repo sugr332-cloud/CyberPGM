@@ -38,7 +38,7 @@ import {
 } from '@cyberpgm/shared';
 import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES, listActionAvailability } from '../services/combat-resolver.js';
 import { netActionBlockReason } from '../services/netrun-resolver.js';
-import { woundState, initiativeTotal, resolveDamage } from '@cyberpgm/rules';
+import { woundState, initiativeTotal, resolveDamage, gridDistance, DEFAULT_RULES } from '@cyberpgm/rules';
 import { randomInt } from 'node:crypto';
 import { linkTextWeapons } from '../weapon-link.js';
 import { attackLine } from '../services/attack-line.js';
@@ -117,7 +117,7 @@ export function getHydratedCombat(combatId: string): Combat | null {
             ignore_armor_percent: ignoreArmorPercent,
             // スマホの攻撃ボタンの基準値を武器に合わせるため（Phase 5k）
             ...(wRow
-              ? { skill_key: skillNameToKey(wRow.skill), is_ranged: Boolean(wRow.is_ranged), autofire: wRow.autofire ?? null }
+              ? { skill_key: skillNameToKey(wRow.skill), is_ranged: Boolean(wRow.is_ranged), autofire: wRow.autofire ?? null, damage: wRow.damage, weapon_type: wRow.weapon_type, rof: wRow.rof }
               : {}),
           };
         });
@@ -265,9 +265,23 @@ combatRoutes.get('/combats/current/my-lines', async (c) => {
   const me = combat?.participants.find((p) => p.character_id === charId);
   if (!combat || !me) return c.json({ lines: {} });
   const weapon_entry_id = c.req.query('weapon_entry_id') || undefined;
+  const targetId = c.req.query('target_id');
+  const target = targetId ? combat.participants.find((p) => p.id === targetId) : undefined;
+  if (!charId) return c.json({ lines: {} });
+  let distance_m: number | undefined;
+  if (combat.board_id && target) {
+    const board = db.select().from(boards).where(eq(boards.id, combat.board_id)).get();
+    const actorToken = db.select().from(board_tokens).where(and(eq(board_tokens.board_id, combat.board_id), eq(board_tokens.character_id, charId), eq(board_tokens.gm_only, false))).get();
+    const targetToken = target.character_id ? db.select().from(board_tokens).where(and(eq(board_tokens.board_id, combat.board_id), eq(board_tokens.character_id, target.character_id), eq(board_tokens.gm_only, false))).get() : undefined;
+    if (actorToken && targetToken && board) {
+      const grid = JSON.parse(board.grid || '{}');
+      const diagonalRule = combat.settings?.diagonalRule === 'alternate' ? 'alternate' : 'chebyshev';
+      distance_m = gridDistance(actorToken, targetToken, { ...DEFAULT_RULES, diagonalRule }) * Number(grid.cell_m || 2);
+    }
+  }
   const lines: Record<string, unknown> = {};
   for (const key of ['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts']) {
-    lines[key] = attackLine({ action_key: key, weapon_entry_id }, me);
+    lines[key] = attackLine({ action_key: key, weapon_entry_id, distance_m }, me, target);
   }
   return c.json({ lines });
 });

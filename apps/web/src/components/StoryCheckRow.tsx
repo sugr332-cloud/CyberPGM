@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { CharacterSheet, SKILL_CATALOG, formatSkillName } from '@cyberpgm/shared';
+import { CharacterSheet } from '@cyberpgm/shared';
+import { SkillSelect } from './SkillSelect.js';
 
 // 難易度目安（DV値）: イージー・モード p.15（Issue #3）
 export const DV_GUIDE = [
@@ -33,10 +34,6 @@ interface Props {
   onApply: () => void;
   onUndo: () => void;
 }
-
-const SKILL_OPTIONS = Object.values(SKILL_CATALOG)
-  .map((s) => ({ key: s.key, label: formatSkillName(s.key) }))
-  .sort((a, b) => a.label.localeCompare(b.label, 'ja'));
 
 const inputStyle: React.CSSProperties = {
   padding: '4px 6px',
@@ -123,19 +120,7 @@ export function StoryCheckRow({ check, characters, onPatch, onRoll, onApply, onU
 
       {!applied && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
-          <select
-            aria-label="技能"
-            value={check.skill_key ?? ''}
-            onChange={(e) => onPatch({ skill_key: e.target.value || null })}
-            style={inputStyle}
-          >
-            <option value="">技能を選ぶ</option>
-            {SKILL_OPTIONS.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+          <SkillSelect value={check.skill_key ?? ''} onChange={(value) => onPatch({ skill_key: value || null })} characters={characters} />
           {!check.opposed && (
             <>
               <input
@@ -171,19 +156,7 @@ export function StoryCheckRow({ check, characters, onPatch, onRoll, onApply, onU
               ))}
           </select>
           {check.opposed && (
-            <select
-              aria-label="相手の技能"
-              value={check.opposed.skill_key ?? ''}
-              onChange={(e) => onPatch({ opposed: { ...check.opposed, skill_key: e.target.value || undefined } })}
-              style={inputStyle}
-            >
-              <option value="">相手の技能</option>
-              {SKILL_OPTIONS.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+            <SkillSelect label="相手の技能" value={check.opposed.skill_key ?? ''} onChange={(value) => onPatch({ opposed: { ...check.opposed, skill_key: value || undefined } })} characters={characters} />
           )}
         </div>
       )}

@@ -29,7 +29,7 @@ const rowStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-/** スマホの「装備」タブ（Phase 5g）: 武器・防具・持ち物・サイバーウェア。タップすると性能（効果・フレーバーは出さない） */
+/** スマホの「装備」タブ（Phase 5g）: 武器・防具・持ち物・サイバーウェア。「？」から性能・効果・フレーバーを確認する */
 export function PlayerEquipmentView({ sheet }: { sheet: CharacterSheet }) {
   const [popup, setPopup] = useState<{ name: string; itemId?: string | null } | null>(null);
   const cyberwareIds = new Set(sheet.cyberware.map((cw) => cw.item_id).filter(Boolean));
@@ -39,8 +39,10 @@ export function PlayerEquipmentView({ sheet }: { sheet: CharacterSheet }) {
   const others = inventory.filter((i) => i.kind !== 'weapon' && i.kind !== 'armor');
   const textWeapons = (sheet.weapons || []).filter((w): w is string => typeof w === 'string');
 
+  const helpIcon = <span aria-hidden="true" style={{ display: 'inline-flex', justifyContent: 'center', alignItems: 'center', width: '28px', height: '28px', borderRadius: '50%', border: '1px solid var(--color-ally)', color: 'var(--color-ally)', fontWeight: 700, flexShrink: 0 }}>?</span>;
+
   const entryRow = (i: InventoryEntry) => (
-    <button key={i.entry_id} type="button" data-testid="player-inventory-item" onClick={() => setPopup({ name: i.name, itemId: i.item_id })} style={rowStyle}>
+    <button key={i.entry_id} type="button" data-testid="player-inventory-item" aria-label={`${i.name}の性能・効果・フレーバー`} onClick={() => setPopup({ name: i.name, itemId: i.item_id })} style={rowStyle}>
       <span style={{ fontWeight: 500 }}>
         {i.name}
         {i.equipped && <span style={{ ...muted, marginLeft: '6px' }}>装備中</span>}
@@ -50,7 +52,7 @@ export function PlayerEquipmentView({ sheet }: { sheet: CharacterSheet }) {
           </span>
         )}
       </span>
-      <span style={muted}>× {i.qty}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span style={muted}>× {i.qty}</span>{helpIcon}</span>
     </button>
   );
 
@@ -74,8 +76,8 @@ export function PlayerEquipmentView({ sheet }: { sheet: CharacterSheet }) {
           {weapons.length === 0 && textWeapons.length === 0 && <span style={muted}>なし</span>}
           {weapons.map(entryRow)}
           {textWeapons.map((w, idx) => (
-            <button key={`w-${idx}`} type="button" data-testid="player-inventory-item" onClick={() => setPopup({ name: w })} style={rowStyle}>
-              <span style={{ fontWeight: 500 }}>{w}</span>
+            <button key={`w-${idx}`} type="button" data-testid="player-inventory-item" aria-label={`${w}の性能・効果・フレーバー`} onClick={() => setPopup({ name: w })} style={rowStyle}>
+              <span style={{ fontWeight: 500 }}>{w}</span>{helpIcon}
             </button>
           ))}
         </div>
@@ -88,9 +90,9 @@ export function PlayerEquipmentView({ sheet }: { sheet: CharacterSheet }) {
           <span style={title}>サイバーウェア</span>
           {sheet.cyberware.length === 0 && <span style={muted}>なし</span>}
           {sheet.cyberware.map((cw, idx) => (
-            <button key={`cw-${idx}`} type="button" onClick={() => setPopup({ name: cw.name, itemId: cw.item_id })} style={rowStyle}>
+            <button key={`cw-${idx}`} type="button" aria-label={`${cw.name}の性能・効果・フレーバー`} onClick={() => setPopup({ name: cw.name, itemId: cw.item_id })} style={rowStyle}>
               <span style={{ fontWeight: 500 }}>{cw.name}</span>
-              {cw.static_loss != null && <span style={muted}>人間性 −{cw.static_loss}</span>}
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{cw.static_loss != null && <span style={muted}>人間性 −{cw.static_loss}</span>}{helpIcon}</span>
             </button>
           ))}
         </div>
@@ -100,7 +102,7 @@ export function PlayerEquipmentView({ sheet }: { sheet: CharacterSheet }) {
           {others.map(entryRow)}
         </div>
       </div>
-      <span style={muted}>タップすると性能が出ます。</span>
+      <span style={muted}>装備品の「？」を押すと、性能・効果・フレーバーを確認できます。</span>
       {popup && <ItemDetailPopup forPlayer name={popup.name} itemId={popup.itemId} onClose={() => setPopup(null)} />}
     </div>
   );

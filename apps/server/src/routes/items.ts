@@ -149,8 +149,8 @@ itemsRouter.get('/', async (c) => {
   });
 });
 
-/** isGm でないときは、GM だけに見せる効果とフレーバー（Phase 5c）を外す */
-export function formatItemSummary(item: any, isGm = true) {
+/** 一覧では説明文を省き、GM と参加済みプレイヤーの品目詳細で効果・フレーバーを返す。 */
+export function formatItemSummary(item: any, includeNotes = true) {
   const imgs: Array<typeof images.$inferSelect> = item.images || [];
   let primaryImgId: string | null = null;
   if (imgs.length > 0) {
@@ -165,7 +165,7 @@ export function formatItemSummary(item: any, isGm = true) {
     }
   }
 
-  const base = isGm
+  const base = includeNotes
     ? item
     : (({ effect_ja: _e, flavor_ja: _f, effect_is_draft: _ed, flavor_is_draft: _fd, ...rest }) => rest)(item);
   return {
@@ -206,7 +206,8 @@ itemsRouter.get('/:id', async (c) => {
     return c.json({ error: 'Item not found' }, 404);
   }
 
-  return c.json(formatItemSummary(item, c.get('role') === 'gm'));
+  const role = c.get('role');
+  return c.json(formatItemSummary(item, role === 'gm' || role === 'player'));
 });
 
 // PATCH /api/items/:id - update GM-editable fields of an item (GM only)

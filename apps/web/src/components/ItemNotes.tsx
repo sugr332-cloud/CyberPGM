@@ -13,6 +13,7 @@ interface Props {
   item: ItemNotesFields;
   /** 編集できるか（商店の詳細は true、戦闘カードの窓は false） */
   editable?: boolean;
+  showMissing?: boolean;
   onUpdated?: (item: any) => void;
 }
 
@@ -35,8 +36,8 @@ const smallButton: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-/** 品目の効果とフレーバー（GM のみ。Phase 5c） */
-export function ItemNotes({ item, editable = false, onUpdated }: Props) {
+/** 品目の効果とフレーバー。編集は GM の商店画面だけ。 */
+export function ItemNotes({ item, editable = false, showMissing = false, onUpdated }: Props) {
   const [editing, setEditing] = useState(false);
   const [effect, setEffect] = useState(item.effect_ja ?? '');
   const [flavor, setFlavor] = useState(item.flavor_ja ?? '');
@@ -95,13 +96,13 @@ export function ItemNotes({ item, editable = false, onUpdated }: Props) {
       <div>
         <span style={{ color: 'var(--color-text-muted)' }}>効果</span>
         {item.effect_is_draft && <span style={draftBadge}>下書き</span>}
-        <div style={{ marginTop: '2px', lineHeight: 1.5 }}>{item.effect_ja || '特別な効果なし（性能の欄を参照）'}</div>
+        <div style={{ marginTop: '2px', lineHeight: 1.5 }}>{item.effect_ja || (showMissing ? '効果の説明は未登録です。性能の欄を参照してください。' : '特別な効果なし（性能の欄を参照）')}</div>
       </div>
-      {item.flavor_ja && (
+      {(item.flavor_ja || showMissing) && (
         <div>
           <span style={{ color: 'var(--color-text-muted)' }}>フレーバー</span>
           {item.flavor_is_draft && <span style={draftBadge}>下書き</span>}
-          <div style={{ marginTop: '2px', lineHeight: 1.5, fontStyle: 'italic' }}>{item.flavor_ja}</div>
+          <div style={{ marginTop: '2px', lineHeight: 1.5, fontStyle: 'italic' }}>{item.flavor_ja || 'フレーバーは未登録です。'}</div>
         </div>
       )}
       {editable && (

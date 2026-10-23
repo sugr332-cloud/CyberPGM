@@ -21,7 +21,6 @@ import {
   CpgmCharacterFile,
   Board,
   BoardObject,
-  BoardToken,
   BoardDrop,
   Scenario,
   ScenarioFull,
@@ -627,7 +626,7 @@ export const api = {
     ),
 
   createBoardToken: (boardId: string, data: any) =>
-    request<{ token: BoardToken }>(
+    request<{ board: Board }>(
       `/api/boards/${boardId}/tokens`,
       {
         method: 'POST',
@@ -637,7 +636,7 @@ export const api = {
     ),
 
   updateBoardToken: (boardId: string, tokenId: string, data: any) =>
-    request<{ token: BoardToken }>(
+    request<{ board: Board }>(
       `/api/boards/${boardId}/tokens/${tokenId}`,
       {
         method: 'PATCH',

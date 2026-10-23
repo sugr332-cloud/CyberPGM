@@ -27,6 +27,7 @@ import { PlayerSkillsView } from '../components/PlayerSkillsView.js';
 import { PlayerShopView } from '../components/PlayerShopView.js';
 import { PlayerActionSkills } from '../components/PlayerActionSkills.js';
 import { PlayerMoveMap, type PlayerMoveResult } from '../components/PlayerMoveMap.js';
+import { LoreView } from '../components/LoreView.js';
 import { useActionAvailability, blockedButtonStyle } from '../hooks/useActionAvailability.js';
 import '../player-theme.css';
 
@@ -55,7 +56,7 @@ export const PlayerPage: React.FC = () => {
   // Character sheet state
   const [sheet, setSheet] = useState<CharacterSheet | null>(null);
   const [logs, setLogs] = useState<CharLogEntry[]>([]);
-  const [activeTab, setActiveTab] = useState<'sheet' | 'gear' | 'skills' | 'shop' | 'act' | 'handouts'>('sheet');
+  const [activeTab, setActiveTab] = useState<'sheet' | 'gear' | 'skills' | 'shop' | 'act' | 'handouts' | 'lore'>('sheet');
   // スマホの商店（Phase 5g）: 店の開け閉め・申請の結果が来たら読み直す
   const [shopRefreshKey, setShopRefreshKey] = useState(0);
   const [banner, setBanner] = useState<WsNotifyPayload | null>(null);
@@ -169,21 +170,26 @@ export const PlayerPage: React.FC = () => {
     const me = (currentCombat.participants as Array<{ character_id: string | null; character?: any }>).find((p) => p.character_id === sheet.id);
     const list = ((me?.character?.inventory as Array<{ entry_id: string; kind?: string }>) ?? []).filter((i) => i.kind === 'weapon');
     const wid = (list.find((w) => w.entry_id === attackWeaponId) ?? list[0])?.entry_id;
-    fetch(`/api/combats/current/my-lines${wid ? `?weapon_entry_id=${encodeURIComponent(wid)}` : ''}`, { headers: { Authorization: `Bearer ${token}` } })
+    const params = new URLSearchParams();
+    if (wid) params.set('weapon_entry_id', wid);
+    if (attackTargetId) params.set('target_id', attackTargetId);
+    fetch(`/api/combats/current/my-lines?${params}`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
       .then((res) => setMyLines(res.lines ?? {}))
       .catch(() => undefined);
-  }, [token, currentCombat?.id, currentCombat?.turn_index, currentCombat?.status, attackWeaponId, sheet?.id, sheet?.hp]);
+  }, [token, currentCombat?.id, currentCombat?.turn_index, currentCombat?.status, attackWeaponId, attackTargetId, sheet?.id, sheet?.hp]);
 
   const bandsText = (key: string) => {
     const bands = myLines[key]?.bands;
-    if (!bands || bands.length === 0) return null;
+    if ((!bands || bands.length === 0) && !myLines[key]?.text) return null;
     return (
       <div data-testid={`bands-${key}`} style={{ fontSize: '0.65rem', color: 'var(--color-ally)', marginTop: '2px' }}>
-        {bands
+        {attackTargetId && myLines[key]?.text && <div>{myLines[key]!.text}</div>}
+        <div style={{ fontWeight: 700, marginBottom: 2 }}>距離ごとの命中に必要な合計値（自分の能力＋技能＋出目）</div>
+        {bands?.length ? bands
           .slice(0, 4)
-          .map((b) => `〜${b.range.split('〜')[1]} ${b.needed.replace(' 以上で成功', '+').replace(/10 → 追加ロールで (\d+) 以上/, '10→$1+').replace('成功しない', '×')}`)
-          .join(' / ')}
+          .map((b) => `${b.range}：合計${b.needed.replace(' 以上で成功', '以上で命中').replace(/10 → 追加ロールで (\d+) 以上/, '10後、追加出目込みで$1以上').replace('成功しない', '命中不可')}`)
+          .join(' / ') : '盤面に相手のコマがないため、距離帯ごとの目安を表示しています'}
       </div>
     );
   };
@@ -1234,6 +1240,8 @@ export const PlayerPage: React.FC = () => {
             </div>
           )}
         </div>
+      ) : activeTab === 'lore' ? (
+        <div style={{ padding: '16px' }}><LoreView request={null} playerToken={token} /></div>
       ) : activeTab === 'gear' ? (
         <PlayerEquipmentView sheet={sheet} />
       ) : activeTab === 'skills' ? (
@@ -2134,6 +2142,9 @@ export const PlayerPage: React.FC = () => {
                   skill_key?: string;
                   is_ranged?: boolean;
                   autofire?: number | null;
+                  damage?: string | null;
+                  weapon_type?: string | null;
+                  rof?: number | null;
                 };
                 const myWeapons = ((me?.character?.inventory as WeaponEntry[]) ?? []).filter((i) => i.kind === 'weapon');
                 // 選んでいなければ最初の武器を使う
@@ -2197,6 +2208,7 @@ export const PlayerPage: React.FC = () => {
                               style={chip(w.entry_id === weaponId, 'var(--color-ally)')}
                             >
                               {w.name}
+                              {w.damage && `（ダメージ ${w.damage}）`}
                               {typeof w.ammo === 'number' && ` (残弾 ${w.ammo})`}
                             </button>
                           ))}
@@ -2592,7 +2604,7 @@ export const PlayerPage: React.FC = () => {
           backgroundColor: 'var(--color-surface)',
           borderTop: '1px solid var(--color-border)',
           display: 'grid',
-          gridTemplateColumns: 'repeat(6, 1fr)',
+          gridTemplateColumns: 'repeat(7, 1fr)',
           zIndex: 100,
         }}
       >
@@ -2604,6 +2616,7 @@ export const PlayerPage: React.FC = () => {
             { id: 'shop', label: '商店', code: 'SHOP' },
             { id: 'act', label: '行動', code: 'ACT' },
             { id: 'handouts', label: '資料', code: 'DATA' },
+            { id: 'lore', label: '世界資料', code: 'LORE' },
           ] as const
         ).map((tab) => (
           <button

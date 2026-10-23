@@ -39,6 +39,7 @@ import {
   LosStatus,
 } from '@cyberpgm/rules';
 import { BoardView } from './BoardView.js';
+import { findTokenPlacement, tokenPlacementError } from '../utils/board-placement.js';
 import { ItemDetailPopup } from './ItemDetail.js';
 import { JoinCombatDialog } from './JoinCombatDialog.js';
 import { useActionAvailability, blockedButtonStyle } from '../hooks/useActionAvailability.js';
@@ -101,6 +102,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
     tokens: BoardToken[];
     drops: BoardDrop[];
   } | null>(null);
+  const [focusedMapParticipantId, setFocusedMapParticipantId] = useState('');
+  const [placementParticipantId, setPlacementParticipantId] = useState('');
+  const [placingTokens, setPlacingTokens] = useState(false);
+  const [placementMessage, setPlacementMessage] = useState<string | null>(null);
+  const placementBusy = React.useRef(false);
   const [sessionCode, setSessionCode] = useState<string>('');
   const [isTvBroadcasting, setIsTvBroadcasting] = useState<boolean>(true);
 
@@ -335,29 +341,97 @@ export const CombatView: React.FC<CombatViewProps> = ({
     } else {
       setBoardData(null);
     }
+    setPlacementParticipantId('');
+    setFocusedMapParticipantId('');
+    setPlacementMessage(null);
   }, [combat?.board_id, refreshBoard]);
 
   // Board Object & Token Handlers
-  const handleAutoPlaceTokens = async () => {
-    if (!combat || !boardData) return;
-    const existingIds = new Set(boardData.tokens.map((t) => t.character_id));
-    let allyCount = 0;
-    let enemyCount = 0;
-    for (const p of combat.participants) {
-      const matchId = p.character_id || p.id;
-      if (!existingIds.has(matchId)) {
-        const isAlly = p.side === 'ally';
-        const x = isAlly ? 2 : 12;
-        const y = isAlly ? 2 + allyCount++ : 2 + enemyCount++;
-        await api.createBoardToken(boardData.board.id, {
-          character_id: matchId,
-          x,
-          y,
-          gm_only: false,
-        });
-      }
+  const handlePlaceParticipant = async ({ x, y }: { x: number; y: number }, participantId = placementParticipantId) => {
+    if (!combat || !boardData || !participantId || placementBusy.current) return;
+    const participant = combat.participants.find((p) => p.id === participantId);
+    if (!participant) return;
+    const matchId = participant.character_id || participant.id;
+    const existing = boardData.tokens.find((t) => t.character_id === matchId);
+    const board = { ...boardData.board, objects: boardData.objects, tokens: boardData.tokens };
+    const error = tokenPlacementError(board, x, y, existing?.id);
+    if (error) {
+      setPlacementMessage(error);
+      return;
     }
-    refreshBoard(boardData.board.id);
+    placementBusy.current = true;
+    setPlacingTokens(true);
+    try {
+      if (existing) {
+        await handleMoveToken(existing.id, x, y);
+      } else {
+        await api.createBoardToken(board.id, { character_id: matchId, x, y, gm_only: false });
+        await refreshBoard(board.id);
+      }
+      setPlacementParticipantId('');
+      setFocusedMapParticipantId(participant.id);
+      setPlacementMessage(`${participant.name} を (${x}, ${y}) に配置しました。そのままコマをドラッグして動かせます。`);
+    } catch (err: any) {
+      setPlacementMessage(`配置できませんでした: ${err.message}`);
+    } finally {
+      placementBusy.current = false;
+      setPlacingTokens(false);
+    }
+  };
+
+  const handleShowParticipantOnMap = async (participant: CombatParticipant) => {
+    if (!boardData || placementBusy.current) return;
+    setPlacementParticipantId('');
+    const existing = boardData.tokens.find((t) => t.character_id === (participant.character_id || participant.id));
+    const board = { ...boardData.board, objects: boardData.objects, tokens: boardData.tokens };
+    if (existing && !tokenPlacementError(board, existing.x, existing.y, existing.id)) {
+      setFocusedMapParticipantId(participant.id);
+      setPlacementMessage(`${participant.name} は (${existing.x}, ${existing.y}) です。水色の輪が付いたコマをドラッグして動かせます。`);
+      return;
+    }
+    const cell = findTokenPlacement(board, participant.side, existing?.id);
+    if (!cell) {
+      setPlacementMessage('空きマスがありません。盤面を広げるか、ほかのコマを動かしてください。');
+      return;
+    }
+    await handlePlaceParticipant(cell, participant.id);
+  };
+
+  const handleAutoPlaceTokens = async () => {
+    if (!combat || !boardData || placementBusy.current) return;
+    placementBusy.current = true;
+    setPlacingTokens(true);
+    const board = { ...boardData.board, objects: boardData.objects, tokens: [...boardData.tokens] };
+    let placed = 0;
+    let full = false;
+    try {
+      for (const p of combat.participants.filter((p) => p.active && !p.out)) {
+        const matchId = p.character_id || p.id;
+        const existing = board.tokens.find((t) => t.character_id === matchId);
+        if (existing && !tokenPlacementError(board, existing.x, existing.y, existing.id)) continue;
+        const cell = findTokenPlacement(board, p.side, existing?.id);
+        if (!cell) {
+          full = true;
+          break;
+        }
+        if (existing) {
+          await handleMoveToken(existing.id, cell.x, cell.y);
+          board.tokens = board.tokens.map((t) => t.id === existing.id ? { ...t, ...cell } : t);
+        } else {
+          const res = await api.createBoardToken(board.id, { character_id: matchId, ...cell, gm_only: false });
+          board.tokens = res.board.tokens || [];
+        }
+        placed++;
+      }
+      setPlacementParticipantId('');
+      setPlacementMessage(full ? `${placed} 人を配置しました。空きマスが足りません。盤面を広げてください` : `${placed} 人を配置しました`);
+    } catch (err: any) {
+      setPlacementMessage(`配置できませんでした: ${err.message}`);
+    } finally {
+      await refreshBoard(board.id);
+      placementBusy.current = false;
+      setPlacingTokens(false);
+    }
   };
 
   const handleCreateBoard = async () => {
@@ -422,9 +496,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
       } else {
         await api.updateBoardToken(boardData.board.id, tokenId, { x, y });
       }
-      refreshBoard(boardData.board.id);
+      await refreshBoard(boardData.board.id);
     } catch (err: any) {
-      console.warn('Failed to update token position:', err);
+      setPlacementMessage(`移動できませんでした: ${err.message}`);
+      throw err;
     }
   };
 
@@ -1175,6 +1250,215 @@ export const CombatView: React.FC<CombatViewProps> = ({
     return <div style={{ padding: '24px', color: 'var(--color-text-muted)' }}>戦闘データを読み込み中...</div>;
   }
 
+  const boardSection = (
+    boardData ? (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: '8px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                盤面: {boardData.board.name}
+              </span>
+              {boardData.board.background_image_visibility === 'gm' && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', backgroundColor: 'rgba(235, 179, 58, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--color-warning)' }}>
+                  ⚠ この背景は GM のみの画像です。TV に出すには公開設定を変えてください
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={handleAutoPlaceTokens}
+                disabled={placingTokens}
+                data-testid="board-auto-place"
+                style={{
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '1px solid var(--color-border-light)',
+                  color: 'var(--color-text)',
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                未配置・盤面外のコマを自動配置
+              </button>
+              {boards.length > 1 && (
+                <select
+                  value={boardData.board.id}
+                  onChange={(e) => handleSelectBoard(e.target.value)}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '4px',
+                    color: 'var(--color-text)',
+                    fontSize: '0.8rem',
+                  }}
+                >
+                  {boards.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <div style={{ fontWeight: 700 }}>参加者の名前を押すと、マップにコマが出ます</div>
+          <div role="group" aria-label="マップに配置する参加者" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {combat?.participants.filter((p) => p.active && !p.out).map((p) => {
+              const t = boardData.tokens.find((t) => t.character_id === (p.character_id || p.id));
+              const outside = t && (t.x < 0 || t.y < 0 || t.x >= (boardData.board.grid?.cols || 20) || t.y >= (boardData.board.grid?.rows || 15));
+              const placed = t && !outside;
+              const focused = focusedMapParticipantId === p.id;
+              return (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'stretch', border: `1px solid ${focused ? 'var(--color-ally)' : 'var(--color-border-light)'}`, borderRadius: '6px', overflow: 'hidden', maxWidth: '100%' }}>
+                  <button
+                    type="button"
+                    data-testid={`board-participant-${p.id}`}
+                    aria-label={`${p.name}${placed ? 'の位置を表示' : 'をマップに置く'}`}
+                    aria-pressed={focused}
+                    disabled={placingTokens}
+                    onClick={() => { void handleShowParticipantOnMap(p); }}
+                    style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 12px', border: 'none', color: 'var(--color-text)', backgroundColor: focused ? 'rgba(79, 182, 227, 0.15)' : 'var(--color-surface-elevated)', cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    <strong>{p.name}</strong>
+                    <span style={{ fontSize: '0.8rem', color: placed ? 'var(--color-ally)' : 'var(--color-warning)' }}>{placed ? `配置済み (${t.x}, ${t.y})・押して位置を表示` : '未配置・押すとマップに置く'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`board-place-cell-${p.id}`}
+                    aria-label={`${p.name}の配置マスを指定`}
+                    disabled={placingTokens}
+                    onClick={() => { setPlacementParticipantId(p.id); setFocusedMapParticipantId(p.id); setPlacementMessage(`${p.name} を置くマスを、下のマップでクリックしてください。`); }}
+                    style={{ padding: '6px 10px', border: 'none', borderLeft: '1px solid var(--color-border-light)', color: 'var(--color-text-muted)', backgroundColor: 'var(--color-surface)', cursor: 'pointer', fontSize: '0.8rem' }}
+                  >マスを指定</button>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+            {placementParticipantId ? <><strong>{combat?.participants.find((p) => p.id === placementParticipantId)?.name}</strong> を置くマスをクリックしてください。 <button type="button" disabled={placingTokens} onClick={() => { setPlacementParticipantId(''); setPlacementMessage(null); }}>キャンセル</button></> : '配置後はコマをドラッグして動かせます。マップは全範囲を表示しています。'}
+            {!placementParticipantId && combat?.status === 'active' && (selectedActionKey === 'move' || selectedActionKey === 'run') && ' 手番のコマは移動先を指定してから「移動を確定して反映」を押してください。'}
+          </div>
+          {placementMessage && <div role="status" data-testid="board-placement-message">{placementMessage}</div>}
+
+          <BoardView
+            board={boardData.board}
+            objects={boardData.objects}
+            tokens={boardData.tokens}
+            drops={boardData.drops}
+            combat={combat}
+            activeParticipantId={activePart?.id}
+            targetParticipantId={targetParticipantId}
+            focusedParticipantId={focusedMapParticipantId}
+            mode={placementParticipantId ? 'setup' : selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}
+            onSelectCell={placementParticipantId ? (cell) => { void handlePlaceParticipant(cell); } : undefined}
+            reachableCells={reachableCells}
+            destination={destination}
+            onSelectDestination={(dest) => {
+              setDestination(dest);
+              setDestinationFrom(null);
+            }}
+            losLine={
+              losInfo
+                ? {
+                    x1: losInfo.x1,
+                    y1: losInfo.y1,
+                    x2: losInfo.x2,
+                    y2: losInfo.y2,
+                    status: losInfo.status,
+                  }
+                : null
+            }
+            isGm={true}
+            onUpdateBoard={async (patch) => {
+              await api.updateBoard(boardData.board.id, patch);
+              refreshBoard(boardData.board.id);
+            }}
+            onUpdateObject={handleUpdateObject}
+            onDeleteObject={handleDeleteObject}
+            onCreateObject={handleCreateObject}
+            onMoveToken={(id, x, y) => { void handleMoveToken(id, x, y).catch(() => undefined); }}
+            onSelectDrop={(drop) => {
+              setSelectedActionKey('pickup');
+              setPickupDropId(drop.id);
+            }}
+            onSelectParticipant={(pid) => setTargetParticipantId(pid)}
+          />
+        </div>
+      ) : (
+        <div
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px dashed var(--color-border)',
+            borderRadius: '8px',
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+            盤面が設定されていません。既存の盤面を選択するか、新規作成してください。
+          </span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {boards.length > 0 && (
+              <select
+                onChange={(e) => {
+                  if (e.target.value) handleSelectBoard(e.target.value);
+                }}
+                defaultValue=""
+                style={{
+                  padding: '6px 10px',
+                  backgroundColor: 'var(--color-bg)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '4px',
+                  color: 'var(--color-text)',
+                  fontSize: '0.85rem',
+                }}
+              >
+                <option value="" disabled>盤面を選択...</option>
+                {boards.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={handleCreateBoard}
+              style={{
+                backgroundColor: 'var(--color-ally)',
+                color: '#000',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '4px',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+              }}
+            >
+              + 盤面を作成
+            </button>
+          </div>
+        </div>
+      )
+  );
+
   // --- 1. SETUP / PARTICIPANT CHECK VIEW ---
   if (!combat || combat.status === 'setup' || combat.status === 'ended') {
     // もう戦闘に入っているキャラ（複製したモブを含む）は出さない（Phase 5l）
@@ -1548,6 +1832,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
             </div>
           </div>
         )}
+        {combat?.status === 'setup' && boardSection}
       </div>
     );
   }
@@ -1788,7 +2073,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 cursor: 'pointer',
               }}
             >
-              手番を終える
+              手番終了 → 次の参加者へ
             </button>
             <button
               onClick={handleEndCombat}
@@ -1866,170 +2151,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         </div>
       </div>
 
-      {/* Board View Section */}
-      {boardData ? (
-        <div
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '8px',
-            padding: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                盤面: {boardData.board.name}
-              </span>
-              {boardData.board.background_image_visibility === 'gm' && (
-                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', backgroundColor: 'rgba(235, 179, 58, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--color-warning)' }}>
-                  ⚠ この背景は GM のみの画像です。TV に出すには公開設定を変えてください
-                </span>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button
-                type="button"
-                onClick={handleAutoPlaceTokens}
-                style={{
-                  backgroundColor: 'var(--color-surface-elevated)',
-                  border: '1px solid var(--color-border-light)',
-                  color: 'var(--color-text)',
-                  padding: '4px 10px',
-                  borderRadius: '4px',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                }}
-              >
-                未配置の参加者コマを配置
-              </button>
-              {boards.length > 1 && (
-                <select
-                  value={boardData.board.id}
-                  onChange={(e) => handleSelectBoard(e.target.value)}
-                  style={{
-                    padding: '4px 8px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: '1px solid var(--color-border-light)',
-                    borderRadius: '4px',
-                    color: 'var(--color-text)',
-                    fontSize: '0.8rem',
-                  }}
-                >
-                  {boards.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          </div>
-
-          <BoardView
-            board={boardData.board}
-            objects={boardData.objects}
-            tokens={boardData.tokens}
-            drops={boardData.drops}
-            combat={combat}
-            activeParticipantId={activePart?.id}
-            targetParticipantId={targetParticipantId}
-            mode={selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}
-            reachableCells={reachableCells}
-            destination={destination}
-            onSelectDestination={(dest) => {
-              setDestination(dest);
-              setDestinationFrom(null);
-            }}
-            losLine={
-              losInfo
-                ? {
-                    x1: losInfo.x1,
-                    y1: losInfo.y1,
-                    x2: losInfo.x2,
-                    y2: losInfo.y2,
-                    status: losInfo.status,
-                  }
-                : null
-            }
-            isGm={true}
-            onUpdateBoard={async (patch) => {
-              await api.updateBoard(boardData.board.id, patch);
-              refreshBoard(boardData.board.id);
-            }}
-            onUpdateObject={handleUpdateObject}
-            onDeleteObject={handleDeleteObject}
-            onCreateObject={handleCreateObject}
-            onMoveToken={handleMoveToken}
-            onSelectDrop={(drop) => {
-              setSelectedActionKey('pickup');
-              setPickupDropId(drop.id);
-            }}
-            onSelectParticipant={(pid) => setTargetParticipantId(pid)}
-          />
-        </div>
-      ) : (
-        <div
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px dashed var(--color-border)',
-            borderRadius: '8px',
-            padding: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-          }}
-        >
-          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
-            盤面が設定されていません。既存の盤面を選択するか、新規作成してください。
-          </span>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {boards.length > 0 && (
-              <select
-                onChange={(e) => {
-                  if (e.target.value) handleSelectBoard(e.target.value);
-                }}
-                defaultValue=""
-                style={{
-                  padding: '6px 10px',
-                  backgroundColor: 'var(--color-bg)',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: '4px',
-                  color: 'var(--color-text)',
-                  fontSize: '0.85rem',
-                }}
-              >
-                <option value="" disabled>盤面を選択...</option>
-                {boards.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button
-              type="button"
-              onClick={handleCreateBoard}
-              style={{
-                backgroundColor: 'var(--color-ally)',
-                color: '#000',
-                border: 'none',
-                padding: '6px 14px',
-                borderRadius: '4px',
-                fontWeight: 700,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-              }}
-            >
-              + 盤面を作成
-            </button>
-          </div>
-        </div>
-      )}
+      {boardSection}
 
       {/* Mobile Tab Switcher */}
       <div
@@ -2103,6 +2225,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     アクション: {activePart.action_used ? '使用済み' : '未使用'}
                     {actionsAllowedOf(activePart) > 1 && ` (${Number(activePart.state?.actions_taken ?? 0)}/${actionsAllowedOf(activePart)} 回)`}
                   </span>
+                </div>
+                <div style={{ marginTop: 8, padding: '8px 10px', borderLeft: '3px solid var(--color-ally)', background: 'var(--color-surface-elevated)', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                  行動の結果を確定しても、移動が未使用なら手番は続きます。移動をしない場合は「手番終了 → 次の参加者へ」を押してください。
                 </div>
                 {/* 2 回行動など（Phase 5j）。移動とアクションを使い切ると自動で次の手番へ */}
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', fontSize: '0.8rem', flexWrap: 'wrap' }}>

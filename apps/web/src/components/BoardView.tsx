@@ -20,9 +20,11 @@ export interface BoardViewProps {
   combat?: Combat | null;
   activeParticipantId?: string | null;
   targetParticipantId?: string | null;
+  focusedParticipantId?: string | null;
   mode?: 'view' | 'move' | 'attack' | 'pickup' | 'setup';
   reachableCells?: Set<string>; // Set of "x,y"
   destination?: { x: number; y: number } | null;
+  onSelectCell?: (cell: { x: number; y: number }) => void;
   onSelectDestination?: (dest: { x: number; y: number }) => void;
   losLine?: {
     x1: number;
@@ -58,9 +60,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
   combat,
   activeParticipantId,
   targetParticipantId,
+  focusedParticipantId,
   mode = 'view',
   reachableCells,
   destination,
+  onSelectCell,
   onSelectDestination,
   losLine,
   isGm = false,
@@ -94,7 +98,6 @@ export const BoardView: React.FC<BoardViewProps> = ({
   }, [board.grid]);
 
   const [showGrid, setShowGrid] = useState<boolean>(grid.show ?? true);
-  const [scale, setScale] = useState<number>(1);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [draggingTokenId, setDraggingTokenId] = useState<string | null>(null);
   const [draggingObjectId, setDraggingObjectId] = useState<string | null>(null);
@@ -222,10 +225,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
       svgY = svgP.y;
     } else {
       const rect = svgRef.current.getBoundingClientRect();
-      const clientX = e.clientX - rect.left;
-      const clientY = e.clientY - rect.top;
-      svgX = clientX / scale;
-      svgY = clientY / scale;
+      const fit = Math.min(rect.width / boardWidth, rect.height / boardHeight);
+      if (fit <= 0) return null;
+      svgX = (e.clientX - rect.left - (rect.width - boardWidth * fit) / 2) / fit;
+      svgY = (e.clientY - rect.top - (rect.height - boardHeight * fit) / 2) / fit;
     }
 
     const x = Math.floor(svgX / cellPx);
@@ -295,6 +298,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
     const cell = getCellFromEvent(e);
     if (!cell) return;
 
+    if (isGm && !isScreen && !isFogMode && onSelectCell) {
+      onSelectCell(cell);
+      return;
+    }
+
     if (mode === 'move' && reachableCells?.has(`${cell.x},${cell.y}`)) {
       onSelectDestination?.(cell);
       return;
@@ -309,7 +317,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
   // Object drag handling in setup / non-combat (Pointer Events)
   const handleObjectPointerDown = (objId: string, e: React.PointerEvent) => {
-    if (combat?.status === 'active' || isScreen || !isGm || isFogMode) return;
+    if (combat?.status === 'active' || isScreen || !isGm || isFogMode || onSelectCell) return;
     e.preventDefault();
     e.stopPropagation();
     const obj = objects.find((o) => o.id === objId);
@@ -328,7 +336,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   // Token drag handling in setup & active combat for GM (Phase 6a, Pointer Events)
   // プレイヤーは「移動」を選んでいるときに自分のコマだけ
   const canDragToken = (tokenId: string) =>
-    !isScreen && !isFogMode && (isGm || (mode === 'move' && Boolean(ownTokenId) && tokenId === ownTokenId));
+    !isScreen && !isFogMode && !onSelectCell && (isGm || (mode === 'move' && Boolean(ownTokenId) && tokenId === ownTokenId));
   const handleTokenPointerDown = (tokenId: string, e: React.PointerEvent) => {
     if (!canDragToken(tokenId)) return;
     e.preventDefault();
@@ -440,6 +448,12 @@ export const BoardView: React.FC<BoardViewProps> = ({
     <div
       className={`board-view-container relative flex flex-col items-center select-none bg-slate-950 text-slate-100 rounded-lg border border-slate-800 ${className}`}
       style={{
+        width: '100%',
+        minWidth: 0,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        boxSizing: 'border-box',
         ...style,
         ...(isScreen
           ? {
@@ -458,6 +472,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
         <div
           style={{
             width: '100%',
+            flexShrink: 0,
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
@@ -467,6 +482,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
             borderBottom: '1px solid var(--color-border)',
             fontSize: '0.85rem',
             gap: '8px',
+            boxSizing: 'border-box',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -501,59 +517,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => setScale((s) => Math.max(0.5, s - 0.1))}
-              style={{
-                padding: '4px 8px',
-                backgroundColor: 'var(--color-surface-elevated)',
-                border: '1px solid var(--color-border-light)',
-                borderRadius: '4px',
-                color: 'var(--color-text)',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-              }}
-              title="縮小"
-            >
-              -
-            </button>
-            <span style={{ minWidth: '45px', textAlign: 'center', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-              {Math.round(scale * 100)}%
-            </span>
-            <button
-              type="button"
-              onClick={() => setScale((s) => Math.min(2.0, s + 0.1))}
-              style={{
-                padding: '4px 8px',
-                backgroundColor: 'var(--color-surface-elevated)',
-                border: '1px solid var(--color-border-light)',
-                borderRadius: '4px',
-                color: 'var(--color-text)',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-              }}
-              title="拡大"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              onClick={() => setScale(1)}
-              style={{
-                padding: '4px 8px',
-                backgroundColor: 'var(--color-surface-elevated)',
-                border: '1px solid var(--color-border-light)',
-                borderRadius: '4px',
-                color: 'var(--color-text)',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-              }}
-              title="リセット"
-            >
-              100%
-            </button>
-          </div>
+          <span style={{ color: 'var(--color-ally)', fontSize: '0.8rem' }}>全体表示・画面に自動調整</span>
 
           {isGm && combat?.status !== 'active' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -830,27 +794,28 @@ export const BoardView: React.FC<BoardViewProps> = ({
         </div>
       )}
 
-      {/* SVG Canvas Scroll Area */}
+      {/* Always show the entire board inside this viewport. */}
       <div
-        className="w-full overflow-auto flex items-center justify-center p-2"
+        data-testid="board-viewport"
         style={{
-          flex: 1,
+          flex: isScreen ? '1 1 0' : '0 1 auto',
+          position: 'relative',
           width: '100%',
           minHeight: 0,
           minWidth: 0,
-          height: isScreen ? '100%' : undefined,
-          maxHeight: isScreen ? '100%' : '70vh',
+          height: isScreen ? '100%' : 'min(60dvh, 640px)',
+          maxHeight: isScreen ? '100%' : undefined,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          overflow: isScreen ? 'hidden' : 'auto',
+          overflow: 'hidden',
           boxSizing: 'border-box',
         }}
       >
         <svg
           ref={svgRef}
-          width={isScreen ? '100%' : boardWidth * scale}
-          height={isScreen ? '100%' : boardHeight * scale}
+          width="100%"
+          height="100%"
           viewBox={`0 0 ${boardWidth} ${boardHeight}`}
           preserveAspectRatio="xMidYMid meet"
           className="border border-slate-800 shadow-2xl transition-transform"
@@ -858,14 +823,24 @@ export const BoardView: React.FC<BoardViewProps> = ({
           onPointerDown={handleSvgPointerDown}
           onPointerMove={handleSvgPointerMove}
           onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
+          onPointerCancel={() => {
+            setDraggingTokenId(null);
+            setDraggingObjectId(null);
+            setDragHoverCell(null);
+            setIsPaintingFog(false);
+            dragMovedRef.current = false;
+          }}
           style={{
+            position: 'absolute',
+            inset: 0,
             maxWidth: '100%',
             maxHeight: '100%',
-            width: isScreen ? '100%' : undefined,
-            height: isScreen ? '100%' : undefined,
+            width: '100%',
+            height: '100%',
+            minWidth: 0,
+            minHeight: 0,
             display: 'block',
-            cursor: mode === 'move' ? 'crosshair' : 'default',
+            cursor: onSelectCell || mode === 'move' ? 'crosshair' : 'default',
             touchAction: (isGm || ownTokenId) && !isScreen ? 'none' : undefined,
             userSelect: 'none',
             WebkitUserSelect: 'none',
@@ -1140,6 +1115,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
               const isActive = part && part.id === activeParticipantId;
               const isTarget = part && part.id === targetParticipantId;
+              const isFocused = Boolean(part && part.id === focusedParticipantId);
+              const labelAnchor = tok.x === 0 ? 'start' : tok.x === cols - 1 ? 'end' : 'middle';
+              const labelY = tok.y === rows - 1 ? ty - r - 20 : ty + r + 10;
+              const hpY = tok.y === rows - 1 ? ty - r - 17 : ty + r + 13;
 
               // HP and wound status
               let currentHp = 0;
@@ -1179,6 +1158,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
                   key={tok.id}
                   data-testid={`token-${tok.id}`}
                   data-character-id={tok.character_id || ''}
+                  data-cell={`${tok.x},${tok.y}`}
+                  data-focused={isFocused ? 'true' : undefined}
+                  aria-label={`${name} (${tok.x}, ${tok.y})`}
+                  style={{ cursor: canDragToken(tok.id) ? 'grab' : 'pointer' }}
                   data-dragging={draggingTokenId === tok.id ? 'true' : undefined}
                   className={`token-group ${
                     canDragToken(tok.id) ? 'cursor-move' : 'cursor-pointer'
@@ -1187,6 +1170,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
                     e.stopPropagation();
                     if (dragMovedRef.current) {
                       dragMovedRef.current = false;
+                      return;
+                    }
+                    if (isGm && !isScreen && !isFogMode && onSelectCell) {
+                      onSelectCell({ x: tok.x, y: tok.y });
                       return;
                     }
                     if (part) {
@@ -1204,6 +1191,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
                       : 1.0
                   }
                 >
+                  <title>{`${name} (${tok.x}, ${tok.y})${canDragToken(tok.id) ? '・ドラッグで移動' : ''}`}</title>
+                  {isFocused && (
+                    <circle data-testid="focused-token-ring" cx={tx} cy={ty} r={r + 6} fill="none" stroke="#22D3EE" strokeWidth={3} strokeDasharray="5 3" pointerEvents="none" />
+                  )}
                   {/* Active highlight */}
                   {isActive && (
                     <circle
@@ -1300,11 +1291,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
                   {/* Participant Name */}
                   <text
                     x={tx}
-                    y={ty + r + 10}
+                    y={labelY}
                     fill="#F1F5F9"
                     fontSize={Math.min(10, cellPx * 0.28)}
                     fontWeight="600"
-                    textAnchor="middle"
+                    textAnchor={labelAnchor}
                     stroke="#090D16"
                     strokeWidth={2}
                     paintOrder="stroke fill"
@@ -1318,7 +1309,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                       {/* Case 1: TV Screen and Enemy -> ONLY wound status badge if wounded (wound !== 'ok'), NO numbers! */}
                       {isScreen && !isAlly ? (
                         wound !== 'ok' && (
-                          <g transform={`translate(${tx - 16}, ${ty + r + 14})`}>
+                          <g transform={`translate(${tx - 16}, ${hpY + 1})`}>
                             <rect
                               width={32}
                               height={10}
@@ -1349,7 +1340,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                         )
                       ) : (
                         /* Case 2: Ally, or GM view -> HP bar with numbers */
-                        <g transform={`translate(${tx - r}, ${ty + r + 13})`}>
+                        <g transform={`translate(${tx - r}, ${hpY})`}>
                           {/* Bar Background */}
                           <rect
                             width={r * 2}

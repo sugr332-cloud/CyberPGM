@@ -27,6 +27,9 @@ test('Phase 6b: lore search, related entries, copy, global search and mobile lay
   await page.getByRole('button', { name: '資料', exact: true }).click();
   const lore = page.getByTestId('lore-view');
   const detail = page.getByTestId('lore-detail');
+  await expect(lore.getByTestId('lore-genres')).toBeVisible();
+  await expect(lore.getByLabel('資料の一覧')).toHaveCount(0);
+  await lore.getByTestId('lore-genre-timeline').click();
   await expect(lore.getByLabel('資料の一覧').getByRole('button').first()).toContainText('1999〜2001');
   await lore.getByLabel('資料を検索').fill('neo　港');
   const entry = lore.getByLabel('資料の一覧').getByRole('button');
@@ -46,7 +49,7 @@ test('Phase 6b: lore search, related entries, copy, global search and mobile lay
   await page.getByTestId('global-search').fill('ＮｅＯ 2045');
   await page.getByTestId('global-search-results').getByRole('button').filter({ hasText: 'テスト都市の再開発' }).click();
   await expect(detail.getByRole('heading', { level: 3 })).toContainText('テスト都市の再開発');
-  await expect(lore.getByLabel('資料の分類')).toHaveValue('');
+  await expect(lore.getByLabel('資料の分類')).toHaveValue('timeline');
   await expect(lore.getByLabel('資料を検索')).toHaveValue('');
 
   await page.setViewportSize({ width: 390, height: 844 });

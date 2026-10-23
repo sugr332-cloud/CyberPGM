@@ -75,12 +75,12 @@ export function attackLine(input: LineInput, actor: CombatParticipant, target?: 
     if (typeof input.distance_m === 'number') {
       const dv = rangedDv(table, input.distance_m);
       if (dv === null) return { text: `${parts} vs 距離 ${input.distance_m}m は射程外` };
-      return { text: `${parts} vs 難易度 ${dv}（${input.distance_m}m）→ ${formatNeeded(neededRoll(base, dv, 'dv'))}` };
+      return { text: `${parts} vs ${target ? `${target.name}・` : ''}距離 ${input.distance_m}m の難易度 ${dv} → 合計 ${formatNeeded(neededRoll(base, dv, 'dv'))}` };
     }
     const bands = table
       .filter((b) => b.dv !== 'N/A' && b.dv !== 'null' && Number.isFinite(Number(b.dv)))
       .map((b) => ({ range: `${b.range[0]}〜${b.range[1]}m`, dv: Number(b.dv), needed: formatNeeded(neededRoll(base, Number(b.dv), 'dv')) }));
-    return { text: `${parts} + 1d10 vs 距離で決まる難易度`, bands };
+    return { text: `${parts} + 1d10 vs ${target ? `${target.name}との距離で決まる難易度` : '距離で決まる難易度'}`, bands };
   }
 
   if (input.action_key === 'melee' || input.action_key === 'brawl' || input.action_key === 'martial_arts') {
