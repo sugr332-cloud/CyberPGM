@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { shops, shop_stock, items } from '../db/schema.js';
+import { sessionManager } from '../session.js';
 import { requireGm } from '../auth.js';
 import {
   ShopCreateInputSchema,
@@ -181,6 +182,7 @@ shopsRoutes.post('/:id/stock', requireGm, async (c) => {
       .set({ quantity: parsed.data.quantity })
       .where(eq(shop_stock.id, existing.id))
       .run();
+    sessionManager.broadcastToPlayers({ type: 'player-shop:update', payload: {} });
 
     return c.json({
       id: existing.id,
@@ -197,6 +199,7 @@ shopsRoutes.post('/:id/stock', requireGm, async (c) => {
       quantity: parsed.data.quantity,
     };
     db.insert(shop_stock).values(newStock).run();
+    sessionManager.broadcastToPlayers({ type: 'player-shop:update', payload: {} });
     return c.json(newStock, 201);
   }
 });
@@ -218,5 +221,6 @@ shopsRoutes.delete('/:id/stock/:item_id', requireGm, async (c) => {
   }
 
   db.delete(shop_stock).where(eq(shop_stock.id, existing.id)).run();
+  sessionManager.broadcastToPlayers({ type: 'player-shop:update', payload: {} });
   return c.json({ success: true, deleted: existing.id });
 });

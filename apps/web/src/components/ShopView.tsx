@@ -12,6 +12,7 @@ import {
 } from '@cyberpgm/shared';
 import { api, getGmToken } from '../api.js';
 import { ItemNotes } from './ItemNotes.js';
+import { ShopStockEditor } from './ShopStockEditor.js';
 import { PurchaseRequestsPanel } from './PurchaseRequestsPanel.js';
 
 interface ShopViewProps {
@@ -30,6 +31,7 @@ interface CartItem {
 export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharacters, purchaseRefreshKey = 0 }) => {
   // Shops & Selected Shop
   const [shops, setShops] = useState<Shop[]>([]);
+  const [editingStock, setEditingStock] = useState(false);
   const [selectedShopId, setSelectedShopId] = useState<string | null>(null);
   const [shopStockMap, setShopStockMap] = useState<Record<string, number | null>>({});
 
@@ -333,6 +335,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
           buyback_rate: buyback,
         });
         setSelectedShopId(created.id);
+        setEditingStock(true);
       }
       setShowShopModal(false);
       await loadShops();
@@ -648,7 +651,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
           <select
             data-testid="shop-selector"
             value={selectedShopId || ''}
-            onChange={(e) => setSelectedShopId(e.target.value || null)}
+            onChange={(e) => { setSelectedShopId(e.target.value || null); setEditingStock(false); }}
             style={{
               padding: '6px 12px',
               borderRadius: '6px',
@@ -668,7 +671,8 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
           </select>
 
           {currentShop && (
-            <div style={{ display: 'flex', gap: '6px' }}>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => setEditingStock(true)} style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--color-ally)', background: 'var(--color-surface-elevated)', color: 'var(--color-ally)', cursor: 'pointer' }}>品揃えを編集</button>
               <button
                 onClick={() => {
                   setEditingShop(currentShop);
@@ -799,6 +803,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
         </div>
       )}
 
+      {editingStock && currentShop ? <ShopStockEditor key={currentShop.id} shop={currentShop} onClose={() => setEditingStock(false)} onChanged={() => { void loadStock(currentShop.id); }} /> : <>
       {/* Main 3 Columns Layout */}
       <div
         style={{
@@ -1996,6 +2001,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
         </div>
       </div>
 
+      </>}
       {/* Modal: Create/Edit Shop */}
       {showShopModal && (
         <div
