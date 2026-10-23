@@ -75,7 +75,7 @@ export function attackLine(input: LineInput, actor: CombatParticipant, target?: 
     if (typeof input.distance_m === 'number') {
       const dv = rangedDv(table, input.distance_m);
       if (dv === null) return { text: `${parts} vs 距離 ${input.distance_m}m は射程外` };
-      return { text: `${parts} vs ${target ? `${target.name}・` : ''}距離 ${input.distance_m}m の難易度 ${dv} → 合計 ${formatNeeded(neededRoll(base, dv, 'dv'))}` };
+      return { text: `${parts} vs ${target ? `${target.name}・` : ''}距離 ${input.distance_m}m の難易度 ${dv} → 出目 ${formatNeeded(neededRoll(base, dv, 'dv'))}` };
     }
     const bands = table
       .filter((b) => b.dv !== 'N/A' && b.dv !== 'null' && Number.isFinite(Number(b.dv)))

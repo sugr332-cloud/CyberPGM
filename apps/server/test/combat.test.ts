@@ -1733,7 +1733,21 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
         })
       ).json();
       // REF 8 + ハンドガン 6 = 14 vs 難易度 13 → 出目 0 以上 = 「2 以上で成功」
-      expect(res.line.text).toContain(`= 14 vs ${ganger.name}・距離 5m の難易度 13 → 合計 2 以上で成功`);
+      expect(res.line.text).toContain(`= 14 vs ${ganger.name}・距離 5m の難易度 13 → 出目 2 以上で成功`);
+
+      // formatNeeded は基本値込みの合計ではなく、1d10 の出目を返す。
+      // 追加ロール・不可能のときも同じ接頭辞で表示できることを確認する。
+      for (const [action, distance, expected] of [
+        ['ranged', 30, '距離 30m の難易度 25 → 出目 10 → 追加ロールで 2 以上'],
+        ['aimed', 80, '距離 80m の難易度 30 → 出目 成功しない'],
+      ] as const) {
+        const line = await (await app.request(`/api/combats/${combat.id}/line`, {
+          method: 'POST',
+          headers: { ...authGm, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action_key: action, actor_id: viper.id, target_id: ganger.id, weapon_entry_id: 'e1', distance_m: distance }),
+        })).json();
+        expect(line.line.text).toContain(expected);
+      }
 
       const pdev = registerDevice({ role: 'player', label: 'p', characterId: pcId1 });
       const mine = await (await app.request('/api/combats/current/my-lines?weapon_entry_id=e1', { headers: { Authorization: `Bearer ${pdev.token}` } })).json();

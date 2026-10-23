@@ -177,10 +177,10 @@ export const PlayerPage: React.FC = () => {
     return (
       <div data-testid={`bands-${key}`} style={{ fontSize: '0.65rem', color: 'var(--color-ally)', marginTop: '2px' }}>
         {attackTargetId && myLines[key]?.text && <div>{myLines[key]!.text}</div>}
-        <div style={{ fontWeight: 700, marginBottom: 2 }}>距離ごとの命中に必要な合計値（自分の能力＋技能＋出目）</div>
+        <div style={{ fontWeight: 700, marginBottom: 2 }}>距離ごとの命中に必要な出目（1d10）</div>
         {bands?.length ? bands
           .slice(0, 4)
-          .map((b) => `${b.range}：合計${b.needed.replace(' 以上で成功', '以上で命中').replace(/10 → 追加ロールで (\d+) 以上/, '10後、追加出目込みで$1以上').replace('成功しない', '命中不可')}`)
+          .map((b) => `${b.range}：出目${b.needed.replace(' 以上で成功', '以上で命中').replace(/10 → 追加ロールで (\d+) 以上/, '10後、追加出目込みで$1以上').replace('成功しない', '命中不可')}`)
           .join(' / ') : '盤面に相手のコマがないため、距離帯ごとの目安を表示しています'}
       </div>
     );
