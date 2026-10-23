@@ -1,3 +1,4 @@
+import { getCoreSourceDir } from '../source-data.js';
 import { Hono } from 'hono';
 import { db, getImagesDir } from '../db/client.js';
 import {
@@ -205,7 +206,7 @@ export function saveBase64Image(dataUrl: string): { imageId: string; imagePath: 
 /** 手元のロールのデータ（説明・支援要員・エグゼクのチーム・メンバー）。なければ空（Phase 5s・5x） */
 export function loadRoleData(): { startingRank?: number; roles?: RoleInfo[]; squads?: Record<string, any[]>; execTeam?: { order: string[]; jobs: any[] } } {
   try {
-    return JSON.parse(fs.readFileSync(path.join(getProjectRoot(), 'data', 'sources', 'core-ja', 'roles.json'), 'utf-8'));
+    return JSON.parse(fs.readFileSync(path.join(getCoreSourceDir(), 'roles.json'), 'utf-8'));
   } catch {
     return {};
   }
@@ -221,7 +222,7 @@ characterCreationRoutes.get('/role-info', async (c) => {
 export function loadSkillInfoData(): SkillInfoResponse {
   try {
     const raw = JSON.parse(
-      fs.readFileSync(path.join(getProjectRoot(), 'data', 'sources', 'core-ja', 'skills.json'), 'utf-8'),
+      fs.readFileSync(path.join(getCoreSourceDir(), 'skills.json'), 'utf-8'),
     );
     if (raw && typeof raw.skills === 'object' && raw.skills !== null) {
       return { skills: raw.skills as Record<string, SkillInfoEntry>, hasSource: true };

@@ -1,0 +1,29 @@
+.lore-view { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.lore-view h2, .lore-view h3 { margin: 0; }
+.lore-filters { display: flex; gap: 10px; flex-wrap: wrap; }
+.lore-filters input { flex: 1; min-width: 180px; }
+.lore-view input, .lore-view select, .lore-view button {
+  background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border-light); border-radius: 6px; padding: 9px 12px; font: inherit;
+}
+.lore-view button { cursor: pointer; }
+.lore-columns { display: grid; grid-template-columns: minmax(230px, 1fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.lore-list { display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow-y: auto; }
+.lore-list button { display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.lore-list button[aria-pressed="true"] { border-color: var(--color-ally); background: var(--color-surface-elevated); }
+.lore-year { color: var(--color-ally); font-size: 1.1em; font-family: var(--font-mono); }
+.lore-muted { color: var(--color-text-muted); font-size: .8rem; }
+.lore-detail { background: var(--color-surface); border: 1px solid var(--color-border); padding: 20px; border-radius: 8px; overflow-wrap: anywhere; }
+.lore-detail-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.lore-detail-heading button { flex-shrink: 0; }
+.lore-detail li { margin-bottom: 10px; line-height: 1.7; }
+.lore-detail ul { padding-left: 1.3em; }
+.lore-summary { line-height: 1.8; white-space: pre-wrap; }
+.lore-tags, .lore-related { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.lore-tags span { background: var(--color-surface-elevated); border-radius: 4px; padding: 4px 8px; font-size: .8rem; }
+.lore-view mark { background: #e5bb48; color: #151515; border-radius: 2px; }
+@media (max-width: 700px) {
+  .lore-columns { grid-template-columns: minmax(0, 1fr); }
+  .lore-list { max-height: 36vh; }
+  .lore-detail { padding: 14px; }
+  .lore-detail-heading h3 { font-size: 1.05rem; }
+}

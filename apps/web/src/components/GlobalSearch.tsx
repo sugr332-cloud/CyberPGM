@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { gmFetch } from '../api.js';
 
 interface Hit {
-  kind: 'character' | 'item' | 'scenario' | 'scene' | 'clue' | 'handout';
+  kind: 'character' | 'item' | 'scenario' | 'scene' | 'clue' | 'handout' | 'lore';
   id: string;
   title: string;
   sub: string;
@@ -15,6 +15,7 @@ const KIND_LABEL: Record<Hit['kind'], string> = {
   scene: 'シーン',
   clue: '手がかり',
   handout: 'ハンドアウト',
+  lore: '資料',
 };
 
 /** GM の全文検索（仕様 §5.0。Phase 5n）。選ぶと、その種類のタブに移る */
@@ -42,7 +43,7 @@ export function GlobalSearch({ onOpen, compact }: { onOpen: (hit: Hit) => void; 
   }, [q]);
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', flex: compact ? 1 : undefined, minWidth: 0 }}>
       <input
         aria-label="全文検索"
         data-testid="global-search"
@@ -52,7 +53,7 @@ export function GlobalSearch({ onOpen, compact }: { onOpen: (hit: Hit) => void; 
         onFocus={() => hits.length > 0 && setOpen(true)}
         onBlur={() => window.setTimeout(() => setOpen(false), 200)}
         style={{
-          width: compact ? '120px' : '220px',
+          width: compact ? '100%' : '220px',
           padding: '7px 10px',
           backgroundColor: 'var(--color-bg)',
           border: '1px solid var(--color-border-light)',
@@ -68,7 +69,8 @@ export function GlobalSearch({ onOpen, compact }: { onOpen: (hit: Hit) => void; 
             position: 'absolute',
             right: 0,
             top: '110%',
-            width: '340px',
+            width: compact ? 'min(340px, calc(100vw - 24px))' : '340px',
+            ...(compact ? { left: 0, right: 'auto' } : {}),
             maxHeight: '420px',
             overflowY: 'auto',
             zIndex: 200,

@@ -1,3 +1,4 @@
+import { getCoreSourceDir } from '../src/source-data.js';
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,13 +7,12 @@ import { app } from '../src/index.js';
 import { db, sqlite } from '../src/db/client.js';
 import { characters, items, weapons } from '../src/db/schema.js';
 import { registerDevice } from '../src/auth.js';
-import { getProjectRoot } from '@cyberpgm/shared';
 
 // Phase 5x: ロール特技（日本語版 p.142〜165）
 describe('Phase 5x: role abilities', () => {
   let H: Record<string, string>;
   const now = Date.now();
-  const dir = path.join(getProjectRoot(), 'data', 'sources', 'core-ja');
+  const dir = getCoreSourceDir();
   const file = path.join(dir, 'roles.json');
   let wrote = false;
   beforeAll(() => {

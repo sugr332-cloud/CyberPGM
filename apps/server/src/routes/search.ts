@@ -3,12 +3,13 @@ import { like, or } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { characters, clues, handouts, items, scenarios, scenes } from '../db/schema.js';
 import { requireGm } from '../auth.js';
+import { loadLoreData, searchLore } from '../services/lore.js';
 
 // 全文検索（GM。仕様 §5.0。Phase 5n）: キャラ・品目・シナリオ・シーン・手がかり・ハンドアウトをまとめて探す
 export const searchRoutes = new Hono();
 
 export interface SearchHit {
-  kind: 'character' | 'item' | 'scenario' | 'scene' | 'clue' | 'handout';
+  kind: 'character' | 'item' | 'scenario' | 'scene' | 'clue' | 'handout' | 'lore';
   id: string;
   title: string;
   sub: string;
@@ -58,6 +59,10 @@ searchRoutes.get('/search', requireGm, (c) => {
   }
   for (const r of db.select().from(handouts).where(or(like(handouts.title, pat), like(handouts.body, pat))).limit(LIMIT).all()) {
     hits.push({ kind: 'handout', id: r.id, title: r.title, sub: snippet(r.body, q), scenario_id: r.scenario_id });
+  }
+  const lore = loadLoreData();
+  for (const entry of searchLore(lore.entries, q).slice(0, LIMIT)) {
+    hits.push({ kind: 'lore', id: entry.id, title: entry.title, sub: [lore.categories?.[entry.category] ?? entry.category, entry.year].filter(Boolean).join(' · ') });
   }
   return c.json({ hits });
 });

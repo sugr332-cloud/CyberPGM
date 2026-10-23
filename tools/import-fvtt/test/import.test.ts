@@ -3,11 +3,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import Database from 'better-sqlite3';
-import { runImport, findAttribution } from '../src/importer.js';
+import { runImport as importFvtt, findAttribution } from '../src/importer.js';
 
 describe('FVTT Importer', () => {
   const testDbPath = path.join(os.tmpdir(), 'cyberpgm-test-import.db');
   const fixtureSrcDir = path.resolve(process.cwd(), 'tools/import-fvtt/test/fixtures');
+  let outputDir: string;
+  const runImport = (options: Parameters<typeof importFvtt>[0]) => importFvtt({
+    ...options,
+    imagesDir: path.join(outputDir, 'images'),
+    reportDir: path.join(outputDir, 'reports'),
+  });
 
   function initTestDb() {
     if (fs.existsSync(testDbPath)) {
@@ -41,10 +47,12 @@ describe('FVTT Importer', () => {
   }
 
   beforeEach(() => {
+    outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cyberpgm-test-import-output-'));
     initTestDb();
   });
 
   afterEach(() => {
+    fs.rmSync(outputDir, { recursive: true, force: true });
     if (fs.existsSync(testDbPath)) {
       fs.unlinkSync(testDbPath);
     }
@@ -59,6 +67,8 @@ describe('FVTT Importer', () => {
     expect(report.total.added).toBe(4);
     expect(report.total.updated).toBe(0);
     expect(report.total.unchanged).toBe(0);
+    expect(fs.existsSync(path.join(outputDir, 'images/fvtt/compendium/weapons/test_pistol.svg'))).toBe(true);
+    expect(fs.readdirSync(path.join(outputDir, 'reports'))).toHaveLength(1);
 
     const sqlite = new Database(testDbPath);
 

@@ -1,4 +1,5 @@
 import { VehiclePanel } from './VehiclePanel.js';
+import { NpcTemplatePicker } from './NpcTemplatePicker.js';
 import { CyberdeckPanel } from './CyberdeckPanel.js';
 import { RolePanel } from './RolePanel.js';
 import { MedicalPanel } from './MedicalPanel.js';
@@ -170,6 +171,7 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
   const [form, setForm] = useState<FormState>(() => newForm('npc'));
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showNpcTemplates, setShowNpcTemplates] = useState(false);
 
   // 品目の情報（ID → 品目）。防具の SP と詳細の表示に使う
   const [itemsById, setItemsById] = useState<Record<string, any>>({});
@@ -443,6 +445,7 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
             ＋ {KIND_LABELS[k]}を作る
           </button>
         ))}
+        <button type="button" onClick={() => setShowNpcTemplates(true)} style={{ ...smallButton, padding: '8px' }}>ルールブックの NPC から作る</button>
         {grouped.map((g) => (
           <div key={g.kind} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div style={muted}>
@@ -468,6 +471,13 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
       </div>
 
       <div style={{ flex: 1, minWidth: '320px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {message && <div role="status" style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>{message}</div>}
+        {showNpcTemplates && <NpcTemplatePicker onClose={() => setShowNpcTemplates(false)} onRegistered={(character, warnings) => {
+          open(formFromCharacter(character));
+          setShowNpcTemplates(false);
+          setMessage(`${character.name} を登録しました${warnings.length ? `\n注意:\n${warnings.join('\n')}` : ''}`);
+          onSaved();
+        }} />}
         {/* 基本 */}
         <div style={panel}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -830,7 +840,6 @@ export function CharacterEditorView({ characters, onSaved, request, onRequestHan
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           {missing.length > 0 && <span style={{ ...muted, color: 'var(--color-warning)' }}>未入力: {missing.join('、')}</span>}
-          {message && <span style={{ fontSize: '0.85rem' }}>{message}</span>}
           <button
             type="button"
             onClick={save}

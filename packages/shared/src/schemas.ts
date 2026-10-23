@@ -30,6 +30,9 @@ export const InventoryEntrySchema = z.object({
   ammo: z.number().int().nonnegative().optional(),
   ignore_armor_percent: z.number().nullable().optional(),
   notes: z.string().optional(),
+  quality: z.string().optional(),
+  damage: z.string().optional(),
+  armor_penalty: z.number().nonnegative().optional(),
 });
 
 export const InventoryFlexibleSchema = z.preprocess((val) => {

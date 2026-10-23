@@ -20,12 +20,12 @@ import { maxHumanity, currentEmp, woundState, woundPenalty } from '@cyberpgm/rul
 /**
  * 着ている（equipped）防具の一番大きいペナルティ。複数着ても足さず、大きいほうだけ（Phase 5m）
  */
-export function armorPenaltyOf(inventory: Array<{ kind?: string | null; item_id?: string | null; equipped?: boolean | null }>): number {
+export function armorPenaltyOf(inventory: Array<{ kind?: string | null; item_id?: string | null; equipped?: boolean | null; armor_penalty?: number }>): number {
   let pen = 0;
   for (const e of inventory) {
-    if (e.kind !== 'armor' || !e.item_id || e.equipped === false) continue;
-    const a = db.select({ penalty: armors.penalty }).from(armors).where(eq(armors.item_id, e.item_id)).get();
-    pen = Math.max(pen, Math.abs(a?.penalty ?? 0));
+    if (e.kind !== 'armor' || e.equipped === false) continue;
+    const a = e.item_id ? db.select({ penalty: armors.penalty }).from(armors).where(eq(armors.item_id, e.item_id)).get() : undefined;
+    pen = Math.max(pen, Math.abs(a?.penalty ?? e.armor_penalty ?? 0));
   }
   return pen;
 }

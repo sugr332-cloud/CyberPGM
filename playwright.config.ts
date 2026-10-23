@@ -7,6 +7,7 @@ const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
 export const e2eImagesDir = process.env.IMAGES_DIR || path.join(os.tmpdir(), 'cyberpgm-e2e-images');
 // 保存ファイルも一時フォルダへ（本番の data/saves に書かない）
 export const e2eSavesDir = process.env.SAVES_DIR || path.join(os.tmpdir(), 'cyberpgm-e2e-saves');
+export const e2eCoreSourceDir = path.join(e2eSavesDir, 'core-ja');
 
 export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
@@ -25,7 +26,7 @@ export default defineConfig({
   },
   webServer: {
     // サーバは globalSetup より先に起動するので、マイグレーションもここで行う
-    command: `DATABASE_URL=${dbPath} DB_PATH=${dbPath} tsx apps/server/src/db/migrate.ts && PORT=${port} DATABASE_URL=${dbPath} IMAGES_DIR=${e2eImagesDir} SAVES_DIR=${e2eSavesDir} AUDIO_DIR=${e2eSavesDir}/audio tsx apps/server/src/index.ts`,
+    command: `DATABASE_URL=${dbPath} DB_PATH=${dbPath} tsx apps/server/src/db/migrate.ts && PORT=${port} DATABASE_URL=${dbPath} IMAGES_DIR=${e2eImagesDir} SAVES_DIR=${e2eSavesDir} AUDIO_DIR=${e2eSavesDir}/audio LOG_DIR=${e2eSavesDir}/logs CORE_SOURCE_DIR=${e2eCoreSourceDir} tsx apps/server/src/index.ts`,
     url: `http://127.0.0.1:${port}/api/health`,
     reuseExistingServer: false,
     timeout: 10000,

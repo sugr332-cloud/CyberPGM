@@ -1,3 +1,4 @@
+import { getCoreSourceDir } from '../source-data.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
@@ -21,7 +22,6 @@ import {
   findNetProgram,
   generateNetArchitecture,
   generateUlid,
-  getProjectRoot,
   NET_DIFFICULTIES,
   NET_HARDWARE,
   NET_PROGRAMS,
@@ -58,7 +58,7 @@ export function loadNetrunData(): NetrunData {
     decks: DECK_SLOTS,
   };
   try {
-    const p = path.join(getProjectRoot(), 'data', 'sources', 'core-ja', 'netrun.json');
+    const p = path.join(getCoreSourceDir(), 'netrun.json');
     if (!fs.existsSync(p)) return fallback;
     const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
     return {
