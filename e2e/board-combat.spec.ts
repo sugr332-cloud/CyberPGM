@@ -4,6 +4,11 @@ import { characters, boards, board_objects, board_tokens, combats, combat_partic
 import { eq } from 'drizzle-orm';
 import { generateUlid } from '@cyberpgm/shared';
 
+// 手動で作ったコンテキストも必ず閉じ、次のテストに接続を残さない。
+test.afterEach(async ({ browser }) => {
+  await Promise.all(browser.contexts().map((context) => context.close()));
+});
+
 test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover, separate window, TV view without enemy HP', async ({ browser }) => {
   const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
   const { db, sqlite } = createDb(dbPath);
@@ -346,6 +351,7 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
   const confirmMoveBtn = gmPage.getByRole('button', { name: '移動を確定して反映' });
   await expect(confirmMoveBtn).toBeVisible();
   await confirmMoveBtn.click();
+  await expect(confirmMoveBtn).toHaveCount(0);
 
   // --- Step 2: Test Shooting with Line of Sight (Yellow Cover vs Red Blocked) ---
   // Select "射撃"
@@ -424,8 +430,11 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
   await expect(tvSvg).toBeVisible();
   const tvSvgBox = await tvSvg.boundingBox();
   expect(tvSvgBox).not.toBeNull();
-  expect(tvSvgBox!.height).toBeGreaterThan(800);
-  expect(tvSvgBox!.width).toBeGreaterThan(1000);
+  // 盤面全体が画面に収まる現行レイアウトで検証する（固定800px以上とは限らない）。
+  expect(tvSvgBox!.height).toBeGreaterThan(0);
+  expect(tvSvgBox!.height).toBeLessThanOrEqual(1080);
+  expect(tvSvgBox!.width).toBeLessThanOrEqual(1920);
+  await expect.poll(() => tvPage.getByTestId('board-viewport').evaluate((el) => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight)).toBe(true);
 
   // TV tokens: Ally token (Viper) shows ally name and numeric HP
   const viperTvToken = tvPage.locator('.token-group', { hasText: 'ヴァイパー' });

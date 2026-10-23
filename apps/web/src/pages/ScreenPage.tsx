@@ -529,6 +529,12 @@ export const ScreenPage: React.FC = () => {
                         }}
                       >
                         <div
+                          role="progressbar"
+                          aria-label={`${p.name} HP`}
+                          aria-valuemin={0}
+                          aria-valuemax={maxHp}
+                          aria-valuenow={hp}
+                          data-testid={`screen-hp-${p.character_id}`}
                           style={{
                             height: '100%',
                             width: `${percent}%`,

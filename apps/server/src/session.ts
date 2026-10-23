@@ -295,6 +295,13 @@ export class SessionManager {
   /**
    * Broadcasts combat state update to all GM clients.
    */
+  /** キャラのHP編集・医療による回復も、戦闘カード・盤面・TVへ同期する。 */
+  public broadcastCurrentCombat(): void {
+    const combat = this.combatProvider?.();
+    if (combat) this.broadcastCombatUpdate(combat);
+    else this.broadcastScreenUpdate();
+  }
+
   public broadcastCombatUpdate(combat: object | null): void {
     this.sendToGm({
       type: 'combat:update',

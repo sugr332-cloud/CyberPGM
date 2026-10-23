@@ -51,7 +51,16 @@ test('combat flow: GM and mobile attacks, HP, automatic/manual turns, rounds, un
 
     const gm = await gmContext.newPage();
     // NPC の自動イニシアチブだけを固定。PC の出目は画面から入力する。
-    await gm.addInitScript(() => { Math.random = () => 0.4; });
+    const gmToken = (await (await gm.request.post('/api/auth/gm-token')).json()).token;
+    // この試験は認証済みGMの操作を検証する。初回トークン取得とNPC一覧取得の競合を避ける。
+    await gm.addInitScript((token) => { localStorage.setItem('cpgm_gm_token', token); Math.random = () => 0.4; }, gmToken);
+    // 古いコマHPが含まれる盤面スナップショットでも、戦闘キャラの最新HPを使う必要がある。
+    await gm.route(`**/api/boards/${boardId}`, async (route) => {
+      const res = await route.fetch();
+      const data = await res.json();
+      if (data.board?.tokens) data.board.tokens = data.board.tokens.map((t: { character_id: string }) => ({ ...t, hp: 40, hp_max: 40 }));
+      await route.fulfill({ response: res, json: data });
+    });
     await gm.goto('/gm/combat');
     const created = gm.waitForResponse((r) => r.url().endsWith('/api/combats') && r.request().method() === 'POST');
     await gm.getByRole('button', { name: '戦闘を始める', exact: true }).click();
@@ -68,7 +77,6 @@ test('combat flow: GM and mobile attacks, HP, automatic/manual turns, rounds, un
     await gm.getByTestId(`init-input-${names[1]}`).fill('6');
     await gm.locator('select').filter({ hasText: 'NPC/モブを選択' }).selectOption(ids[2]);
     await gm.getByRole('button', { name: '敵として追加', exact: true }).click();
-    const gmToken = (await (await gm.request.post('/api/auth/gm-token')).json()).token;
     const linked = await gm.request.patch(`/api/combats/${combatId}`, { headers: { Authorization: `Bearer ${gmToken}` }, data: { board_id: boardId } });
     expect(linked.ok()).toBe(true);
     await gm.getByRole('button', { name: '行動順を確定して戦闘開始', exact: true }).first().click();
@@ -105,12 +113,15 @@ test('combat flow: GM and mobile attacks, HP, automatic/manual turns, rounds, un
 
     // GM が攻撃の出目とダメージを入力。計算だけでは HP は変化しない。
     await gm.getByTestId('action-btn-ranged').click();
+    await expect(gm.locator('select').filter({ hasText: '進行試験銃' }).locator('option:checked')).toContainText('2d6');
+    await expect(gm.getByTestId('gm-damage-guide')).toHaveText('ダメージ: 2d6（6 面ダイスを 2 個）');
     await gm.getByRole('button', { name: names[2], exact: true }).click();
     await gm.getByTestId('attack-roll-input').fill('8');
     await gm.getByTestId('damage-dice-input').fill('4, 3');
     await gm.getByRole('button', { name: '判定と反映内容を計算', exact: true }).click();
     await expect(gm.getByText(`${names[2]} HP 40 → 33 (7 ダメージ)`, { exact: false })).toBeVisible();
     await checkHp(40);
+    await gm.screenshot({ path: 'docs/agy/reports/img/phase6d-weapon-dice-1440.png', fullPage: true });
     await gm.getByRole('button', { name: '確定して反映', exact: true }).click();
     await checkHp(33);
     await expect(phone.getByTestId('combat-result-banner')).toBeVisible();
@@ -119,6 +130,55 @@ test('combat flow: GM and mobile attacks, HP, automatic/manual turns, rounds, un
     await turn(1, 1); // 行動と移動を使うと自動で進む
     await gm.getByRole('button', { name: '手番終了 → 次の参加者へ', exact: true }).click();
     await turn(2, 1);
+
+    // NPC がPC1を撃つ。GMカード・盤面・TV・スマホシートの4か所を再読み込みなしで照合。
+    const screen = await gmContext.newPage();
+    await screen.goto(`/screen?code=${health.session}`);
+    const checkPcBars = async (value: number) => {
+      await expect(gm.getByTestId(`gm-hp-${ids[0]}`)).toHaveAttribute('aria-valuenow', String(value));
+      await expect(gm.getByTestId(`board-hp-${ids[0]}`)).toHaveAttribute('aria-valuenow', String(value));
+      await expect(screen.getByTestId(`screen-hp-${ids[0]}`)).toHaveAttribute('aria-valuenow', String(value));
+      await expect(screen.getByTestId(`board-hp-${ids[0]}`)).toHaveAttribute('aria-valuenow', String(value));
+      await expect(phone.getByTestId('player-hp')).toHaveAttribute('aria-valuenow', String(value));
+      for (const bar of [gm.getByTestId(`gm-hp-${ids[0]}`), screen.getByTestId(`screen-hp-${ids[0]}`), phone.getByTestId('player-hp')]) {
+        await expect.poll(async () => bar.evaluate((el) => Math.abs(el.getBoundingClientRect().width / el.parentElement!.getBoundingClientRect().width - Number(el.getAttribute('aria-valuenow')) / Number(el.getAttribute('aria-valuemax'))))).toBeLessThan(0.015);
+      }
+      const boardBar = gm.getByTestId(`board-hp-${ids[0]}`);
+      const filled = Number(await boardBar.locator('rect').nth(1).getAttribute('width'));
+      const full = Number(await boardBar.locator('rect').first().getAttribute('width'));
+      expect(filled / full).toBeCloseTo(value / 40, 3);
+      expect((sqlite.prepare('SELECT hp FROM characters WHERE id = ?').get(ids[0]) as { hp: number }).hp).toBe(value);
+      await expect(gm.getByTestId(`participant-card-${parts[0].id}`)).toContainText(`${value} / 40`);
+      await expect(screen.getByTestId(`screen-hp-${ids[0]}`).locator('../..')).toContainText(`HP ${value}/40`);
+    };
+    await phone.getByTestId('player-tab-sheet').click();
+    await checkPcBars(40);
+    await gm.getByTestId('action-btn-ranged').click();
+    await gm.getByRole('button', { name: names[0], exact: true }).click();
+    await gm.getByTestId('attack-roll-input').fill('8');
+    await gm.getByTestId('damage-dice-input').fill('4, 3');
+    await gm.getByRole('button', { name: '判定と反映内容を計算', exact: true }).click();
+    await gm.getByRole('button', { name: '確定して反映', exact: true }).click();
+    await checkPcBars(33);
+    await gm.screenshot({ path: 'docs/agy/reports/img/phase6d-hp-damage-1440.png', fullPage: true });
+    gm.once('dialog', (dialog) => dialog.accept());
+    await gm.getByRole('button', { name: /一手戻る/ }).click();
+    await checkPcBars(40);
+    // HP回復・修正も同じ戦闘データに同期すること。
+    for (const value of [33, 36, 33]) {
+      const patched = await gm.request.patch(`/api/characters/${ids[0]}`, { headers: { Authorization: `Bearer ${gmToken}` }, data: { hp: value } });
+      expect(patched.ok()).toBe(true);
+      await checkPcBars(value);
+    }
+    const medHeaders = { Authorization: `Bearer ${gmToken}` };
+    expect((await gm.request.post(`/api/medical/${ids[0]}/healing`, { headers: medHeaders, data: { on: true } })).ok()).toBe(true);
+    expect((await gm.request.post('/api/medical/time', { headers: medHeaders, data: { hours: 24, rested_ids: [ids[0]] } })).ok()).toBe(true);
+    await checkPcBars(39); // BODY 6で自然治癒
+    expect((await gm.request.post(`/api/medical/${ids[0]}/undo`, { headers: medHeaders })).ok()).toBe(true);
+    await checkPcBars(33);
+    expect((await gm.request.patch(`/api/characters/${ids[0]}`, { headers: medHeaders, data: { hp: 40 } })).ok()).toBe(true);
+    await checkPcBars(40);
+    await phone.getByTestId('player-tab-act').click();
     await gm.getByRole('button', { name: '手番終了 → 次の参加者へ', exact: true }).click();
     await turn(0, 2);
 

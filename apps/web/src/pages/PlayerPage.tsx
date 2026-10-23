@@ -1372,6 +1372,12 @@ export const PlayerPage: React.FC = () => {
               >
                 <div
                   className="cp-hp-fill"
+                  role="progressbar"
+                  aria-label="HP"
+                  aria-valuemin={0}
+                  aria-valuemax={sheet.hp_max}
+                  aria-valuenow={sheet.hp}
+                  data-testid="player-hp"
                   style={{
                     color: hpBarColor,
                     height: '100%',

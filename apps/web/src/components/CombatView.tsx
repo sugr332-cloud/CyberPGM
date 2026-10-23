@@ -4217,6 +4217,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
               }}
             >
               <div
+                role="progressbar"
+                aria-label={`${p.name} HP`}
+                aria-valuemin={0}
+                aria-valuemax={hpMax}
+                aria-valuenow={hp}
+                data-testid={`gm-hp-${p.character_id}`}
                 style={{
                   width: `${hpPercent}%`,
                   height: '100%',
