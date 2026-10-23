@@ -1733,7 +1733,7 @@ describe('Phase 4a & Review 02: Combat API & Resolution System', () => {
         })
       ).json();
       // REF 8 + ハンドガン 6 = 14 vs 難易度 13 → 出目 0 以上 = 「2 以上で成功」
-      expect(res.line.text).toContain('= 14 vs 難易度 13（5m）→ 2 以上で成功');
+      expect(res.line.text).toContain(`= 14 vs ${ganger.name}・距離 5m の難易度 13 → 合計 2 以上で成功`);
 
       const pdev = registerDevice({ role: 'player', label: 'p', characterId: pcId1 });
       const mine = await (await app.request('/api/combats/current/my-lines?weapon_entry_id=e1', { headers: { Authorization: `Bearer ${pdev.token}` } })).json();

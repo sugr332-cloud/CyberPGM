@@ -116,14 +116,6 @@ export const PlayerPage: React.FC = () => {
   // 「移動」「走る」を押したときのマップ（Phase 6a）
   const [moveMapAction, setMoveMapAction] = useState<'move' | 'run' | null>(null);
   const [moveResult, setMoveResult] = useState<PlayerMoveResult | null>(null);
-  const [combatTurnInfo, setCombatTurnInfo] = useState<{
-    combat_id: string;
-    round: number;
-    turn_index: number;
-    actor_id: string;
-    actor_name: string;
-    is_my_turn: boolean;
-  } | null>(null);
   const [combatResultNotification, setCombatResultNotification] = useState<{
     title: string;
     summary: string;
@@ -207,8 +199,7 @@ export const PlayerPage: React.FC = () => {
       // 戦闘の準備・HP・参加者の変化（Phase 5l）
       api.getCurrentCombat(token).then((res) => setCurrentCombat(res.combat)).catch(() => {});
     } else if (type === 'combat:turn') {
-      const p = payload as any;
-      setCombatTurnInfo(p);
+      // 手番は取得した戦闘データから表示する。通知を保持すると取り消し後に古い手番が残る。
       api.getCurrentCombat(token).then((res) => setCurrentCombat(res.combat)).catch(() => {});
     } else if (type === 'combat:result') {
       const p = payload as any;
@@ -1126,7 +1117,7 @@ export const PlayerPage: React.FC = () => {
       {activeTab === 'handouts' ? (
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--color-ally)' }}>
-            公開資料・手掛かり
+            手掛かり
           </h2>
 
           {/* Clues */}
@@ -1236,7 +1227,7 @@ export const PlayerPage: React.FC = () => {
                 color: 'var(--color-text-muted)',
               }}
             >
-              <p style={{ margin: 0, fontSize: '0.9rem' }}>まだ公開された資料はありません</p>
+              <p style={{ margin: 0, fontSize: '0.9rem' }}>まだ公開された手掛かりはありません</p>
             </div>
           )}
         </div>
@@ -2087,9 +2078,9 @@ export const PlayerPage: React.FC = () => {
               {(() => {
                 const activePart = currentCombat.participants[currentCombat.turn_index];
                 const isMyTurn = Boolean(
-                  combatTurnInfo?.is_my_turn ?? (activePart && activePart.character_id === sheet.id),
+                  activePart && activePart.character_id === sheet.id,
                 );
-                const turnName = combatTurnInfo?.actor_name || activePart?.name || '—';
+                const turnName = activePart?.name || '—';
 
                 return (
                   <div
@@ -2117,7 +2108,7 @@ export const PlayerPage: React.FC = () => {
               {(() => {
                 const activePart = currentCombat.participants[currentCombat.turn_index];
                 const isMyTurn = Boolean(
-                  combatTurnInfo?.is_my_turn ?? (activePart && activePart.character_id === sheet.id),
+                  activePart && activePart.character_id === sheet.id,
                 );
 
                 // 重い防具のペナルティを引いた REF・DEX（Phase 5m）
@@ -2615,8 +2606,8 @@ export const PlayerPage: React.FC = () => {
             { id: 'skills', label: '技能', code: 'SKL' },
             { id: 'shop', label: '商店', code: 'SHOP' },
             { id: 'act', label: '行動', code: 'ACT' },
-            { id: 'handouts', label: '資料', code: 'DATA' },
-            { id: 'lore', label: '世界資料', code: 'LORE' },
+            { id: 'handouts', label: '手掛かり', code: 'CLUE' },
+            { id: 'lore', label: '資料', code: 'DATA' },
           ] as const
         ).map((tab) => (
           <button
