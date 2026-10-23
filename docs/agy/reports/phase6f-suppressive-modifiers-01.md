@@ -1,7 +1,7 @@
 # Phase 6f 実装報告
 
 - 作業ブランチ: `codex/phase6f-suppressive-modifiers`
-- 使用モデル: GPT-6.1-Sol
+- 使用モデル: GPT-6-Luna
 - 対象指示書: `docs/agy/phase6f-suppressive-modifiers.md`
 
 ## 実装内容

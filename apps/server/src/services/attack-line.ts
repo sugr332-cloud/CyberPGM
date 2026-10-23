@@ -67,7 +67,7 @@ export function attackLine(input: LineInput, actor: CombatParticipant, target?: 
     });
     const aimed = input.action_key === 'aimed' ? -8 : 0;
     const base = ref + skill + aimed + attackModifierTotal(modifiers);
-    const modifierText = modifiers.map((m) => `${m.value > 0 ? '+' : '−'} ${m.label}${Math.abs(m.value) === 1 ? '' : ` ${Math.abs(m.value)}`}`).join(' ');
+    const modifierText = modifiers.map((m) => m.value === 0 ? `${m.label} 0` : `${m.value > 0 ? '+' : '−'} ${m.label}${Math.abs(m.value) === 1 ? '' : ` ${Math.abs(m.value)}`}`).join(' ');
     const parts = `REF ${ref} + ${formatSkillName(skillKey)} ${skill}${modifierText ? ` ${modifierText}` : ''}${aimed ? ' − 8 照準' : ''} = ${base}`;
     if (input.action_key === 'suppressive') return { text: `${parts} + 1d10 vs 各対象の WILL + 精神集中 + 1d10` };
     const tableKey = isAutofire ? `${w.dv_table_key} (Autofire)` : w.dv_table_key;

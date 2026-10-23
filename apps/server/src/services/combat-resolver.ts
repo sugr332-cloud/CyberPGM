@@ -2582,7 +2582,7 @@ function resolveCombatActionInner(
         defFormula = `難易度 ${dv}`;
       }
 
-      const modifierFormula = modifiers.map((m) => `${m.value > 0 ? '+' : '−'}${Math.abs(m.value)}（${m.label}）`).join(' ');
+      const modifierFormula = modifiers.map((m) => `${m.value === 0 ? '0' : `${m.value > 0 ? '+' : '−'}${Math.abs(m.value)}`}（${m.label}）`).join(' ');
       let subFormula = `${prefix}REF ${stat} + 技能 ${skillLevel} ${modifierFormula ? `${modifierFormula} ` : ''}+ 出目 ${attD10}${isAimed ? ' −8（照準）' : ''} = ${attackTotal} vs ${defFormula} -> ${isHit ? '命中' : '外れ'}`;
       if (att.attack_roll!.first === 1 && !solo.fumbleImmune && attackWeaponEntry && rangedWeaponQuality(db, wData, attackWeaponEntry) === 'low' && !attackWeaponEntry.malfunctioned) {
         const inventory = (actorChar.inventory as InventoryEntry[]) ?? [];

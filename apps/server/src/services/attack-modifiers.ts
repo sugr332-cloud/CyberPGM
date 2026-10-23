@@ -67,7 +67,7 @@ export function rangedAttackModifiers(
   }
   if (values.precision) result.push({ key: 'precision', label: '精密攻撃', value: values.precision });
   if (values.luck) result.push({ key: 'luck', label: '運命', value: values.luck });
-  if (values.ignoreSeriousWound && values.wound === -2) result.push({ key: 'ignore_wound', label: '重傷無視', value: 2 });
+  if (values.ignoreSeriousWound && values.wound === -2) result.push({ key: 'ignore_wound', label: '重傷（ドラッグで無視）', value: 0 });
   else if (values.wound) result.push({ key: 'wound', label: values.wound === -4 ? '瀕死' : '重傷', value: values.wound });
   if (values.grapple) result.push({ key: 'grapple', label: 'つかみ', value: values.grapple });
   return result;
