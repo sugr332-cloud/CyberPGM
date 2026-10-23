@@ -386,7 +386,7 @@ test('Phase 4b Board E2E: Board creation, movement BFS, shooting LoS with cover,
 
   // Calculate preview and Apply
   // 出目は決め打ちで入っていないので入れる（Phase 5l）
-  await gmPage.getByText('攻撃 1d10:', { exact: true }).locator('xpath=following-sibling::input[1]').fill('7');
+  await gmPage.getByTestId('attack-roll-input').fill('7');
   await gmPage.getByPlaceholder('6, 6, 2').fill('6, 6, 2');
   await gmPage.getByRole('button', { name: '判定と反映内容を計算' }).click();
   await expect(gmPage.getByRole('button', { name: '確定して反映' })).toBeVisible();

@@ -21,6 +21,9 @@ import {
 } from '@cyberpgm/rules';
 import {
   CombatChange,
+  CombatInputField,
+  MissingCombatInput,
+  isVehicleAction,
   ResolveActionInputSchema,
   SingleAttackInput,
   CombatParticipant,
@@ -78,6 +81,7 @@ export interface ResolveResult {
   breakdown: Record<string, unknown>;
   changes: CombatChange[];
   missing_inputs?: string[];
+  missing_fields?: MissingCombatInput[];
 }
 
 function stripHtml(text?: string | null): string {
@@ -262,6 +266,15 @@ export function actionBlockReason(
 ): string | null {
   const actorChar = actorPart.character;
   if (!actorChar) return null;
+  if (['martial_arts', 'martial_technique'].includes(actionKey) && !Object.entries(actorChar.skills).some(([key, level]) => key.split(':')[0] === 'martial_arts' && level >= 1)) {
+    return '〈武術〉を 1 レベル以上修得していないと使えません（p.178）';
+  }
+  const vehicle = (actorPart.state as Record<string, any>)?.in_vehicle;
+  if (actionKey === 'vehicle_board' && vehicle) return 'すでにヴィークルに乗っています';
+  if (isVehicleAction(actionKey) && !['vehicle_board', 'attack_vehicle'].includes(actionKey) && !vehicle) return 'ヴィークルに乗っていません';
+  if (['vehicle_start', 'vehicle_stop'].includes(actionKey) && !vehicle?.driver) return '運転席にいません';
+  if (['vehicle_control', 'vehicle_maneuver', 'vehicle_ram'].includes(actionKey) && (!vehicle?.driver || !vehicle?.started)) return '始動したヴィークルの運転席にいません';
+  if (actionKey === 'vehicle_exit' && actorPart.move_used) return '移動アクションは使用済みです';
   const status = actorChar.status ?? [];
   const st = (actorPart.state ?? {}) as Record<string, any>;
   // 死亡・気絶のあいだは行動できない。死亡セーヴと、GM が与える環境ダメージは別（日本語版 p.186）
@@ -380,6 +393,8 @@ export function listActionAvailability(
           : bestAmmo(sp) < AUTOFIRE_ROUNDS
             ? `制圧射撃は 10 発使います。弾倉の残りが 10 発未満なので撃てません (残弾 ${bestAmmo(sp)})`
             : null;
+      } else if (key === 'melee') {
+        reason = inv.some((entry) => { const weapon = lookupWeaponData(db, entry.item_id || entry.name); return weapon && !weapon.is_ranged; }) ? null : '近接武器を持っていません';
       } else if (key === 'reload') {
         const reloadable = guns.filter((g) => typeof g.w.magazine_max === 'number');
         reason = reloadable.length === 0
@@ -402,7 +417,14 @@ function resolveCombatActionInner(
   allParticipants?: CombatParticipant[],
   boardId?: string | null,
   combatSettings?: Record<string, any>,
+  missingFields: MissingCombatInput[] = [],
 ): ResolveResult {
+  const recordMissing = (field: CombatInputField, message: string, attack_index = 0): string => {
+    missingFields.push({ field, attack_index });
+    return message;
+  };
+  const recordRollMissing = (roll: { first: number; extra?: number } | undefined, primary: CombatInputField, extra: CombatInputField, message: string, attackIndex = 0): string =>
+    recordMissing(!roll ? primary : extra, message, attackIndex);
   if (!targetPart && input.target_id && allParticipants) {
     targetPart = allParticipants.find((p) => p.id === input.target_id);
   }
@@ -417,7 +439,10 @@ function resolveCombatActionInner(
   }
 
   // 手番の前に断る理由（使い切ったアクション・気絶・伏せなど）。画面のグレー表示と同じ判定（Phase 6a）
-  const blocked = actionBlockReason(actorPart, input.action_key, { subAction: input.net?.sub_action });
+  const equipmentGuard = ['ranged', 'aimed', 'autofire', 'suppressive', 'melee', 'reload'].includes(input.action_key)
+    ? listActionAvailability(db, actorPart, [input.action_key], () => null)[input.action_key]
+    : null;
+  const blocked = actionBlockReason(actorPart, input.action_key, { subAction: input.net?.sub_action }) || equipmentGuard;
   if (blocked) {
     return {
       action_key: input.action_key,
@@ -748,7 +773,7 @@ function resolveCombatActionInner(
         formula: '死亡セーブの出目 (1d10) を入力してください',
         breakdown: {},
         changes: [],
-        missing_inputs: ['死亡セーブの出目を入力してください'],
+        missing_inputs: [recordMissing('death_save_roll', '死亡セーブの出目を入力してください')],
       };
     }
     const roll = input.death_save_roll;
@@ -824,10 +849,10 @@ function resolveCombatActionInner(
         actor_id: actorPart.id,
         actor_name: actorPart.name,
         success: false,
-        formula: '武器を選択してください',
+        formula: recordMissing('weapon', '武器を選択してください'),
         breakdown: {},
         changes: [],
-        missing_inputs: ['武器を選択してください'],
+        missing_inputs: [recordMissing('weapon', '武器を選択してください')],
       };
     }
 
@@ -1138,7 +1163,7 @@ function resolveCombatActionInner(
     }
 
     const tChar = targetPart?.character;
-    if (!targetPart || !tChar) return fail('対象を選択してください');
+    if (!targetPart || !tChar) return fail(recordMissing('target', '対象を選択してください'));
 
     // つかむ: 【敏捷】＋〈格闘〉＋1d10 の対抗判定。勝てば相手を拘束するか、持ち物を 1 つ奪う
     if (input.action_key === 'grab') {
@@ -1148,9 +1173,9 @@ function resolveCombatActionInner(
       const missing: string[] = [];
       const a = rollOf(input.attack_roll, '攻撃');
       const d = rollOf(input.defense_roll, '回避');
-      if (typeof a === 'string') missing.push(a);
-      if (typeof d === 'string') missing.push(d.replace('回避', '相手の〈格闘〉'));
-      if (input.grab_mode === 'item' && !input.held_item_id && !iAmHeld) missing.push('奪う持ち物を選んでください');
+      if (typeof a === 'string') missing.push(recordRollMissing(input.attack_roll, 'attack_roll', 'attack_extra', a));
+      if (typeof d === 'string') missing.push(recordRollMissing(input.defense_roll, 'defense_roll', 'defense_extra', d.replace('回避', '相手の〈格闘〉')));
+      if (input.grab_mode === 'item' && !input.held_item_id && !iAmHeld) missing.push(recordMissing('held_item', '奪う持ち物を選んでください'));
       if (missing.length) return fail(missing);
       const brawl = actorChar.skills[skillNameToKey('brawling')] ?? 0;
       const tBrawl = tChar.skills[skillNameToKey('brawling')] ?? 0;
@@ -1252,7 +1277,7 @@ function resolveCombatActionInner(
 
     // 武術奥義
     const tech = MARTIAL_TECHNIQUES.find((t) => t.key === input.technique);
-    if (!tech) return fail('奥義を選んでください');
+    if (!tech) return fail(recordMissing('technique', '奥義を選んでください'));
     const style = input.martial_style ? { key: input.martial_style, level: actorChar.skills[input.martial_style] ?? 0 } : bestMartialStyle(tech.style);
     if (!style || style.level < 1) return fail(`${tech.name} には〈武術${tech.style ? `：${tech.style}` : ''}〉が 1 レベル以上必要です`);
     const styleName = splitSkillKey(style.key).spec;
@@ -1266,20 +1291,20 @@ function resolveCombatActionInner(
     }
     const missing: string[] = [];
     const a = rollOf(input.attack_roll, '奥義');
-    if (typeof a === 'string') missing.push(a);
+    if (typeof a === 'string') missing.push(recordRollMissing(input.attack_roll, 'attack_roll', 'attack_extra', a));
     let d: number | string = 0;
     if (tech.dv === null) {
       d = rollOf(input.defense_roll, '回避');
-      if (typeof d === 'string') missing.push(d);
+      if (typeof d === 'string') missing.push(recordRollMissing(input.defense_roll, 'defense_roll', 'defense_extra', d));
     }
     const body = actorChar.stats.body;
     const dice = martialArtsDice(body);
-    if (tech.damage && (!input.damage_dice || input.damage_dice.length === 0)) missing.push(`ダメージの出目 (${dice}d6) を入力してください`);
+    if (tech.damage && (!input.damage_dice || input.damage_dice.length === 0)) missing.push(recordMissing('damage_rolls', `ダメージの出目 (${dice}d6) を入力してください`));
     else if (tech.damage) {
       const err = damageDiceCountError(`${dice}d6`, input.damage_dice!);
-      if (err) missing.push(err);
+      if (err) missing.push(recordMissing('damage_rolls', err));
     }
-    if (tech.key === 'disarm' && !input.held_item_id) missing.push('落とさせる持ち物を選んでください');
+    if (tech.key === 'disarm' && !input.held_item_id) missing.push(recordMissing('held_item', '落とさせる持ち物を選んでください'));
     if (missing.length) return fail(missing);
 
     const aimHead = Boolean(input.aim_head && tech.canAimHead);
@@ -1420,25 +1445,25 @@ function resolveCombatActionInner(
     if (input.action_key === 'throw_object') {
       const tChar = targetPart?.character;
       const missing: string[] = [];
-      if (!targetPart || !tChar) missing.push('対象を選択してください');
+      if (!targetPart || !tChar) missing.push(recordMissing('target', '対象を選択してください'));
       const inv = (actorChar.inventory as InventoryEntry[]) ?? [];
       const entry = inv.find((i) => i.entry_id === input.throw_entry_id);
-      if (!entry) missing.push('投げる物を選んでください（武器・グレネードなど）');
+      if (!entry) missing.push(recordMissing('item', '投げる物を選んでください（武器・グレネードなど）'));
       const dist = input.distance_m;
-      if (dist === undefined || dist === null) missing.push('距離を入力してください');
+      if (dist === undefined || dist === null) missing.push(recordMissing('distance', '距離を入力してください'));
       else if (dist > 25) missing.push('投げられるのは 25m までです');
       const a = d10(input.attack_roll, '攻撃');
-      if (typeof a === 'string') missing.push(a);
+      if (typeof a === 'string') missing.push(recordRollMissing(input.attack_roll, 'attack_roll', 'attack_extra', a));
       const w = entry ? getWeaponData(entry.item_id || entry.name) : null;
       // 近接武器は近接のダメージ、グレネードはグレネード・ランチャーと同じ、それ以外は GM が決めたダイス（p.178）
       const diceCount = w && w.damage && /^\d+d6$/.test(w.damage) ? Number(w.damage.split('d')[0]) : null;
-      if (!input.damage_dice || input.damage_dice.length === 0) missing.push(`ダメージの出目を入力してください${diceCount ? `（${diceCount}d6）` : '（GM が決めた個数）'}`);
-      else if (diceCount && input.damage_dice.length !== diceCount) missing.push(`ダメージは ${diceCount}d6 なので、d6 の出目を ${diceCount} 個入れてください`);
+      if (!input.damage_dice || input.damage_dice.length === 0) missing.push(recordMissing('damage_rolls', `ダメージの出目を入力してください${diceCount ? `（${diceCount}d6）` : '（GM が決めた個数）'}`));
+      else if (diceCount && input.damage_dice.length !== diceCount) missing.push(recordMissing('damage_rolls', `ダメージは ${diceCount}d6 なので、d6 の出目を ${diceCount} 個入れてください`));
       const canDodge = tChar ? canDodgeRanged(tChar.stats.ref - (tChar.armor_penalty ?? 0)) && !(tChar.status ?? []).includes(NO_BULLET_DODGE) : false;
       let def: number | string = 0;
       if (canDodge && input.dodge_mode === 'dodge') {
         def = d10(input.defense_roll, '回避');
-        if (typeof def === 'string') missing.push(def);
+        if (typeof def === 'string') missing.push(recordRollMissing(input.defense_roll, 'defense_roll', 'defense_extra', def));
       }
       if (missing.length || !tChar || !targetPart || !entry) return fail(missing);
       const table = getRuleConstant<DvTable>('dv_table.DV Grenade Launcher');
@@ -1484,13 +1509,13 @@ function resolveCombatActionInner(
 
     const tPart = targetPart ?? actorPart;
     const tChar = tPart.character;
-    if (!tChar) return fail('対象を選択してください');
+    if (!tChar) return fail(recordMissing('target', '対象を選択してください'));
     const tStatus = tChar.status ?? [];
 
     // 環境の状態を終わらせる（火を消す・感電から離れる・空気を吸う など）
     if (input.action_key === 'hazard_end') {
       const target = input.hazard_status;
-      if (!target || !tStatus.includes(target)) return fail('終わらせる環境の状態を選んでください');
+      if (!target || !tStatus.includes(target)) return fail(recordMissing('hazard_status', '終わらせる環境の状態を選んでください'));
       // 放射線は区域にいるあいだ消せない。区域を出たら GM がここで外す（p.181）
       const changes: CombatChange[] = [statusChange(tChar, tStatus, tStatus.filter((s) => s !== target), `${tChar.name} 「${target}」が終わる`)];
       // 火を消すのは本人のアクション 1 回（p.180）
@@ -1511,7 +1536,7 @@ function resolveCombatActionInner(
 
     // 環境ダメージを与える（GM。アクションは使わない）
     const hz = HAZARDS.find((h) => h.key === input.hazard);
-    if (!hz) return fail('環境ダメージの種類を選んでください');
+    if (!hz) return fail(recordMissing('hazard', '環境ダメージの種類を選んでください'));
     const level = (input.hazard_level ?? 'small') as HazardLevel;
     const direct = (amount: number, label: string): CombatChange[] => {
       const after = Math.max(0, tChar.hp - amount);
@@ -1531,7 +1556,7 @@ function resolveCombatActionInner(
     }
 
     if (hz.key === 'electric') {
-      if (!input.damage_dice || input.damage_dice.length !== 6) return fail('感電のダメージ 6d6 の出目を 6 個入れてください');
+      if (!input.damage_dice || input.damage_dice.length !== 6) return fail(recordMissing('damage_rolls', '感電のダメージ 6d6 の出目を 6 個入れてください'));
       const dmg = resolveDamage({ dice: input.damage_dice, location: 'body', sp: tChar.sp_body, currentHp: tChar.hp, ablation: 0 });
       const after = Math.max(0, tChar.hp - dmg.hpLoss);
       const changes: CombatChange[] = [{ target_id: tChar.id, target_name: tChar.name, field: 'hp', before: tChar.hp, after, desc: `${tChar.name} HP ${tChar.hp} → ${after} (感電 ${dmg.hpLoss}、防具は損耗しない)` }];
@@ -1544,15 +1569,15 @@ function resolveCombatActionInner(
 
     if (hz.key === 'fall') {
       const m = input.fall_m;
-      if (m === undefined || m === null) return fail('落ちた高さ (m) を入力してください');
+      if (m === undefined || m === null) return fail(recordMissing('fall_height', '落ちた高さ (m) を入力してください'));
       const legs = (tChar.cyberware ?? []).filter((c) => /サイバーレッグ$|^cyberleg$/i.test((c.name ?? '').trim())).length;
       if (m < 10) return done(true, `${m}m の落下。10m 未満なのでダメージなし`, []);
       if (legs >= 2 && m <= 30) return done(true, `${m}m の落下。サイバーレッグ 2 本なのでダメージも片脚損傷もなし`, []);
       const count = Math.floor(m / 10) * 2;
       const missing: string[] = [];
-      if (!input.damage_dice || input.damage_dice.length !== count) missing.push(`落下ダメージ ${count}d6 の出目を ${count} 個入れてください`);
+      if (!input.damage_dice || input.damage_dice.length !== count) missing.push(recordMissing('damage_rolls', `落下ダメージ ${count}d6 の出目を ${count} 個入れてください`));
       const a = d10(input.attack_roll, '〈運動〉');
-      if (typeof a === 'string') missing.push(a);
+      if (typeof a === 'string') missing.push(recordRollMissing(input.attack_roll, 'attack_roll', 'attack_extra', a));
       if (missing.length) return fail(missing);
       const dmg = resolveDamage({ dice: input.damage_dice!, location: 'body', sp: tChar.sp_body, currentHp: tChar.hp });
       const after = Math.max(0, tChar.hp - dmg.hpLoss);
@@ -1579,8 +1604,8 @@ function resolveCombatActionInner(
       const dv = RESIST_DV[level];
       const missing: string[] = [];
       const a = d10(input.attack_roll, '〈拷問／薬物抵抗〉');
-      if (typeof a === 'string') missing.push(a);
-      if (hz.key === 'poison' && (!input.damage_dice || input.damage_dice.length !== POISON_DICE[level])) missing.push(`毒のダメージ ${POISON_DICE[level]}d6 の出目を入れてください（抵抗に成功すれば使いません）`);
+      if (typeof a === 'string') missing.push(recordRollMissing(input.attack_roll, 'attack_roll', 'attack_extra', a));
+      if (hz.key === 'poison' && (!input.damage_dice || input.damage_dice.length !== POISON_DICE[level])) missing.push(recordMissing('damage_rolls', `毒のダメージ ${POISON_DICE[level]}d6 の出目を入れてください（抵抗に成功すれば使いません）`));
       if (missing.length) return fail(missing);
       const res = tChar.skills[skillNameToKey('resist_torture_drugs')] ?? 0;
       const total = tChar.stats.will + res + woundPenalty(woundState(tChar.hp, tChar.hp_max)) + (a as number);
@@ -1597,7 +1622,7 @@ function resolveCombatActionInner(
     }
 
     // 過酷な気候: 1 日の終わりに HP に直接 1d6
-    if (!input.damage_dice || input.damage_dice.length !== 1) return fail('過酷な気候の 1d6 の出目を入れてください');
+    if (!input.damage_dice || input.damage_dice.length !== 1) return fail(recordMissing('damage_rolls', '過酷な気候の 1d6 の出目を入れてください'));
     return done(true, `過酷な気候: HP に直接 ${input.damage_dice[0]}（そのあいだは自然治癒しない）`, direct(input.damage_dice[0], '過酷な気候'));
   }
 
@@ -1665,10 +1690,10 @@ function resolveCombatActionInner(
     };
     const tPart = targetPart ?? actorPart;
     const tChar = tPart.character;
-    if (!tChar) return fail('対象を選択してください');
+    if (!tChar) return fail(recordMissing('target', '対象を選択してください'));
     const inv = (actorChar.inventory as InventoryEntry[]) ?? [];
     const entry = inv.find((i) => i.entry_id === input.drug_entry_id);
-    if (!entry) return fail('使うドラッグ・薬品を選んでください');
+    if (!entry) return fail(recordMissing('drug', '使うドラッグ・薬品を選んでください'));
     const it = entry.item_id ? db.select().from(items).where(eq(items.id, entry.item_id)).get() : null;
     const def = DRUGS.find((d) => d.item_en === it?.name_en || d.name === entry.name);
     if (!def) return fail(`${entry.name} はドラッグ・薬品として扱えません`);
@@ -1680,8 +1705,10 @@ function resolveCombatActionInner(
       const missing: string[] = [];
       const a = input.attack_roll;
       const d = input.defense_roll;
-      if (!a) missing.push('攻撃の出目 (1d10) を入力してください');
-      if (!d) missing.push('回避の出目 (1d10) を入力してください');
+      if (!a) missing.push(recordMissing('attack_roll', '攻撃の出目 (1d10) を入力してください'));
+      else if ((a.first === 1 || a.first === 10) && a.extra === undefined) missing.push(recordMissing('attack_extra', '攻撃の追加出目 (1d10) を入力してください'));
+      if (!d) missing.push(recordMissing('defense_roll', '回避の出目 (1d10) を入力してください'));
+      else if ((d.first === 1 || d.first === 10) && d.extra === undefined) missing.push(recordMissing('defense_extra', '回避の追加出目 (1d10) を入力してください'));
       if (missing.length) return fail(missing);
       const atkSkill = actorChar.skills[skillNameToKey('melee_weapon')] ?? 0;
       const atk = actorDex + atkSkill + actorWoundPen + luck + resolveD10(a!.first, a!.extra).value;
@@ -1768,7 +1795,7 @@ function resolveCombatActionInner(
     if (input.action_key === 'vehicle_board') {
       const ref = input.vehicle_ref;
       const v = vehicleOf(ref);
-      if (!ref || !v) return fail('乗るヴィークルを選んでください');
+      if (!ref || !v) return fail(recordMissing('vehicle', '乗るヴィークルを選んでください'));
       if (v.sdp <= 0) return fail(`${v.name} は壊れていて動きません（SDP 0。修理が要る）`);
       if (occupants(ref).length >= v.seats) return fail(`${v.name} の座席（${v.seats}）は埋まっています`);
       const driver = Boolean(input.as_driver) && !occupants(ref).some((p) => (p.state as any)?.in_vehicle?.driver);
@@ -1805,10 +1832,10 @@ function resolveCombatActionInner(
     if (input.action_key === 'vehicle_control' || input.action_key === 'vehicle_maneuver') {
       if (!veh.driver || !veh.started) return fail('始動したヴィークルの運転席にいません');
       const man = input.action_key === 'vehicle_maneuver' ? MANEUVERS.find((m) => m.key === input.maneuver) : null;
-      if (input.action_key === 'vehicle_maneuver' && !man) return fail('特殊機動を選んでください');
+      if (input.action_key === 'vehicle_maneuver' && !man) return fail(recordMissing('maneuver', '特殊機動を選んでください'));
       if (!man && driveBase >= 10) return done(true, `REF ${actorRef} + ${formatSkillName(skillKey)} ${skill} = ${driveBase}（10 以上）: 基本的な操縦は判定もアクションも要らない`, []);
       const r = d10v(input.attack_roll);
-      if (r === null) return fail('操縦の出目 (1d10) を「攻撃」の欄に入れてください');
+      if (r === null) return fail(recordRollMissing(input.attack_roll, 'attack_roll', 'attack_extra', '操縦の出目 (1d10) を「攻撃」の欄に入れてください'));
       const dv = man ? man.dv : 10;
       const total = driveBase + actorWoundPen + luck + r;
       const ok = total > dv;
@@ -1822,7 +1849,7 @@ function resolveCombatActionInner(
     if (input.action_key === 'vehicle_ram') {
       if (!veh.driver || !veh.started) return fail('始動したヴィークルの運転席にいません');
       const dice = input.damage_dice ?? [];
-      if (dice.length !== RAM_DICE) return fail('体当たりのダメージ 6d6 の出目を 6 個入れてください（双方に同じ値）');
+      if (dice.length !== RAM_DICE) return fail(recordMissing('damage_rolls', '体当たりのダメージ 6d6 の出目を 6 個入れてください（双方に同じ値）'));
       const plow = myVeh!.upgrades.includes('Combat Plow');
       const total = dice.reduce((a, b) => a + b, 0);
       const changes: CombatChange[] = [actionChange('体当たり')];
@@ -1873,24 +1900,24 @@ function resolveCombatActionInner(
     // attack_vehicle: ヴィークルを撃つ・殴る。弱点を狙うと −8 で SP を引いた後 2 倍（p.191）
     const tv = input.target_vehicle;
     const v = vehicleOf(tv);
-    if (!tv || !v) return fail('攻撃するヴィークルを選んでください');
+    if (!tv || !v) return fail(recordMissing('target_vehicle', '攻撃するヴィークルを選んでください'));
     const inv = (actorChar.inventory as InventoryEntry[]) ?? [];
     const entry = inv.find((i) => i.entry_id === input.weapon_entry_id);
     const w = entry ? getWeaponData(entry.item_id || entry.name) : null;
-    if (!w) return fail('使う武器を選んでください');
+    if (!w) return fail(recordMissing('weapon', '使う武器を選んでください'));
     const weak = input.aimed_location === 'weakpoint';
     const missing: string[] = [];
     const a = d10v(input.attack_roll);
-    if (a === null) missing.push('攻撃の出目 (1d10) を入力してください');
+    if (a === null) missing.push(recordRollMissing(input.attack_roll, 'attack_roll', 'attack_extra', '攻撃の出目 (1d10) を入力してください'));
     const n = /^(\d+)d6$/.exec(w.damage ?? '')?.[1];
-    if (!input.damage_dice || (n && input.damage_dice.length !== Number(n))) missing.push(`ダメージ ${w.damage} の出目を入れてください`);
+    if (!input.damage_dice || (n && input.damage_dice.length !== Number(n))) missing.push(recordMissing('damage_rolls', `ダメージ ${w.damage} の出目を入れてください`));
     const moving = occupants(tv).some((p) => (p.state as any)?.in_vehicle?.driver && (p.state as any)?.in_vehicle?.started);
     let dv: number | null = null;
     if (w.is_ranged) {
       const table = w.dv_table_key ? getRuleConstant<DvTable>(`dv_table.${w.dv_table_key}`) ?? getRuleConstant<DvTable>(w.dv_table_key) : null;
-      if (input.distance_m === undefined || input.distance_m === null) missing.push('距離を入力してください');
+      if (input.distance_m === undefined || input.distance_m === null) missing.push(recordMissing('distance', '距離を入力してください'));
       else dv = table ? rangedDv(table, input.distance_m) : null;
-      if (input.distance_m !== undefined && dv === null) missing.push('射程外か、武器の難易度表がありません');
+      if (input.distance_m !== undefined && dv === null) missing.push(recordMissing('distance', '射程外か、武器の難易度表がありません'));
     } else dv = moving ? 13 : null; // 停止中のヴィークルは近接なら自動で当たる
     if (missing.length) return fail(missing);
     const stat = w.is_ranged ? actorRef : actorDex;
@@ -1952,11 +1979,11 @@ function resolveCombatActionInner(
     const tPart = targetPart ?? actorPart;
     const tChar = tPart.character;
     const missing: string[] = [];
-    if (!tChar) missing.push('対象を選択してください');
+    if (!tChar) missing.push(recordMissing('target', '対象を選択してください'));
     else if (tChar.hp >= tChar.hp_max) missing.push(`${tChar.name} は傷を負っていません`);
     const roll = input.attack_roll;
-    if (!roll) missing.push('判定の出目を入力してください');
-    else if ((roll.first === 10 || roll.first === 1) && roll.extra === undefined) missing.push('追加の出目 (1d10) を入力してください');
+    if (!roll) missing.push(recordMissing('attack_roll', '判定の出目を入力してください'));
+    else if ((roll.first === 10 || roll.first === 1) && roll.extra === undefined) missing.push(recordMissing('attack_extra', '追加の出目 (1d10) を入力してください'));
     if (missing.length > 0 || !tChar || !roll) {
       return {
         action_key: 'first_aid',
@@ -2161,7 +2188,7 @@ function resolveCombatActionInner(
     const weaponItemId = invWeapon?.item_id || input.weapon_id;
     const wData = getWeaponData(weaponItemId || invWeapon?.name);
     if (!wData) {
-      missing_inputs.push('武器を選択してください');
+      missing_inputs.push(recordMissing('weapon', '武器を選択してください'));
     }
 
     const isAimed = input.action_key === 'aimed';
@@ -2244,9 +2271,9 @@ function resolveCombatActionInner(
                       : null);
 
               if (curHp === null) {
-                missing_inputs.push('遮蔽物の HP を入力してください');
+                missing_inputs.push(recordMissing('cover_hp', '遮蔽物の HP を入力してください'));
               } else if (input.cover_damage === undefined || input.cover_damage === null) {
-                missing_inputs.push('遮蔽物に与えるダメージを入力してください');
+                missing_inputs.push(recordMissing('cover_damage', '遮蔽物に与えるダメージを入力してください'));
               } else {
                 const newHp = Math.max(0, curHp - input.cover_damage);
                 const newBlocksLos = newHp === 0 ? 'none' : coverObj.blocks_los;
@@ -2321,17 +2348,17 @@ function resolveCombatActionInner(
     rawAttacks.forEach((att, idx) => {
       const prefix = rawAttacks.length > 1 ? `第${idx + 1}攻撃: ` : '';
       if (att.distance_m === undefined || att.distance_m === null) {
-        missing_inputs.push(`${prefix}距離を入力してください`);
+        missing_inputs.push(recordMissing('distance', `${prefix}距離を入力してください`, idx));
       }
       if (!att.attack_roll) {
-        missing_inputs.push(`${prefix}攻撃の出目 (1d10) を入力してください`);
+        missing_inputs.push(recordMissing('attack_roll', `${prefix}攻撃の出目 (1d10) を入力してください`, idx));
       } else if (
         atkNeedsExtra(att.attack_roll)
       ) {
         missing_inputs.push(
-          att.attack_roll.first === 10
+          recordMissing('attack_extra', att.attack_roll.first === 10
             ? `${prefix}攻撃クリティカル: 追加出目 (1d10) を入力してください`
-            : `${prefix}攻撃ファンブル: 追加出目 (1d10) を入力してください`,
+            : `${prefix}攻撃ファンブル: 追加出目 (1d10) を入力してください`, idx),
         );
       }
     });
@@ -2461,7 +2488,7 @@ function resolveCombatActionInner(
 
       if (isDodging && curTargetChar) {
         if (!att.defense_roll) {
-          missing_inputs.push(`${prefix}回避の出目 (1d10) を入力してください`);
+          missing_inputs.push(recordMissing('defense_roll', `${prefix}回避の出目 (1d10) を入力してください`, i));
           continue;
         }
         if (
@@ -2469,9 +2496,9 @@ function resolveCombatActionInner(
           att.defense_roll.extra === undefined
         ) {
           missing_inputs.push(
-            att.defense_roll.first === 10
+            recordMissing('defense_extra', att.defense_roll.first === 10
               ? `${prefix}回避クリティカル: 追加出目 (1d10) を入力してください`
-              : `${prefix}回避ファンブル: 追加出目 (1d10) を入力してください`,
+              : `${prefix}回避ファンブル: 追加出目 (1d10) を入力してください`, i),
           );
           continue;
         }
@@ -2555,14 +2582,14 @@ function resolveCombatActionInner(
         } else {
           // Requires damage dice
           if (!att.damage_dice || att.damage_dice.length === 0) {
-            missing_inputs.push(`${prefix}ダメージダイスの出目を入力してください`);
+            missing_inputs.push(recordMissing('damage_rolls', `${prefix}ダメージダイスの出目を入力してください`, i));
             continue;
           }
 
           // オートファイアのダメージは 2d6（倍率は難易度を超えた分）
           const diceErr = damageDiceCountError(isAutofire ? '2d6' : wData.damage, att.damage_dice);
           if (diceErr) {
-            missing_inputs.push(`${prefix}${diceErr}`);
+            missing_inputs.push(recordMissing('damage_rolls', `${prefix}${diceErr}`, i));
             continue;
           }
 
@@ -2597,12 +2624,12 @@ function resolveCombatActionInner(
           // Check for critical injury roll requirement
           if (injuryTable) {
             if (att.crit_injury_roll === undefined || att.crit_injury_roll === null) {
-              missing_inputs.push(`${prefix}致命傷表 (2d6) の出目を入力してください`);
+              missing_inputs.push(recordMissing('crit_roll', `${prefix}致命傷表 (2d6) の出目を入力してください`, i));
               continue;
             }
             // 6 が 2 個のクリティカルと瀕死中の被弾が重なると、致命的損傷は 2 つ（p.186・187）
             if (mortalHit && dmgRes.criticalInjuryTable && (att.extra_crit_injury_roll === undefined || att.extra_crit_injury_roll === null)) {
-              missing_inputs.push(`${prefix}瀕死中の被弾で致命的損傷がもう 1 つ: 致命傷表 (2d6) の 2 つ目の出目を入力してください`);
+              missing_inputs.push(recordMissing('extra_crit_roll', `${prefix}瀕死中の被弾で致命的損傷がもう 1 つ: 致命傷表 (2d6) の 2 つ目の出目を入力してください`, i));
               continue;
             }
           }
@@ -2762,7 +2789,7 @@ function resolveCombatActionInner(
         ? { skill: 'Brawling', damage: `${brawlDice}d6`, ignore_armor_percent: 0, rof: 2 }
         : getWeaponData(weaponItemId || invWeapon?.name);
     if (!wData) {
-      missing_inputs.push(isMartial ? '武術攻撃には〈武術〉が 1 レベル以上必要です' : '武器を選択してください');
+      missing_inputs.push(isMartial ? '武術攻撃には〈武術〉が 1 レベル以上必要です' : recordMissing('weapon', '武器を選択してください'));
     }
 
     const weaponIgnore = wData?.ignore_armor_percent;
@@ -2773,7 +2800,7 @@ function resolveCombatActionInner(
           ? input.ignore_armor_percent
           : null;
     if (wData && ignoreArmorPercent === null) {
-      missing_inputs.push('防具無視率が不明です (GM が入力してください)');
+      missing_inputs.push(recordMissing('armor_ignore', '防具無視率が不明です (GM が入力してください)'));
     }
 
     const rawAttacks: SingleAttackInput[] =
@@ -2803,7 +2830,7 @@ function resolveCombatActionInner(
       const prefix = rawAttacks.length > 1 ? `第${idx + 1}攻撃: ` : '';
       const tPart = targetOf(att);
       if (!tPart?.character) {
-        missing_inputs.push(`${prefix}対象を選択してください`);
+        missing_inputs.push(recordMissing('target', `${prefix}対象を選択してください`, idx));
         return;
       }
       if (boardId && actorPart.character_id && tPart.character_id) {
@@ -2830,11 +2857,9 @@ function resolveCombatActionInner(
         ...(cannotDodgeMelee ? [] : ([[att.defense_roll, '回避']] as const)),
       ] as const) {
         if (!roll) {
-          missing_inputs.push(`${prefix}${label === '攻撃' ? '攻撃の出目 (1d10)' : '回避の出目 (1d10)'}を入力してください`);
+          missing_inputs.push(recordMissing(label === '攻撃' ? 'attack_roll' : 'defense_roll', `${prefix}${label === '攻撃' ? '攻撃の出目 (1d10)' : '回避の出目 (1d10)'}を入力してください`, idx));
         } else if (label === '攻撃' ? atkNeedsExtra(roll) : (roll.first === 10 || roll.first === 1) && roll.extra === undefined) {
-          missing_inputs.push(
-            `${prefix}${label}${roll.first === 10 ? 'クリティカル' : 'ファンブル'}: 追加出目 (1d10) を入力してください`,
-          );
+          missing_inputs.push(recordMissing(label === '攻撃' ? 'attack_extra' : 'defense_extra', `${prefix}${label}${roll.first === 10 ? 'クリティカル' : 'ファンブル'}: 追加出目 (1d10) を入力してください`, idx));
         }
       }
     });
@@ -2909,12 +2934,12 @@ function resolveCombatActionInner(
       anyHit = true;
 
       if (!att.damage_dice || att.damage_dice.length === 0) {
-        missing_inputs.push(`${prefix}ダメージダイスの出目を入力してください`);
+        missing_inputs.push(recordMissing('damage_rolls', `${prefix}ダメージダイスの出目を入力してください`, i));
         continue;
       }
       const diceErr = damageDiceCountError(wData.damage, att.damage_dice);
       if (diceErr) {
-        missing_inputs.push(`${prefix}${diceErr}`);
+        missing_inputs.push(recordMissing('damage_rolls', `${prefix}${diceErr}`, i));
         continue;
       }
       if (ignoreArmorPercent! > 0) sub += ` (防具無視 ${ignoreArmorPercent}%)`;
@@ -2932,11 +2957,11 @@ function resolveCombatActionInner(
       const mortalHit = woundState(cur.hp, tChar.hp_max) === 'mortally' && dmgRes.hpLoss > 0;
       const injuryTable = dmgRes.criticalInjuryTable ?? (mortalHit ? 'body' : null);
       if (injuryTable && (att.crit_injury_roll === undefined || att.crit_injury_roll === null)) {
-        missing_inputs.push(`${prefix}致命傷表 (2d6) の出目を入力してください`);
+        missing_inputs.push(recordMissing('crit_roll', `${prefix}致命傷表 (2d6) の出目を入力してください`, i));
         continue;
       }
       if (mortalHit && dmgRes.criticalInjuryTable && (att.extra_crit_injury_roll === undefined || att.extra_crit_injury_roll === null)) {
-        missing_inputs.push(`${prefix}瀕死中の被弾で致命的損傷がもう 1 つ: 致命傷表 (2d6) の 2 つ目の出目を入力してください`);
+        missing_inputs.push(recordMissing('extra_crit_roll', `${prefix}瀕死中の被弾で致命的損傷がもう 1 つ: 致命傷表 (2d6) の 2 つ目の出目を入力してください`, i));
         continue;
       }
 
@@ -3060,7 +3085,9 @@ export function resolveCombatAction(
       return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: msg, breakdown: {}, changes: [], missing_inputs: [msg] };
     }
   }
-  const result = resolveCombatActionInner(db, input, actorPart, targetPart, allParticipants, boardId, combatSettings);
+  const missingFields: MissingCombatInput[] = [];
+  const result = resolveCombatActionInner(db, input, actorPart, targetPart, allParticipants, boardId, combatSettings, missingFields);
+  result.missing_fields = [...new Map([...(result.missing_fields ?? []), ...missingFields].map((m) => [`${m.field}:${m.attack_index ?? 0}`, m])).values()];
   if (result.changes.length > 0 && !['move', 'run'].includes(input.action_key)) {
     const seen = new Set<string>();
     const partList = [actorPart, ...(targetPart ? [targetPart] : []), ...(allParticipants ?? [])].filter((p) => {

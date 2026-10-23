@@ -3,6 +3,8 @@ import {
   BlackIceDef,
   CombatChange,
   CombatParticipant,
+  CombatInputField,
+  MissingCombatInput,
   findBlackIce,
   findDemon,
   findNetProgram,
@@ -670,7 +672,7 @@ export function resolveNetCombatAction(
   const luckText = luck ? ` +${luck}（運命）` : '';
   const diagonalRule = (combatSettings?.diagonalRule as 'chebyshev' | 'alternate') || 'chebyshev';
 
-  const fail = (msg: string | string[]): ResolveResult => {
+  const fail = (msg: string | string[], missingFields: MissingCombatInput[] = []): ResolveResult => {
     const list = Array.isArray(msg) ? msg : [msg];
     return {
       action_key: input.action_key,
@@ -683,8 +685,12 @@ export function resolveNetCombatAction(
       breakdown: { missing_inputs: list },
       changes: [],
       missing_inputs: list,
+      ...(missingFields.length ? { missing_fields: missingFields } : {}),
     };
   };
+  const rollField = (roll: { first: number; extra?: number } | undefined, field: 'attack_roll' | 'defense_roll'): MissingCombatInput => ({
+    field: !roll ? field : field === 'attack_roll' ? 'attack_extra' : 'defense_extra',
+  });
 
   const d10 = (roll: { first: number; extra?: number } | undefined, label: string): number | string => {
     if (!roll) return `${label}の出目 (1d10) を入力してください`;
@@ -697,7 +703,7 @@ export function resolveNetCombatAction(
   // ── 1. アクセスポイントを探す（スキャナ）: TECH + 電子／セキュリティ技術（+ テク現場エンジニア）+ 1d10 ──
   if (input.action_key === 'scanner') {
     const r = d10(input.attack_roll, '〈電子／セキュリティ技術〉');
-    if (typeof r === 'string') return fail(r);
+    if (typeof r === 'string') return fail(r, [rollField(input.attack_roll, 'attack_roll')]);
 
     // DBにキャラがあれば生の技能から effectiveForChecks を計算して二重加算を防ぐ
     const rawRow = db.select().from(characters).where(eq(characters.id, actorChar.id)).get();
@@ -789,8 +795,9 @@ export function resolveNetCombatAction(
     const atkR = d10(input.attack_roll, 'ブラック ICE 攻撃');
     const defR = d10(input.defense_roll, '防御');
     const missing: string[] = [];
-    if (typeof atkR === 'string') missing.push(atkR);
-    if (typeof defR === 'string') missing.push(defR);
+    const missingFields: MissingCombatInput[] = [];
+    if (typeof atkR === 'string') { missing.push(atkR); missingFields.push(rollField(input.attack_roll, 'attack_roll')); }
+    if (typeof defR === 'string') { missing.push(defR); missingFields.push(rollField(input.defense_roll, 'defense_roll')); }
 
     const atkTotal = typeof atkR === 'number' ? iceDef.atk + atkR : 0;
     const tRank = interfaceRankOf(tCtx.char);
@@ -805,9 +812,9 @@ export function resolveNetCombatAction(
           ? 1
           : 0;
     if (missing.length === 0 && hit && neededDice > 0 && (!input.damage_dice || input.damage_dice.length < neededDice)) {
-      missing.push(`${iceDef.name} の効果ダイス (${neededDice}d6) の出目を入力してください`);
+      { missing.push(`${iceDef.name} の効果ダイス (${neededDice}d6) の出目を入力してください`); missingFields.push({ field: 'damage_rolls' }); }
     }
-    if (missing.length > 0) return fail(missing);
+    if (missing.length > 0) return fail(missing, missingFields);
 
     const dicePool = [...(input.damage_dice ?? [])];
     let formula = `${iceDef.name} の攻撃: ATK ${iceDef.atk} + 出目 ${atkR} = ${atkTotal} vs ${tPart.name} ${iceDef.class === 'antiprogram' ? 'DEF 0' : `インタフェース ${tRank}`} + 出目 ${defR} = ${defTotal} -> ${hit ? '命中' : '回避'}`;
@@ -1054,7 +1061,7 @@ export function resolveNetCombatAction(
   // ── 3d. パスファインダー（pathfinder） ──
   if (sub === 'pathfinder') {
     const r = d10(input.attack_roll, 'パスファインダー');
-    if (typeof r === 'string') return fail(r);
+    if (typeof r === 'string') return fail(r, [rollField(input.attack_roll, 'attack_roll')]);
     const seeYaBonus = hasBooster('See Ya') ? 2 : 0;
     const total = rank + seeYaBonus + luck + r;
     consumeNetAction('パスファインダー');
@@ -1140,7 +1147,7 @@ export function resolveNetCombatAction(
   // ── 3f. バックドア（backdoor） ──
   if (sub === 'backdoor') {
     const r = d10(input.attack_roll, 'バックドア');
-    if (typeof r === 'string') return fail(r);
+    if (typeof r === 'string') return fail(r, [rollField(input.attack_roll, 'attack_roll')]);
     const flNum = Number(input.net?.target_floor ?? curNet.depth);
     const fl = arch?.floors.find((f) => f.floor === flNum);
     const dv = fl?.dv ?? arch?.dv ?? Number(input.net?.virus_dv ?? 8);
@@ -1168,7 +1175,7 @@ export function resolveNetCombatAction(
   // ── 3g. アイディール（eyedee / eye_dee） ──
   if (sub === 'eyedee' || sub === 'eye_dee') {
     const r = d10(input.attack_roll, 'アイディール');
-    if (typeof r === 'string') return fail(r);
+    if (typeof r === 'string') return fail(r, [rollField(input.attack_roll, 'attack_roll')]);
     const flNum = Number(input.net?.target_floor ?? curNet.depth);
     const fl = arch?.floors.find((f) => f.floor === flNum);
     const dv = fl?.dv ?? arch?.dv ?? 8;
@@ -1224,7 +1231,7 @@ export function resolveNetCombatAction(
     }
 
     const r = d10(input.attack_roll, 'コントロール');
-    if (typeof r === 'string') return fail(r);
+    if (typeof r === 'string') return fail(r, [rollField(input.attack_roll, 'attack_roll')]);
     // 他人やデーモンが制御していれば、その判定結果が難易度になる
     let rivalScore = 0;
     for (const p of allParticipants ?? []) {
@@ -1368,8 +1375,9 @@ export function resolveNetCombatAction(
     const atkR = d10(input.attack_roll, '攻撃');
     const defR = d10(input.defense_roll, '防御');
     const missing: string[] = [];
-    if (typeof atkR === 'string') missing.push(atkR);
-    if (typeof defR === 'string') missing.push(defR);
+    const missingFields: MissingCombatInput[] = [];
+    if (typeof atkR === 'string') { missing.push(atkR); missingFields.push(rollField(input.attack_roll, 'attack_roll')); }
+    if (typeof defR === 'string') { missing.push(defR); missingFields.push(rollField(input.defense_roll, 'defense_roll')); }
 
     // 対人攻撃プログラムか、対プログラム／ブラックICEか
     const isAntiPersonnel = progDef?.class === 'antipersonnelattacker';
@@ -1419,12 +1427,12 @@ export function resolveNetCombatAction(
     else if (['Nervescrub', 'Superglue', 'Vrizzbolt'].includes(progDef?.en ?? '')) neededDice = 1;
 
     if (missing.length === 0 && hit && neededDice > 0 && (!input.damage_dice || input.damage_dice.length < neededDice)) {
-      missing.push(`ダメージ／効果ダイス (${neededDice}d6) の出目を入力してください`);
+      { missing.push(`ダメージ／効果ダイス (${neededDice}d6) の出目を入力してください`); missingFields.push({ field: 'damage_rolls' }); }
     }
     if (isAntiPersonnel && !tRunnerCtx) {
-      missing.push('対人攻撃プログラムの目標（ネットランナー）を選択してください');
+      { missing.push('対人攻撃プログラムの目標（ネットランナー）を選択してください'); missingFields.push({ field: 'net_target' }); }
     }
-    if (missing.length > 0) return fail(missing);
+    if (missing.length > 0) return fail(missing, missingFields);
 
     consumeNetAction(isZap ? 'ザップ' : progDef!.name);
     if (progDef?.en === 'Superglue') {
@@ -1621,9 +1629,10 @@ export function resolveNetCombatAction(
     const r = d10(input.attack_roll, 'スライド');
     const iceR = d10(input.defense_roll, 'ブラック ICE の PER');
     const missing: string[] = [];
-    if (typeof r === 'string') missing.push(r);
-    if (typeof iceR === 'string') missing.push(iceR);
-    if (missing.length > 0) return fail(missing);
+    const missingFields: MissingCombatInput[] = [];
+    if (typeof r === 'string') { missing.push(r); missingFields.push(rollField(input.attack_roll, 'attack_roll')); }
+    if (typeof iceR === 'string') { missing.push(iceR); missingFields.push(rollField(input.defense_roll, 'defense_roll')); }
+    if (missing.length > 0) return fail(missing, missingFields);
 
     const spdBonus = runnerSpdBonus();
     const skunkPen = (curNet.skunk ?? 0) * 2;
@@ -1659,7 +1668,7 @@ export function resolveNetCombatAction(
   // ── 3l. クローク（cloak） ──
   if (sub === 'cloak') {
     const r = d10(input.attack_roll, 'クローク');
-    if (typeof r === 'string') return fail(r);
+    if (typeof r === 'string') return fail(r, [rollField(input.attack_roll, 'attack_roll')]);
     const eraserBonus = hasBooster('Eraser') ? 2 : 0;
     const total = rank + eraserBonus + luck + r;
 
@@ -1716,7 +1725,7 @@ export function resolveNetCombatAction(
     }
 
     const r = d10(input.attack_roll, 'ウイルス');
-    if (typeof r === 'string') return fail(r);
+    if (typeof r === 'string') return fail(r, [rollField(input.attack_roll, 'attack_roll')]);
     const total = rank + luck + r;
     const success = total > dv;
 
