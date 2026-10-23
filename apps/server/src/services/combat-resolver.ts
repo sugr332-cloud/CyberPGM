@@ -18,6 +18,7 @@ import {
   gridDistance,
   BoardObstacle,
   DEFAULT_RULES,
+  losesSuppressiveContest,
 } from '@cyberpgm/rules';
 import {
   CombatChange,
@@ -67,6 +68,7 @@ import { z } from 'zod';
 import type { AppDatabase } from '../db/client.js';
 import { rule_constants, weapons, items, boards, board_tokens, board_objects, board_drops, characters } from '../db/schema.js';
 import { eq, and, ne } from 'drizzle-orm';
+import { attackModifierTotal, rangedAttackModifiers, rangedWeaponQuality } from './attack-modifiers.js';
 
 type ResolveInput = z.infer<typeof ResolveActionInputSchema>;
 
@@ -140,6 +142,7 @@ const ACTION_LABEL: Record<string, string> = {
   aimed: '照準射撃',
   autofire: 'フルオート射撃',
   suppressive: '制圧射撃',
+  repair_weapon: '動作不良を直す',
   hide: '身を隠す',
   pickup: '拾う',
   use_skill: '技能を使う',
@@ -402,6 +405,8 @@ export function listActionAvailability(
           : findSpareAmmoIndex(db, inv) < 0
             ? '予備の弾薬がありません'
             : null;
+      } else if (key === 'repair_weapon') {
+        reason = inv.some((entry) => entry.malfunctioned) ? null : '動作不良の武器がありません';
       }
     }
     out[key] = reason;
@@ -442,7 +447,10 @@ function resolveCombatActionInner(
   const equipmentGuard = ['ranged', 'aimed', 'autofire', 'suppressive', 'melee', 'reload'].includes(input.action_key)
     ? listActionAvailability(db, actorPart, [input.action_key], () => null)[input.action_key]
     : null;
-  const blocked = actionBlockReason(actorPart, input.action_key, { subAction: input.net?.sub_action }) || equipmentGuard;
+  const attackEntry = ((actorChar.inventory as InventoryEntry[]) ?? []).find((e) => e.entry_id === input.weapon_entry_id || e.entry_id === input.weapon_id || e.item_id === input.weapon_id);
+  const attackBlocked = ['ranged', 'aimed', 'autofire', 'suppressive'].includes(input.action_key) && attackEntry?.malfunctioned
+    ? `${attackEntry.name} は動作不良です。「動作不良を直す」をしてください` : null;
+  const blocked = actionBlockReason(actorPart, input.action_key, { subAction: input.net?.sub_action }) || equipmentGuard || attackBlocked;
   if (blocked) {
     return {
       action_key: input.action_key,
@@ -454,6 +462,16 @@ function resolveCombatActionInner(
       changes: [],
       missing_inputs: [blocked],
     };
+  }
+
+  if (input.action_key === 'repair_weapon') {
+    const entry = ((actorChar.inventory as InventoryEntry[]) ?? []).find((e) => e.entry_id === input.weapon_entry_id && e.malfunctioned);
+    if (!entry) return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: '動作不良の武器を選択してください', breakdown: {}, changes: [], missing_inputs: ['動作不良の武器を選択してください'] };
+    const inventory = actorChar.inventory as InventoryEntry[];
+    return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: true, formula: `${entry.name} の動作不良を直した（判定なし）`, breakdown: {}, changes: [
+      { target_id: actorPart.id, target_name: actorPart.name, field: 'state', before: { action_used: actorPart.action_used }, after: { action_used: true }, desc: `${actorPart.name} アクション使用（動作不良を直す）` },
+      { target_id: actorChar.id, target_name: actorChar.name, field: 'inventory', before: inventory, after: inventory.map((e) => e.entry_id === entry.entry_id ? { ...e, malfunctioned: false } : e), desc: `${entry.name} 動作不良を修理` },
+    ] };
   }
 
   // Phase 5z: ネットランニング（NET アクション / ブラック ICE の攻撃 / スキャナ）
@@ -686,6 +704,8 @@ function resolveCombatActionInner(
     if (boardMove.change) {
       changes.push(boardMove.change);
     }
+    const suppression = (actorPart.state as Record<string, unknown> | undefined)?.suppressive_move_to_cover;
+    if (suppression) changes.push({ target_id: actorPart.id, target_name: actorPart.name, field: 'state', before: { suppressive_move_to_cover: suppression }, after: { suppressive_move_to_cover: null }, desc: `${actorPart.name} 移動したため制圧状態を解除` });
     const netBreakMove = checkMoveBreaksNetrun(
       db,
       boardId,
@@ -738,6 +758,8 @@ function resolveCombatActionInner(
     if (boardMove.change) {
       changes.push(boardMove.change);
     }
+    const suppression = (actorPart.state as Record<string, unknown> | undefined)?.suppressive_move_to_cover;
+    if (suppression) changes.push({ target_id: actorPart.id, target_name: actorPart.name, field: 'state', before: { suppressive_move_to_cover: suppression }, after: { suppressive_move_to_cover: null }, desc: `${actorPart.name} 走ったため制圧状態を解除` });
     const netBreakRun = checkMoveBreaksNetrun(
       db,
       boardId,
@@ -2144,6 +2166,48 @@ function resolveCombatActionInner(
           },
         );
       }
+      if (input.action_key === 'suppressive') {
+        const missing: string[] = [];
+        if (!input.attack_roll) missing.push('制圧射撃の射手の出目 (1d10) を入力してください');
+        else if ((input.attack_roll.first === 1 || input.attack_roll.first === 10) && input.attack_roll.extra === undefined) missing.push('射手の決定的成功／失敗の追加出目 (1d10) を入力してください');
+        const targets = (input.suppressive_targets ?? []).map((t) => ({ input: t, participant: allParticipants?.find((p) => p.id === t.participant_id) })).filter((t): t is { input: NonNullable<typeof input.suppressive_targets>[number]; participant: CombatParticipant } => Boolean(t.participant));
+        for (const { input: target } of targets) {
+          if (!target.resistance_roll) missing.push(`${allParticipants?.find((p) => p.id === target.participant_id)?.name ?? '対象'} の抵抗の出目 (1d10) を入力してください`);
+          else if ((target.resistance_roll.first === 1 || target.resistance_roll.first === 10) && target.resistance_roll.extra === undefined) missing.push(`${allParticipants?.find((p) => p.id === target.participant_id)?.name ?? '対象'} の決定的成功／失敗の追加出目 (1d10) を入力してください`);
+        }
+        if (targets.length === 0) missing.push('制圧射撃の対象を 1 人以上選択してください');
+        if (missing.length) return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: missing.join(' / '), breakdown: {}, changes: [], missing_inputs: missing };
+        const shooterSkill = actorChar.skills[skillNameToKey('autofire')] ?? 0;
+        const mods = rangedAttackModifiers(db, actorPart, wData!, invWeapon, 'suppressive', undefined, { wound: woundPenalty(woundState(actorChar.hp, actorChar.hp_max)), grapple: grapplePenalty(actorChar.status), ignoreSeriousWound: drugModifiers(actorChar.extra).ignoreSeriousWound, precision: soloEffects(actorChar.role, actorChar.extra).precision });
+        const shooterBase = actorChar.stats.ref - (actorChar.armor_penalty ?? 0) + shooterSkill + attackModifierTotal(mods);
+        const shooterRoll = resolveD10(input.attack_roll!.first, input.attack_roll!.extra).value;
+        const shooterTotal = shooterBase + shooterRoll;
+        const details: string[] = [];
+        const suppressChanges: CombatChange[] = [];
+        let allResisted = true;
+        for (const { input: targetInput, participant } of targets) {
+          const targetChar = participant.character;
+          if (!targetChar) continue;
+          const will = targetChar.stats.will;
+          const concentration = targetChar.skills[skillNameToKey('concentration')] ?? 0;
+          const resistanceRoll = resolveD10(targetInput.resistance_roll!.first, targetInput.resistance_roll!.extra).value;
+          const resistanceTotal = will + concentration + resistanceRoll;
+          const suppressed = losesSuppressiveContest(shooterTotal, resistanceTotal, rules);
+          if (suppressed) {
+            allResisted = false;
+            const prior = (participant.state as Record<string, unknown> | undefined)?.suppressive_move_to_cover ?? null;
+            suppressChanges.push({ target_id: participant.id, target_name: participant.name, field: 'state', before: { suppressive_move_to_cover: prior }, after: { suppressive_move_to_cover: { source_id: actorPart.id } }, desc: `${participant.name} 制圧（次の移動は遮蔽へ）` });
+          }
+          details.push(`${participant.name}: 意志 ${will} + 精神集中 ${concentration} + 出目 ${resistanceRoll} = ${resistanceTotal} vs 射手 ${shooterBase} + 出目 ${shooterRoll} = ${shooterTotal} → ${suppressed ? '敗北・制圧' : '抵抗'}`);
+        }
+        const baseChanges: CombatChange[] = [
+          { target_id: actorPart.id, target_name: actorPart.name, field: 'state', ...useAction(actorPart), desc: `${actorPart.name} アクション使用（制圧射撃）${actionCountLabel(actorPart)}` },
+          ...ammoChanges,
+          ...suppressChanges,
+          ...manualChanges,
+        ];
+        return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: allResisted, formula: `射手 REF ${actorChar.stats.ref} + フルオート射撃 ${shooterSkill} ${mods.map((m) => `${m.value > 0 ? '+' : '−'}${Math.abs(m.value)}（${m.label}）`).join(' ')} + 出目 ${shooterRoll} = ${shooterTotal}\n${details.join('\n')}`, breakdown: { shooterTotal, targets: details }, changes: baseChanges };
+      }
     }
     const isMove = input.action_key === 'take_cover';
     const baseChanges: CombatChange[] = [
@@ -2469,12 +2533,13 @@ function resolveCombatActionInner(
       const stat = actorRef;
       const skillKey = skillNameToKey(wData.skill);
       const skillLevel = actorChar.skills[skillKey] ?? 0;
-      const base = attackBase({
-        stat,
-        skillLevel,
-        woundPenalty: actorWoundPen + (i === 0 ? luck : 0) + solo.precision,
-        aimed: isAimed,
+      const attackWeaponEntry = ((actorChar.inventory as InventoryEntry[]) ?? []).find((e) => e.entry_id === input.weapon_entry_id || e.entry_id === input.weapon_id || e.item_id === input.weapon_id);
+      const modifiers = rangedAttackModifiers(db, actorPart, wData, attackWeaponEntry, input.action_key, distanceM, {
+        wound: woundPenalty(actorWound), grapple: grapplePenalty(actorChar.status),
+        ignoreSeriousWound: drugModifiers(actorChar.extra).ignoreSeriousWound,
+        precision: solo.precision, luck: i === 0 ? luck : 0,
       });
+      const base = stat + skillLevel + (isAimed ? -8 : 0) + attackModifierTotal(modifiers);
 
       const attD10 = atkD10(att.attack_roll!);
       const attackTotal = base + attD10;
@@ -2517,7 +2582,13 @@ function resolveCombatActionInner(
         defFormula = `難易度 ${dv}`;
       }
 
-      let subFormula = `${prefix}REF ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''}${precisionText}${isAimed ? ' −8' : ''} = ${attackTotal} vs ${defFormula} -> ${isHit ? '命中' : '外れ'}`;
+      const modifierFormula = modifiers.map((m) => `${m.value > 0 ? '+' : '−'}${Math.abs(m.value)}（${m.label}）`).join(' ');
+      let subFormula = `${prefix}REF ${stat} + 技能 ${skillLevel} ${modifierFormula ? `${modifierFormula} ` : ''}+ 出目 ${attD10}${isAimed ? ' −8（照準）' : ''} = ${attackTotal} vs ${defFormula} -> ${isHit ? '命中' : '外れ'}`;
+      if (att.attack_roll!.first === 1 && !solo.fumbleImmune && attackWeaponEntry && rangedWeaponQuality(db, wData, attackWeaponEntry) === 'low' && !attackWeaponEntry.malfunctioned) {
+        const inventory = (actorChar.inventory as InventoryEntry[]) ?? [];
+        changes.push({ target_id: actorChar.id, target_name: actorChar.name, field: 'inventory', before: inventory, after: inventory.map((entry) => entry.entry_id === attackWeaponEntry.entry_id ? { ...entry, malfunctioned: true } : entry), desc: `${attackWeaponEntry.name} 動作不良` });
+        subFormula += '（低品質武器が動作不良）';
+      }
 
       if (!isHit) {
         allHit = false;

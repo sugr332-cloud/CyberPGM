@@ -1,9 +1,10 @@
 import { eq } from 'drizzle-orm';
-import { CombatParticipant, InventoryEntry, skillNameToKey, formatSkillName } from '@cyberpgm/shared';
+import { CombatParticipant, InventoryEntry, skillNameToKey, formatSkillName, soloEffects, drugModifiers } from '@cyberpgm/shared';
 import { canDodgeRanged, formatNeeded, neededRoll, rangedDv, woundPenalty, woundState } from '@cyberpgm/rules';
 import type { DvTable } from '@cyberpgm/shared';
 import { db } from '../db/client.js';
 import { items, rule_constants, weapons } from '../db/schema.js';
+import { attackModifierTotal, rangedAttackModifiers } from './attack-modifiers.js';
 
 /**
  * 出目を入れる前に出す「計算式と成功ライン」（仕様 §5.0.1。Phase 5n）。
@@ -12,7 +13,7 @@ import { items, rule_constants, weapons } from '../db/schema.js';
  */
 export interface AttackLine {
   text: string;
-  bands?: Array<{ range: string; dv: number; needed: string }>;
+  bands?: Array<{ range: string; dv: number; needed: string; current?: boolean }>;
 }
 
 interface LineInput {
@@ -21,9 +22,10 @@ interface LineInput {
   weapon_id?: string;
   distance_m?: number | null;
   dodge_mode?: 'dv' | 'dodge';
+  luck_spent?: number;
 }
 
-const RANGED = ['ranged', 'aimed', 'autofire'];
+const RANGED = ['ranged', 'aimed', 'autofire', 'suppressive'];
 
 function ruleConstant<T>(key: string): T | null {
   const row = db.select().from(rule_constants).where(eq(rule_constants.key, key)).get();
@@ -42,7 +44,7 @@ function weaponOf(actor: CombatParticipant, input: LineInput) {
   if (!entry?.item_id) return null;
   const w = db.select().from(weapons).where(eq(weapons.item_id, entry.item_id)).get();
   const it = db.select().from(items).where(eq(items.id, entry.item_id)).get();
-  return w ? { ...w, name: it?.name_ja_override || it?.name_ja || it?.name_en || entry.name } : null;
+  return w ? { ...w, entry, name: it?.name_ja_override || it?.name_ja || it?.name_en || entry.name } : null;
 }
 
 export function attackLine(input: LineInput, actor: CombatParticipant, target?: CombatParticipant): AttackLine | null {
@@ -55,13 +57,19 @@ export function attackLine(input: LineInput, actor: CombatParticipant, target?: 
   if (RANGED.includes(input.action_key)) {
     const w = weaponOf(actor, input);
     if (!w) return { text: '射撃武器を選ぶと成功ラインが出ます' };
-    const isAutofire = input.action_key === 'autofire';
+    const isAutofire = ['autofire', 'suppressive'].includes(input.action_key);
     const skillKey = isAutofire ? 'autofire' : skillNameToKey(w.skill);
     const skill = ch.skills[skillKey] ?? 0;
     const ref = ch.stats.ref - armor;
+    const modifiers = rangedAttackModifiers(db, actor, w, w.entry, input.action_key, input.distance_m ?? undefined, {
+      wound, grapple: ch.status.includes('つかみ') ? -2 : 0,
+      ignoreSeriousWound: drugModifiers(ch.extra).ignoreSeriousWound, precision: soloEffects(ch.role, ch.extra).precision, luck: input.luck_spent ?? 0,
+    });
     const aimed = input.action_key === 'aimed' ? -8 : 0;
-    const base = ref + skill + wound + aimed;
-    const parts = `REF ${ref} + ${formatSkillName(skillKey)} ${skill}${woundText}${aimed ? ' −8（照準）' : ''} = ${base}`;
+    const base = ref + skill + aimed + attackModifierTotal(modifiers);
+    const modifierText = modifiers.map((m) => `${m.value > 0 ? '+' : '−'} ${m.label}${Math.abs(m.value) === 1 ? '' : ` ${Math.abs(m.value)}`}`).join(' ');
+    const parts = `REF ${ref} + ${formatSkillName(skillKey)} ${skill}${modifierText ? ` ${modifierText}` : ''}${aimed ? ' − 8 照準' : ''} = ${base}`;
+    if (input.action_key === 'suppressive') return { text: `${parts} + 1d10 vs 各対象の WILL + 精神集中 + 1d10` };
     const tableKey = isAutofire ? `${w.dv_table_key} (Autofire)` : w.dv_table_key;
     const table = tableKey ? ruleConstant<DvTable>(`dv_table.${tableKey}`) ?? ruleConstant<DvTable>(tableKey) : null;
 
@@ -75,7 +83,9 @@ export function attackLine(input: LineInput, actor: CombatParticipant, target?: 
     if (typeof input.distance_m === 'number') {
       const dv = rangedDv(table, input.distance_m);
       if (dv === null) return { text: `${parts} vs 距離 ${input.distance_m}m は射程外` };
-      return { text: `${parts} vs ${target ? `${target.name}・` : ''}距離 ${input.distance_m}m の難易度 ${dv} → 出目 ${formatNeeded(neededRoll(base, dv, 'dv'))}` };
+      const band = table.find((b) => input.distance_m! >= b.range[0] && input.distance_m! <= b.range[1]);
+      const fortuneNote = input.luck_spent ? `（運命点なし: 出目 ${formatNeeded(neededRoll(base - input.luck_spent, dv, 'dv'))}）` : '';
+      return { text: `${parts} vs ${target ? `${target.name}まで ` : ''}${input.distance_m}m${band ? `（距離帯 ${band.range[0]}〜${band.range[1]}m）` : ''} → 難易度 ${dv} → 出目 ${formatNeeded(neededRoll(base, dv, 'dv'))}${fortuneNote}`, bands: table.filter((b) => b.dv !== 'N/A' && b.dv !== 'null' && Number.isFinite(Number(b.dv))).map((b) => ({ range: `${b.range[0]}〜${b.range[1]}m`, dv: Number(b.dv), needed: formatNeeded(neededRoll(base, Number(b.dv), 'dv')), current: band === b })) };
     }
     const bands = table
       .filter((b) => b.dv !== 'N/A' && b.dv !== 'null' && Number.isFinite(Number(b.dv)))

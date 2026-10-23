@@ -20,7 +20,7 @@ describe('shared action input table', () => {
     expect(combatActionHasDice('ranged', 'damage_rolls')).toBe(true);
     expect(combatActionHasDice('hazard', 'damage_rolls')).toBe(true);
     expect(combatActionHasDice('vehicle_board', 'attack_roll')).toBe(false);
-    expect(Object.keys(COMBAT_ACTION_INPUTS).length).toBe(42);
+    expect(Object.keys(COMBAT_ACTION_INPUTS).length).toBe(43);
     expect(combatActionInputs('net_action', 'program').dice.map((d) => d.field)).toContain('attack_roll');
     expect(combatActionInputs('hazard', 'electric').dice.map((d) => d.field)).toEqual(['damage_rolls']);
     expect(combatActionInputs('dodge').dice.find((d) => d.field === 'defense_extra')?.who).toBe('actor');

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CharacterSheet, InventoryEntry } from '@cyberpgm/shared';
 import { ItemDetailPopup } from './ItemDetail.js';
+import { api } from '../api.js';
 
 const card: React.CSSProperties = {
   backgroundColor: 'var(--color-surface)',
@@ -30,11 +31,21 @@ const rowStyle: React.CSSProperties = {
 };
 
 /** スマホの「装備」タブ（Phase 5g）: 武器・防具・持ち物・サイバーウェア。「？」から性能・効果・フレーバーを確認する */
-export function PlayerEquipmentView({ sheet }: { sheet: CharacterSheet }) {
+export function PlayerEquipmentView({ sheet, onAttachmentsChange }: { sheet: CharacterSheet; onAttachmentsChange?: (weaponEntryId: string, attachments: string[]) => Promise<void> }) {
   const [popup, setPopup] = useState<{ name: string; itemId?: string | null } | null>(null);
+  const [weaponUpgradeIds, setWeaponUpgradeIds] = useState<Set<string>>(new Set());
   const cyberwareIds = new Set(sheet.cyberware.map((cw) => cw.item_id).filter(Boolean));
   const inventory = sheet.inventory.filter((i) => !(i.item_id && cyberwareIds.has(i.item_id)));
   const weapons = inventory.filter((i) => i.kind === 'weapon');
+  const weaponUpgrades = inventory.filter((i) => i.kind === 'upgrade' && i.item_id && weaponUpgradeIds.has(i.item_id));
+  useEffect(() => {
+    let alive = true;
+    Promise.all(inventory.filter((i) => i.kind === 'upgrade' && i.item_id).map((i) => api.getItemForPlayer(i.item_id!).catch(() => null))).then((rows) => {
+      if (!alive) return;
+      setWeaponUpgradeIds(new Set(rows.filter((item) => item?.kind === 'upgrade' && (() => { try { return JSON.parse(item.raw_system ?? '{}').type === 'weapon'; } catch { return false; } })()).map((item) => item!.id)));
+    });
+    return () => { alive = false; };
+  }, [sheet.inventory]);
   const armor = inventory.filter((i) => i.kind === 'armor');
   const others = inventory.filter((i) => i.kind !== 'weapon' && i.kind !== 'armor');
   const textWeapons = (sheet.weapons || []).filter((w): w is string => typeof w === 'string');
@@ -74,7 +85,7 @@ export function PlayerEquipmentView({ sheet }: { sheet: CharacterSheet }) {
         <div style={card}>
           <span style={title}>武器</span>
           {weapons.length === 0 && textWeapons.length === 0 && <span style={muted}>なし</span>}
-          {weapons.map(entryRow)}
+          {weapons.map((weapon) => <div key={weapon.entry_id} style={{display:'flex',flexDirection:'column',gap:5}}>{entryRow(weapon)}{weaponUpgrades.length > 0 && <div data-testid="player-weapon-attachments" style={{display:'flex',gap:8,flexWrap:'wrap',paddingLeft:8,fontSize:'0.75rem'}}><span style={muted}>付属品</span>{weaponUpgrades.map((upgrade) => <label key={upgrade.entry_id} style={{display:'flex',gap:4,alignItems:'center'}}><input type="checkbox" checked={weapon.attachments?.includes(upgrade.entry_id) ?? false} onChange={(e) => { const next=e.target.checked ? [...new Set([...(weapon.attachments ?? []),upgrade.entry_id])] : (weapon.attachments ?? []).filter((id) => id !== upgrade.entry_id); void onAttachmentsChange?.(weapon.entry_id,next); }}/>{upgrade.name}</label>)}</div>}</div>)}
           {textWeapons.map((w, idx) => (
             <button key={`w-${idx}`} type="button" data-testid="player-inventory-item" aria-label={`${w}の性能・効果・フレーバー`} onClick={() => setPopup({ name: w })} style={rowStyle}>
               <span style={{ fontWeight: 500 }}>{w}</span>{helpIcon}

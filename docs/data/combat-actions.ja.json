@@ -133,6 +133,13 @@
       "desc": "手に持った武器の弾を満タンにする。予備の弾が所持品にあるときだけ使える。"
     },
     {
+      "key": "repair_weapon",
+      "label": "動作不良を直す",
+      "slot": "action",
+      "status": "confirmed",
+      "desc": "低品質武器の動作不良を判定なしで直す（アクション 1 回）。"
+    },
+    {
       "key": "hide",
       "label": "身を隠す",
       "slot": "action",

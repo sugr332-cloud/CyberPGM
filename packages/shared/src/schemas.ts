@@ -33,6 +33,8 @@ export const InventoryEntrySchema = z.object({
   quality: z.string().optional(),
   damage: z.string().optional(),
   armor_penalty: z.number().nonnegative().optional(),
+  attachments: z.array(z.string()).optional(),
+  malfunctioned: z.boolean().optional(),
 });
 
 export const InventoryFlexibleSchema = z.preprocess((val) => {
@@ -319,10 +321,11 @@ export const WsClientMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('combat:roll'),
     payload: z.object({
-      roll_type: z.enum(['initiative', 'attack', 'defense', 'damage', 'crit', 'death_save']),
+      roll_type: z.enum(['initiative', 'attack', 'defense', 'damage', 'crit', 'death_save', 'suppressive_resistance']),
       first: z.number().int().optional(),
       extra: z.number().int().optional(),
       dice: z.array(z.number().int()).optional(),
+      target_id: z.string().optional(),
     }),
   }),
 ]);
