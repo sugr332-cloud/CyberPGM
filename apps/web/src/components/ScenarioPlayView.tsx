@@ -5,12 +5,13 @@ import {
   ScenarioFull,
   ScenarioSession,
   SessionLogEntry,
-  SKILL_CATALOG,
   formatSkillName,
 } from '@cyberpgm/shared';
 import { BoardView } from './BoardView.js';
 import { StoryCheckRow, StoryCheckView } from './StoryCheckRow.js';
 import { StagePanel } from './StagePanel.js';
+import { SkillSelect } from './SkillSelect.js';
+import './ScenarioPlayView.css';
 import { api, getGmToken, gmFetch } from '../api.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 
@@ -56,6 +57,12 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
   const [showGroupCheckModal, setShowGroupCheckModal] = useState(false);
   const [groupCheckSkill, setGroupCheckSkill] = useState('');
   const [groupCheckDv, setGroupCheckDv] = useState<number | null>(null);
+  const [checkChoiceId, setCheckChoiceId] = useState<string | null>(null);
+  const [checkActorIds, setCheckActorIds] = useState<string[]>([]);
+  const [checkActorQuery, setCheckActorQuery] = useState('');
+  const [creatingChecks, setCreatingChecks] = useState(false);
+  const creatingChecksRef = React.useRef(false);
+  const [checkCreateError, setCheckCreateError] = useState<string | null>(null);
 
   // Projections
   const [, setTvProjectedImage] = useState<string | null>(null);
@@ -333,49 +340,43 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
     }
   };
 
-  // Create check line for PC
-  const handleCreateCheck = async (charId: string, skillKey: string, dv: number, choiceId?: string) => {
-    if (!activeSession) return;
-    try {
-      await gmFetch(`/api/scenario-sessions/${activeSession.id}/checks`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor_character_ids: [charId],
-          skill_key: skillKey,
-          dv,
-          choice_id: choiceId,
-        }),
-      });
-      fetchChecks(activeSession.id);
-    } catch (err: any) {
-      setErrorMsg(err.message || '判定の作成に失敗しました');
-    }
+  const openCheckDialog = (choice?: { id: string; skill_key?: string | null; dv?: number | null }) => {
+    setCheckChoiceId(choice?.id ?? null);
+    setGroupCheckSkill(choice?.skill_key ?? '');
+    setGroupCheckDv(choice?.dv ?? null);
+    setCheckActorIds([]);
+    setCheckActorQuery('');
+    setCheckCreateError(null);
+    setShowGroupCheckModal(true);
   };
 
-  // Create group check (all PCs in party)
+  // PC・NPC・モブから選んだ人ごとに判定を作る。
   const handleCreateGroupCheck = async () => {
-    if (!activeSession) return;
-    const pcIds = characters.map((c) => c.id);
-    if (pcIds.length === 0) {
-      setErrorMsg('判定対象のPCが存在しません');
+    if (!activeSession || creatingChecksRef.current) return;
+    const actorIds = [...new Set(checkActorIds)].filter((id) => characters.some((c) => c.id === id));
+    if (!actorIds.length || !groupCheckSkill) {
+      setCheckCreateError('判定するキャラクターと技能を選んでください');
       return;
     }
+    creatingChecksRef.current = true;
+    setCreatingChecks(true);
+    setCheckCreateError(null);
     try {
-      await gmFetch(`/api/scenario-sessions/${activeSession.id}/checks`, {
+      const response = await gmFetch(`/api/scenario-sessions/${activeSession.id}/checks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor_character_ids: pcIds,
-          skill_key: groupCheckSkill,
-          dv: groupCheckDv,
-        }),
+        body: JSON.stringify({ actor_character_ids: actorIds, skill_key: groupCheckSkill, dv: groupCheckDv, choice_id: checkChoiceId }),
       });
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error || '判定の作成に失敗しました');
       setShowGroupCheckModal(false);
-      fetchChecks(activeSession.id);
-      setSuccessMsg('全員分の判定を作成しました');
+      await fetchChecks(activeSession.id);
+      setSuccessMsg(`${actorIds.length} 人分の判定を作成しました`);
     } catch (err: any) {
-      setErrorMsg(err.message || '全員判定の作成に失敗しました');
+      setCheckCreateError(err.message || '判定の作成に失敗しました');
+    } finally {
+      creatingChecksRef.current = false;
+      setCreatingChecks(false);
     }
   };
 
@@ -659,21 +660,15 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
 
   // 2. Active Session Play View
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: 'calc(100vh - 120px)',
-        gap: '12px',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="scenario-play" data-testid="scenario-play">
       {/* Top Banner: Scenario Title, Elapsed Time, Controls */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '8px',
           backgroundColor: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
           borderRadius: '8px',
@@ -681,7 +676,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
           flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <span style={{ fontWeight: 800, fontSize: '1.1rem', color: 'var(--color-ally)' }}>
             進行中: {scenarioData?.scenario.title || 'シナリオ'}
           </span>
@@ -693,7 +688,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           {successMsg && (
             <span style={{ fontSize: '0.85rem', color: 'var(--color-success)', fontWeight: 600 }}>
               {successMsg}
@@ -766,19 +761,9 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
         </div>
       </div>
 
-      {/* 3 Columns Layout */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '260px 1fr 340px',
-          gap: '12px',
-          flex: 1,
-          minHeight: 0,
-          overflow: 'hidden',
-        }}
-      >
-        {/* Left Column: Scene Navigation List */}
-        <div
+      <div className="scenario-workspace" data-testid="scenario-workspace">
+        {/* Scene navigation */}
+        <nav className="scenario-scene-nav" aria-label="シーン一覧"
           style={{
             backgroundColor: 'var(--color-surface)',
             border: '1px solid var(--color-border)',
@@ -786,6 +771,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
+            minWidth: 0,
           }}
         >
           <div
@@ -866,17 +852,9 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
               );
             })}
           </div>
-        </div>
+        </nav>
 
-        {/* Center Column: Current Scene Detail & Board/Art */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-            overflowY: 'auto',
-          }}
-        >
+        <div className="scenario-main" data-testid="scenario-main">
           {currentScene ? (
             <>
               {/* Scene Description Card */}
@@ -1047,17 +1025,6 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
               シーンを選択してください
             </div>
           )}
-        </div>
-
-        {/* Right Column: Choices, Check Board, Clues & Handouts */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-            overflowY: 'auto',
-          }}
-        >
           {/* Section A: Published Choices */}
           <div
             style={{
@@ -1137,11 +1104,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                         </span>
                         <button
                           type="button"
-                          onClick={() => {
-                            if (characters.length > 0) {
-                              handleCreateCheck(characters[0].id, ch.skill_key!, ch.dv ?? 13, ch.id);
-                            }
-                          }}
+                          onClick={() => openCheckDialog(ch)}
                           style={{
                             padding: '2px 6px',
                             backgroundColor: 'var(--color-surface)',
@@ -1182,7 +1145,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
               <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>判定ボード</span>
               <button
                 type="button"
-                onClick={() => setShowGroupCheckModal(true)}
+                onClick={() => openCheckDialog()}
                 style={{
                   padding: '3px 8px',
                   backgroundColor: 'rgba(235, 179, 58, 0.2)',
@@ -1194,7 +1157,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
                   fontWeight: 600,
                 }}
               >
-                全員判定
+                ＋ 判定を作成
               </button>
             </div>
             {/* スマホに難易度と成功ラインを見せるか（Phase 5n） */}
@@ -1236,8 +1199,11 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
             </div>
           </div>
 
+        </div>
+
+        <aside className="scenario-reference" aria-label="舞台とシナリオ資料" data-testid="scenario-reference">
           {/* 舞台（表示ウィンドウの背景・立ち絵・BGM）。GM のメインウィンドウだけ */}
-          <StagePanel key={activeSession.current_scene_id ?? 'none'} characters={characters} />
+          <StagePanel key={activeSession.current_scene_id ?? 'none'} characters={characters} section="visual" />
 
           {/* Section: Encounters of this scenario（盤面がなくても戦闘に入れられる） */}
           {scenarioData && scenarioData.encounters.length > 0 && (
@@ -1403,16 +1369,18 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
               })}
             </div>
           </div>
-        </div>
+        </aside>
       </div>
 
-      {/* Bottom Section: Real-time Session Log */}
-      <div
+      <div className="scenario-footer" data-testid="scenario-footer">
+      {/* Session log */}
+      <div data-testid="scenario-log"
         style={{
           backgroundColor: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
           borderRadius: '8px',
-          height: '140px',
+          minWidth: 0,
+          minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
           flexShrink: 0,
@@ -1427,10 +1395,12 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
             justifyContent: 'space-between',
             alignItems: 'center',
             backgroundColor: 'var(--color-surface-elevated)',
+            flexWrap: 'wrap',
+            gap: '8px',
           }}
         >
           <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>セッションログ</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', minWidth: 0 }}>
             <input
               type="text"
               placeholder="GMメモを入力…"
@@ -1438,7 +1408,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
               onChange={(e) => setNoteInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleAddNote()}
               style={{
-                width: '260px',
+                width: 'min(260px, 100%)',
                 padding: '4px 8px',
                 backgroundColor: 'var(--color-bg)',
                 border: '1px solid var(--color-border-light)',
@@ -1493,6 +1463,11 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
           {logs.length === 0 && (
             <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>ログはまだありません</span>
           )}
+        </div>
+      </div>
+
+        <div className="scenario-audio">
+          <StagePanel key={`audio-${activeSession.current_scene_id ?? 'none'}`} characters={characters} section="audio" />
         </div>
       </div>
 
@@ -1626,26 +1601,7 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
               <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
                 判定スキル:
               </label>
-              <select
-                value={adhocChoiceSkill}
-                onChange={(e) => setAdhocChoiceSkill(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  backgroundColor: 'var(--color-bg)',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: '4px',
-                  color: 'var(--color-text)',
-                  fontSize: '0.85rem',
-                }}
-              >
-                <option value="">（判定なし）</option>
-                {Object.keys(SKILL_CATALOG).map((key) => (
-                  <option key={key} value={key}>
-                    {formatSkillName(key)}
-                  </option>
-                ))}
-              </select>
+              <SkillSelect value={adhocChoiceSkill} onChange={setAdhocChoiceSkill} characters={characters} label="選択肢の技能" emptyLabel="（判定なし）" />
             </div>
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
@@ -1728,108 +1684,42 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
 
       {/* Modal: Group Check Setup */}
       {showGroupCheckModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '16px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '8px',
-              padding: '20px',
-              maxWidth: '400px',
-              width: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }}
-          >
-            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>全員判定の作成</h3>
-            <div>
-              <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
-                技能:
-              </label>
-              <select
-                value={groupCheckSkill}
-                onChange={(e) => setGroupCheckSkill(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  backgroundColor: 'var(--color-bg)',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: '4px',
-                  color: 'var(--color-text)',
-                  fontSize: '0.9rem',
-                }}
-              >
-                <option value="">技能を選ぶ</option>
-                {Object.keys(SKILL_CATALOG).map((key) => (
-                  <option key={key} value={key}>
-                    {formatSkillName(key)}
-                  </option>
-                ))}
-              </select>
+        <div className="scenario-modal-overlay">
+          <section className="scenario-check-dialog" role="dialog" aria-modal="true" aria-labelledby="check-dialog-title" data-testid="story-check-dialog">
+            <h3 id="check-dialog-title" style={{ margin: 0 }}>判定の作成</h3>
+            {checkChoiceId && <strong>{sceneChoices.find((c) => c.id === checkChoiceId)?.label}</strong>}
+            <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>PC・NPC・モブから、判定するキャラクターを1人または複数選んでください。</p>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button type="button" disabled={creatingChecks} onClick={() => setCheckActorIds(characters.filter((c) => c.kind === 'pc').map((c) => c.id))}>PC全員</button>
+              <button type="button" disabled={creatingChecks} onClick={() => setCheckActorIds(characters.filter((c) => c.kind !== 'pc').map((c) => c.id))}>NPC・モブ全員</button>
+              <button type="button" disabled={creatingChecks} onClick={() => setCheckActorIds(characters.map((c) => c.id))}>全員</button>
+              <button type="button" disabled={creatingChecks} onClick={() => setCheckActorIds([])}>選択解除</button>
+              <span role="status">{checkActorIds.length} 人を選択中</span>
             </div>
-            <div>
-              <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>
-                難易度:
-              </label>
-              <input
-                type="number"
-                value={groupCheckDv ?? ''}
-                onChange={(e) => setGroupCheckDv(e.target.value === '' ? null : parseInt(e.target.value, 10))}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  backgroundColor: 'var(--color-bg)',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: '4px',
-                  color: 'var(--color-text)',
-                  fontSize: '0.9rem',
-                }}
-              />
+            <input type="search" aria-label="判定者を検索" placeholder="キャラクター名で検索" value={checkActorQuery} onChange={(e) => setCheckActorQuery(e.target.value)} />
+            <div className="scenario-check-actors">
+              {characters.filter((c) => c.name.normalize('NFKC').toLowerCase().includes(checkActorQuery.normalize('NFKC').toLowerCase().trim())).map((c) => (
+                <label key={c.id}>
+                  <input type="checkbox" disabled={creatingChecks} checked={checkActorIds.includes(c.id)} onChange={(e) => setCheckActorIds((ids) => e.target.checked ? [...ids, c.id] : ids.filter((id) => id !== c.id))} />
+                  <span>{c.name}</span><small>{c.kind === 'pc' ? 'PC' : c.kind === 'npc' ? 'NPC' : 'モブ'}</small>
+                </label>
+              ))}
+              {characters.length === 0 && <p>キャラクターがありません。PC・NPCを登録してください。</p>}
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
-              <button
-                type="button"
-                onClick={() => setShowGroupCheckModal(false)}
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: 'var(--color-surface-elevated)',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: '4px',
-                  color: 'var(--color-text-muted)',
-                  cursor: 'pointer',
-                }}
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateGroupCheck}
-                style={{
-                  padding: '6px 16px',
-                  backgroundColor: 'var(--color-ally)',
-                  border: 'none',
-                  borderRadius: '4px',
-                  color: '#000',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                全員分作成
+            <label style={{ fontWeight: 600 }}>技能</label>
+            <SkillSelect value={groupCheckSkill} onChange={setGroupCheckSkill} characters={characters} label="判定の技能" />
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <label>難易度 <input aria-label="判定の難易度" type="number" placeholder="後で指定" value={groupCheckDv ?? ''} onChange={(e) => setGroupCheckDv(e.target.value === '' ? null : Number(e.target.value))} style={{ width: '90px' }} /></label>
+              {DV_PRESETS.map((p) => <button key={p.dv} type="button" onClick={() => setGroupCheckDv(p.dv)}>{p.label} {p.dv}</button>)}
+            </div>
+            {checkCreateError && <div role="alert">{checkCreateError}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button type="button" disabled={creatingChecks} onClick={() => setShowGroupCheckModal(false)}>キャンセル</button>
+              <button type="button" data-testid="story-check-create" disabled={creatingChecks || !checkActorIds.length || !groupCheckSkill} onClick={handleCreateGroupCheck} style={{ backgroundColor: 'var(--color-ally)', color: '#000', fontWeight: 700 }}>
+                {creatingChecks ? '作成中…' : `選んだ ${checkActorIds.length} 人分を作成`}
               </button>
             </div>
-          </div>
+          </section>
         </div>
       )}
     </div>

@@ -42,12 +42,16 @@ describe('Phase 6b: GM lore and NPC templates', () => {
   const get = async (url: string) => (await app.request(url, { headers })).json();
   const register = () => app.request('/api/npc-templates/test-guard/register', { method: 'POST', headers });
 
-  it('requires GM authentication for all lore and NPC endpoints', async () => {
+  it('allows players to read lore while keeping NPC and global search endpoints GM-only', async () => {
     const player = { Authorization: `Bearer ${registerDevice({ role: 'player' }).token}` };
     for (const auth of [{}, player]) {
       for (const url of ['/api/lore', '/api/npc-templates', '/api/search?q=NEO', '/api/npc-templates/test-guard/register']) {
         const r = await app.request(url, { method: url.endsWith('register') ? 'POST' : 'GET', headers: auth });
-        expect([401, 403]).toContain(r.status);
+        if (auth === player && url === '/api/lore') {
+          expect(r.status).toBe(200);
+        } else {
+          expect([401, 403]).toContain(r.status);
+        }
       }
     }
   });

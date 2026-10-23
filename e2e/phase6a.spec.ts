@@ -225,12 +225,12 @@ test('Phase 6a E2E: GM combat token drag (move action, invalid cell, GM repositi
   const svg = gmPage.locator('.board-view-container svg');
   await expect(svg).toBeVisible();
   const cellCenter = async (cx: number, cy: number) => {
-    await gmPage.evaluate(() => window.scrollTo(0, 0));
-    const svgBox = (await svg.boundingBox())!;
-    return {
-      x: svgBox.x + (cx + 0.5) * (svgBox.width / 16),
-      y: svgBox.y + (cy + 0.5) * (svgBox.height / 10),
-    };
+    await svg.scrollIntoViewIfNeeded();
+    return svg.evaluate((el, cell) => {
+      const point = el.createSVGPoint(); point.x = (cell.cx + 0.5) * 40; point.y = (cell.cy + 0.5) * 40;
+      const screen = point.matrixTransform(el.getScreenCTM()!);
+      return { x: screen.x, y: screen.y };
+    }, { cx, cy });
   };
 
   // 1. Select "移動" for active participant (Viper, MOVE 4 at (2,2))
@@ -431,12 +431,12 @@ test('Phase 6a E2E (C): player moves own token on the phone map, GM sees the des
   await svg.scrollIntoViewIfNeeded();
   // マスの位置は自分のコマ（1,1）の中心から数える（盤面の SVG は高さに余白があるため）
   const cell = async (cx: number, cy: number) => {
-    const box = (await svg.boundingBox())!;
-    const tok = (await map.getByTestId('token-tok-luna-6c').locator('circle').last().boundingBox())!;
-    const size = box.width / 10;
-    const ox = tok.x + tok.width / 2 - 1.5 * size;
-    const oy = tok.y + tok.height / 2 - 1.5 * size;
-    return { x: ox + (cx + 0.5) * size, y: oy + (cy + 0.5) * size };
+    await svg.scrollIntoViewIfNeeded();
+    return svg.evaluate((el, cell) => {
+      const point = el.createSVGPoint(); point.x = (cell.cx + 0.5) * 40; point.y = (cell.cy + 0.5) * 40;
+      const screen = point.matrixTransform(el.getScreenCTM()!);
+      return { x: screen.x, y: screen.y };
+    }, { cx, cy });
   };
 
   // 他人のコマはつかめない

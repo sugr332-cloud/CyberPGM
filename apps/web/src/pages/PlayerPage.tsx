@@ -27,6 +27,7 @@ import { PlayerSkillsView } from '../components/PlayerSkillsView.js';
 import { PlayerShopView } from '../components/PlayerShopView.js';
 import { PlayerActionSkills } from '../components/PlayerActionSkills.js';
 import { PlayerMoveMap, type PlayerMoveResult } from '../components/PlayerMoveMap.js';
+import { LoreView } from '../components/LoreView.js';
 import { useActionAvailability, blockedButtonStyle } from '../hooks/useActionAvailability.js';
 import '../player-theme.css';
 
@@ -55,7 +56,7 @@ export const PlayerPage: React.FC = () => {
   // Character sheet state
   const [sheet, setSheet] = useState<CharacterSheet | null>(null);
   const [logs, setLogs] = useState<CharLogEntry[]>([]);
-  const [activeTab, setActiveTab] = useState<'sheet' | 'gear' | 'skills' | 'shop' | 'act' | 'handouts'>('sheet');
+  const [activeTab, setActiveTab] = useState<'sheet' | 'gear' | 'skills' | 'shop' | 'act' | 'handouts' | 'lore'>('sheet');
   // スマホの商店（Phase 5g）: 店の開け閉め・申請の結果が来たら読み直す
   const [shopRefreshKey, setShopRefreshKey] = useState(0);
   const [banner, setBanner] = useState<WsNotifyPayload | null>(null);
@@ -115,14 +116,6 @@ export const PlayerPage: React.FC = () => {
   // 「移動」「走る」を押したときのマップ（Phase 6a）
   const [moveMapAction, setMoveMapAction] = useState<'move' | 'run' | null>(null);
   const [moveResult, setMoveResult] = useState<PlayerMoveResult | null>(null);
-  const [combatTurnInfo, setCombatTurnInfo] = useState<{
-    combat_id: string;
-    round: number;
-    turn_index: number;
-    actor_id: string;
-    actor_name: string;
-    is_my_turn: boolean;
-  } | null>(null);
   const [combatResultNotification, setCombatResultNotification] = useState<{
     title: string;
     summary: string;
@@ -169,21 +162,26 @@ export const PlayerPage: React.FC = () => {
     const me = (currentCombat.participants as Array<{ character_id: string | null; character?: any }>).find((p) => p.character_id === sheet.id);
     const list = ((me?.character?.inventory as Array<{ entry_id: string; kind?: string }>) ?? []).filter((i) => i.kind === 'weapon');
     const wid = (list.find((w) => w.entry_id === attackWeaponId) ?? list[0])?.entry_id;
-    fetch(`/api/combats/current/my-lines${wid ? `?weapon_entry_id=${encodeURIComponent(wid)}` : ''}`, { headers: { Authorization: `Bearer ${token}` } })
+    const params = new URLSearchParams();
+    if (wid) params.set('weapon_entry_id', wid);
+    if (attackTargetId) params.set('target_id', attackTargetId);
+    fetch(`/api/combats/current/my-lines?${params}`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
       .then((res) => setMyLines(res.lines ?? {}))
       .catch(() => undefined);
-  }, [token, currentCombat?.id, currentCombat?.turn_index, currentCombat?.status, attackWeaponId, sheet?.id, sheet?.hp]);
+  }, [token, currentCombat?.id, currentCombat?.turn_index, currentCombat?.status, attackWeaponId, attackTargetId, sheet?.id, sheet?.hp]);
 
   const bandsText = (key: string) => {
     const bands = myLines[key]?.bands;
-    if (!bands || bands.length === 0) return null;
+    if ((!bands || bands.length === 0) && !myLines[key]?.text) return null;
     return (
       <div data-testid={`bands-${key}`} style={{ fontSize: '0.65rem', color: 'var(--color-ally)', marginTop: '2px' }}>
-        {bands
+        {attackTargetId && myLines[key]?.text && <div>{myLines[key]!.text}</div>}
+        <div style={{ fontWeight: 700, marginBottom: 2 }}>距離ごとの命中に必要な出目（1d10）</div>
+        {bands?.length ? bands
           .slice(0, 4)
-          .map((b) => `〜${b.range.split('〜')[1]} ${b.needed.replace(' 以上で成功', '+').replace(/10 → 追加ロールで (\d+) 以上/, '10→$1+').replace('成功しない', '×')}`)
-          .join(' / ')}
+          .map((b) => `${b.range}：出目${b.needed.replace(' 以上で成功', '以上で命中').replace(/10 → 追加ロールで (\d+) 以上/, '10後、追加出目込みで$1以上').replace('成功しない', '命中不可')}`)
+          .join(' / ') : '盤面に相手のコマがないため、距離帯ごとの目安を表示しています'}
       </div>
     );
   };
@@ -201,8 +199,7 @@ export const PlayerPage: React.FC = () => {
       // 戦闘の準備・HP・参加者の変化（Phase 5l）
       api.getCurrentCombat(token).then((res) => setCurrentCombat(res.combat)).catch(() => {});
     } else if (type === 'combat:turn') {
-      const p = payload as any;
-      setCombatTurnInfo(p);
+      // 手番は取得した戦闘データから表示する。通知を保持すると取り消し後に古い手番が残る。
       api.getCurrentCombat(token).then((res) => setCurrentCombat(res.combat)).catch(() => {});
     } else if (type === 'combat:result') {
       const p = payload as any;
@@ -1120,7 +1117,7 @@ export const PlayerPage: React.FC = () => {
       {activeTab === 'handouts' ? (
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--color-ally)' }}>
-            公開資料・手掛かり
+            手掛かり
           </h2>
 
           {/* Clues */}
@@ -1230,10 +1227,12 @@ export const PlayerPage: React.FC = () => {
                 color: 'var(--color-text-muted)',
               }}
             >
-              <p style={{ margin: 0, fontSize: '0.9rem' }}>まだ公開された資料はありません</p>
+              <p style={{ margin: 0, fontSize: '0.9rem' }}>まだ公開された手掛かりはありません</p>
             </div>
           )}
         </div>
+      ) : activeTab === 'lore' ? (
+        <div style={{ padding: '16px' }}><LoreView request={null} playerToken={token} /></div>
       ) : activeTab === 'gear' ? (
         <PlayerEquipmentView sheet={sheet} />
       ) : activeTab === 'skills' ? (
@@ -2079,9 +2078,9 @@ export const PlayerPage: React.FC = () => {
               {(() => {
                 const activePart = currentCombat.participants[currentCombat.turn_index];
                 const isMyTurn = Boolean(
-                  combatTurnInfo?.is_my_turn ?? (activePart && activePart.character_id === sheet.id),
+                  activePart && activePart.character_id === sheet.id,
                 );
-                const turnName = combatTurnInfo?.actor_name || activePart?.name || '—';
+                const turnName = activePart?.name || '—';
 
                 return (
                   <div
@@ -2109,7 +2108,7 @@ export const PlayerPage: React.FC = () => {
               {(() => {
                 const activePart = currentCombat.participants[currentCombat.turn_index];
                 const isMyTurn = Boolean(
-                  combatTurnInfo?.is_my_turn ?? (activePart && activePart.character_id === sheet.id),
+                  activePart && activePart.character_id === sheet.id,
                 );
 
                 // 重い防具のペナルティを引いた REF・DEX（Phase 5m）
@@ -2134,6 +2133,9 @@ export const PlayerPage: React.FC = () => {
                   skill_key?: string;
                   is_ranged?: boolean;
                   autofire?: number | null;
+                  damage?: string | null;
+                  weapon_type?: string | null;
+                  rof?: number | null;
                 };
                 const myWeapons = ((me?.character?.inventory as WeaponEntry[]) ?? []).filter((i) => i.kind === 'weapon');
                 // 選んでいなければ最初の武器を使う
@@ -2197,6 +2199,7 @@ export const PlayerPage: React.FC = () => {
                               style={chip(w.entry_id === weaponId, 'var(--color-ally)')}
                             >
                               {w.name}
+                              {w.damage && `（ダメージ ${w.damage}）`}
                               {typeof w.ammo === 'number' && ` (残弾 ${w.ammo})`}
                             </button>
                           ))}
@@ -2592,7 +2595,7 @@ export const PlayerPage: React.FC = () => {
           backgroundColor: 'var(--color-surface)',
           borderTop: '1px solid var(--color-border)',
           display: 'grid',
-          gridTemplateColumns: 'repeat(6, 1fr)',
+          gridTemplateColumns: 'repeat(7, 1fr)',
           zIndex: 100,
         }}
       >
@@ -2603,7 +2606,8 @@ export const PlayerPage: React.FC = () => {
             { id: 'skills', label: '技能', code: 'SKL' },
             { id: 'shop', label: '商店', code: 'SHOP' },
             { id: 'act', label: '行動', code: 'ACT' },
-            { id: 'handouts', label: '資料', code: 'DATA' },
+            { id: 'handouts', label: '手掛かり', code: 'CLUE' },
+            { id: 'lore', label: '資料', code: 'DATA' },
           ] as const
         ).map((tab) => (
           <button

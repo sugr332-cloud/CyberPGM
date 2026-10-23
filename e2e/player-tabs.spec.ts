@@ -76,7 +76,9 @@ test('Player phone: equipment, skills, and shop purchase requests approved by th
   await bought.click();
   const popup = phone.getByTestId('item-popup');
   await expect(popup.getByText('3d6 · ROF 2 · 装弾数 8')).toBeVisible();
-  await expect(popup.getByTestId('item-notes')).toHaveCount(0);
+  await expect(popup.getByTestId('item-notes')).toBeVisible();
+  await expect(popup.getByText('フレーバー', { exact: true })).toBeVisible();
+  await expect(popup.getByRole('button', { name: '編集', exact: true })).toHaveCount(0);
   await phone.screenshot({ path: 'docs/agy/reports/img/phase5g-player-gear-390.png' });
   await popup.getByRole('button', { name: '閉じる' }).click();
 

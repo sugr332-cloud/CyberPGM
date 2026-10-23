@@ -150,7 +150,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
     setLoading(true);
     try {
       const params: Record<string, string | number | boolean | undefined> = {
-        category: category || undefined,
+        kind: category || undefined,
         q: query || undefined,
         price_category: priceCategory || undefined,
         weapon_type: weaponType || undefined,
@@ -174,9 +174,9 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
       setTotalItems(res.total);
       setCategoryCounts(res.category_counts || {});
     } catch (err) {
-      console.error('Failed to load items:', err);
+      if (requestNo === latestItemsRequest.current) console.error('Failed to load items:', err);
     } finally {
-      setLoading(false);
+      if (requestNo === latestItemsRequest.current) setLoading(false);
     }
   }, [
     category,
@@ -856,6 +856,8 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                 return (
                   <button
                     key={c.key}
+                    data-testid={`shop-category-${c.key || "all"}`}
+                    aria-pressed={isSelected}
                     onClick={() => setCategory(c.key)}
                     style={{
                       display: 'flex',
@@ -1115,6 +1117,7 @@ export const ShopView: React.FC<ShopViewProps> = ({ characters, onRefreshCharact
                   <div
                     key={item.id}
                     data-testid={`item-card-${item.id}`}
+                    data-item-kind={item.kind}
                     onClick={() => handleSelectItem(item.id)}
                     style={{
                       display: 'flex',

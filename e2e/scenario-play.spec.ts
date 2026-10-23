@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { generateUlid } from '@cyberpgm/shared';
 import { joinAsPlayer } from './join.js';
 
-// Phase 5b §8 E2E: 進行開始 → 選択肢を公開 → スマホで選んで出目 → GM が確定 → 手がかりが「資料」に届き次のシーンへ → エンカウンターから戦闘
+// Phase 5b §8 E2E: 進行開始 → 選択肢を公開 → スマホで選んで出目 → GM が確定 → 手がかりが「手掛かり」に届き次のシーンへ → エンカウンターから戦闘
 test('Scenario play: publish a choice, player rolls, GM applies, clue reaches the phone, encounter starts combat', async ({ browser, request }) => {
   const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
   const { db, sqlite } = createDb(dbPath);
@@ -80,8 +80,8 @@ test('Scenario play: publish a choice, player rolls, GM applies, clue reaches th
   await gmPage.screenshot({ path: 'docs/agy/reports/img/phase5b-check-board-1440.png' });
   await gmPage.getByRole('button', { name: '確定して反映' }).click();
 
-  // スマホの「資料」に手がかりが届く
-  await phone.getByRole('button', { name: '資料' }).click();
+  // スマホの「手掛かり」に手がかりが届く
+  await phone.getByRole('button', { name: '手掛かり' }).click();
   await expect(phone.getByText('壊れた鍵')).toBeVisible();
   await phone.screenshot({ path: 'docs/agy/reports/img/phase5b-phone-handouts-390.png' });
 

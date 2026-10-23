@@ -3,6 +3,7 @@ import path from 'node:path';
 import { test, expect } from '@playwright/test';
 import { createDb } from '../apps/server/src/db/client.js';
 import { e2eCoreSourceDir } from '../playwright.config.js';
+import { joinAsPlayer } from './join.js';
 import { loreFixture, npcFixture } from '../test-fixtures/phase6b.js';
 
 const originals = new Map<string, Buffer | null>();
@@ -27,6 +28,9 @@ test('Phase 6b: lore search, related entries, copy, global search and mobile lay
   await page.getByRole('button', { name: '資料', exact: true }).click();
   const lore = page.getByTestId('lore-view');
   const detail = page.getByTestId('lore-detail');
+  await expect(lore.getByTestId('lore-genres')).toBeVisible();
+  await expect(lore.getByLabel('資料の一覧')).toHaveCount(0);
+  await lore.getByTestId('lore-genre-timeline').click();
   await expect(lore.getByLabel('資料の一覧').getByRole('button').first()).toContainText('1999〜2001');
   await lore.getByLabel('資料を検索').fill('neo　港');
   const entry = lore.getByLabel('資料の一覧').getByRole('button');
@@ -46,7 +50,7 @@ test('Phase 6b: lore search, related entries, copy, global search and mobile lay
   await page.getByTestId('global-search').fill('ＮｅＯ 2045');
   await page.getByTestId('global-search-results').getByRole('button').filter({ hasText: 'テスト都市の再開発' }).click();
   await expect(detail.getByRole('heading', { level: 3 })).toContainText('テスト都市の再開発');
-  await expect(lore.getByLabel('資料の分類')).toHaveValue('');
+  await expect(lore.getByLabel('資料の分類')).toHaveValue('timeline');
   await expect(lore.getByLabel('資料を検索')).toHaveValue('');
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -108,5 +112,61 @@ test('Phase 6b: register a rulebook NPC, open it and add it to combat', async ({
       }
       if (characterId) sqlite.prepare('DELETE FROM characters WHERE id = ?').run(characterId);
     } finally { sqlite.close(); }
+  }
+});
+
+
+test('Phase 6c: player clue and data tabs fit 390px and keep their contents separate', async ({ page, request }) => {
+  const gmToken = (await (await request.post('/api/auth/gm-token')).json()).token;
+  const headers = { Authorization: `Bearer ${gmToken}` };
+  const post = async (url: string, data: unknown) => {
+    const res = await request.post(url, { headers, data });
+    expect(res.ok()).toBe(true);
+    return res.json();
+  };
+  const { sqlite } = createDb(process.env.DATABASE_URL || 'data/test-e2e.db');
+  for (const table of ['story_checks', 'session_log', 'scenario_sessions']) sqlite.prepare(`DELETE FROM ${table}`).run();
+  sqlite.close();
+  const { scenario } = await post('/api/scenarios', { title: '手掛かりと資料の試験', use_template: false });
+  try {
+    const sceneData = await post(`/api/scenarios/${scenario.id}/scenes`, { title: '試験の港' });
+    const sceneId = (sceneData.scene ?? sceneData).id;
+    const clueData = await post(`/api/scenarios/${scenario.id}/clues`, { scene_id: sceneId, title: '試験の足跡', body: '倉庫へ続く足跡がある。' });
+    const handoutData = await post(`/api/scenarios/${scenario.id}/handouts`, { scene_id: sceneId, title: '試験のメモ', body: '入口に残された伝言。' });
+    const session = await post('/api/scenario-sessions/start', { scenario_id: scenario.id, initial_scene_id: sceneId });
+    const health = await (await request.get('/api/health')).json();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await joinAsPlayer(page, health.session, 'ヴァイパー', '資料確認');
+    await page.getByRole('button', { name: '手掛かり', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '手掛かり', exact: true })).toBeVisible();
+    await expect(page.getByText('まだ公開された手掛かりはありません')).toBeVisible();
+    await post(`/api/scenario-sessions/${session.sessionId}/reveal`, { kind: 'clue', itemId: (clueData.clue ?? clueData).id });
+    await post(`/api/scenario-sessions/${session.sessionId}/reveal`, { kind: 'handout', itemId: (handoutData.handout ?? handoutData).id });
+    await expect(page.getByText('試験の足跡', { exact: true })).toBeVisible();
+    await expect(page.getByText('試験のメモ', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('lore-view')).toHaveCount(0);
+    await expect(page.getByTestId('player-tab-handouts')).toContainText('CLUE');
+    const tabs = page.locator('[data-testid^="player-tab-"]');
+    await expect(tabs).toHaveCount(7);
+    for (const tab of await tabs.all()) {
+      const box = (await tab.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(390);
+      expect(box.y + box.height).toBeLessThanOrEqual(844);
+      expect(await tab.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    }
+    await page.screenshot({ path: 'docs/agy/reports/img/phase6c-player-clues-390.png' });
+    await page.getByRole('button', { name: '資料', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '資料', exact: true })).toBeVisible();
+    await expect(page.getByTestId('lore-genres')).toBeVisible();
+    await expect(page.getByTestId('player-tab-lore')).toContainText('DATA');
+    await expect(page.getByText('試験の足跡', { exact: true })).toHaveCount(0);
+    await page.getByTestId('lore-genre-timeline').click();
+    await page.getByLabel('資料の一覧').getByRole('button').filter({ hasText: 'テスト都市の再開発' }).click();
+    await expect(page.getByTestId('lore-detail')).toContainText('ＮＥＯ社が港を再開発する');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: 'docs/agy/reports/img/phase6c-player-data-390.png', fullPage: true });
+  } finally {
+    await request.delete(`/api/scenarios/${scenario.id}`, { headers });
   }
 });

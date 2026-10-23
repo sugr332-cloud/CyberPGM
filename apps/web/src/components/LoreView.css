@@ -27,3 +27,12 @@
   .lore-detail { padding: 14px; }
   .lore-detail-heading h3 { font-size: 1.05rem; }
 }
+
+.lore-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.lore-intro { margin: 0; color: var(--color-text-muted); }
+.lore-genres { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; }
+.lore-genres button { display: flex; flex-direction: column; gap: 12px; min-height: 150px; text-align: left; padding: 22px; border-top: 3px solid var(--color-ally); }
+.lore-genres button:hover, .lore-genres button:focus-visible { background: var(--color-surface-elevated); border-color: var(--color-ally); }
+.lore-genres strong { font-size: 1.15rem; }
+.lore-genres span { color: var(--color-text-muted); font-size: .9rem; }
+.lore-genres small { margin-top: auto; color: var(--color-ally); }

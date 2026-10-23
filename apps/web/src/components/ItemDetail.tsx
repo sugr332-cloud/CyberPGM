@@ -36,9 +36,9 @@ const muted: React.CSSProperties = { color: 'var(--color-text-muted)' };
 
 /**
  * 品目の性能・価格・効果・フレーバー（キャラ作成・PC の詳細・戦闘カードで使う。Phase 5f）。
- * プレイヤーのスマホでは forPlayer で性能だけにする（効果・フレーバー・GM 要約は GM だけ。2026-10-21 ユーザー決定）
+ * プレイヤーの装備詳細は効果・フレーバーも表示する。編集操作と GM 要約は GM 画面用。
  */
-export function ItemSpecs({ item, forPlayer = false }: { item: any; forPlayer?: boolean }) {
+export function ItemSpecs({ item, forPlayer = false, showNotes = !forPlayer }: { item: any; forPlayer?: boolean; showNotes?: boolean }) {
   return (
     <div data-testid="item-specs" style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.8rem' }}>
       <div style={row}>
@@ -103,7 +103,7 @@ export function ItemSpecs({ item, forPlayer = false }: { item: any; forPlayer?: 
         </>
       )}
       {!forPlayer && item.summary_ja && <div style={{ ...muted, whiteSpace: 'pre-wrap' }}>{item.summary_ja}</div>}
-      {!forPlayer && <ItemNotes item={item} />}
+      {showNotes && <ItemNotes item={item} showMissing={forPlayer} />}
     </div>
   );
 }
@@ -147,6 +147,9 @@ export function ItemDetailPopup({ name, itemId, onClose, forPlayer = false }: Po
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0, 0, 0, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${name}の装備詳細`}
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 'min(420px, 92vw)',
@@ -169,8 +172,9 @@ export function ItemDetailPopup({ name, itemId, onClose, forPlayer = false }: Po
         </div>
         {item ? (
           <>
+            <strong style={{ fontSize: '0.85rem', color: 'var(--color-ally)' }}>性能</strong>
             <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>{itemSpecLine(item)}</div>
-            <ItemSpecs item={item} forPlayer={forPlayer} />
+            <ItemSpecs item={item} forPlayer={forPlayer} showNotes />
           </>
         ) : (
           <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{loading ? '読み込み中…' : itemId ? '品目の情報なし' : forPlayer ? '品目の情報なし' : '品目と結び付いていない名前だけの持ち物です（キャラ作成タブの「品目から探す」で結び付けられます）'}</div>

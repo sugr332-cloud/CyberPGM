@@ -1,3 +1,4 @@
+import { SkillSelect } from './SkillSelect.js';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   CharacterSheet,
@@ -7,8 +8,6 @@ import {
   SceneLink,
   SceneChoice,
   RandomTable,
-  SKILL_CATALOG,
-  formatSkillName,
   validateRandomTableRanges,
 } from '@cyberpgm/shared';
 import { api } from '../api.js';
@@ -1921,28 +1920,14 @@ export const ScenarioMakerView: React.FC<ScenarioMakerViewProps> = ({ characters
                         </div>
 
                         {/* Skill Picker & DV input */}
-                        <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
-                          <select
-                            data-testid="choice-skill-select"
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
+                          <SkillSelect
+                            testId="choice-skill-select"
                             value={choice.skill_key || ''}
-                            onChange={(e) => handleUpdateChoice(choice.id, { skill_key: e.target.value || null })}
-                            style={{
-                              flex: 1,
-                              padding: '4px 6px',
-                              fontSize: '0.75rem',
-                              borderRadius: '4px',
-                              border: '1px solid var(--color-border)',
-                              backgroundColor: 'var(--color-surface)',
-                              color: 'var(--color-text)',
-                            }}
-                          >
-                            <option value="">技能判定なし</option>
-                            {Object.values(SKILL_CATALOG).map((sk) => (
-                              <option key={sk.key} value={sk.key}>
-                                {formatSkillName(sk.key)} ({sk.key})
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(value) => handleUpdateChoice(choice.id, { skill_key: value || null })}
+                            characters={characters}
+                            emptyLabel="技能判定なし"
+                          />
 
                           <input
                             type="number"

@@ -52,7 +52,7 @@ describe('Item effect and flavor notes (Phase 5c)', () => {
     expect(hp.effect_is_draft).toBe(true);
   });
 
-  it('sends the notes to the GM only', async () => {
+  it('includes notes in authenticated player details while keeping anonymous details and catalog lists without notes', async () => {
     const gmItem = await (await app.request(`/api/items/${heavyPistolId}`, { headers: H() })).json();
     expect(gmItem.flavor_ja).toBeTruthy();
 
@@ -64,8 +64,9 @@ describe('Item effect and flavor notes (Phase 5c)', () => {
     const ph = { Authorization: `Bearer ${claim.token}` };
     const playerItem = await (await app.request(`/api/items/${heavyPistolId}`, { headers: ph })).json();
     expect(playerItem.name_en).toBe('Heavy Pistol');
-    expect(playerItem).not.toHaveProperty('effect_ja');
-    expect(playerItem).not.toHaveProperty('flavor_ja');
+    expect(playerItem.effect_ja).toBe(gmItem.effect_ja);
+    expect(playerItem.flavor_ja).toBe(gmItem.flavor_ja);
+    expect((await app.request(`/api/items/${heavyPistolId}`, { method: 'PATCH', headers: { ...ph, 'Content-Type': 'application/json' }, body: JSON.stringify({ flavor_ja: 'プレイヤーの編集' }) })).status).toBe(403);
     const list = await (await app.request('/api/items?q=Heavy%20Pistol', { headers: ph })).json();
     expect(list.items.every((i: Record<string, unknown>) => !('flavor_ja' in i))).toBe(true);
     // 認証なし（スマホのキャラ作成前など）にも出さない

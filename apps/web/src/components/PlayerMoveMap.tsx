@@ -105,7 +105,7 @@ export const PlayerMoveMap: React.FC<{
       {data && !board && <div style={{ fontSize: '0.85rem' }}>この戦闘には盤面がありません。GM に移動先を伝えてください</div>}
       {board && !myToken && <div style={{ fontSize: '0.85rem' }}>盤面に自分のコマが見えません。GM に移動先を伝えてください</div>}
       {board && (
-        <div style={{ overflow: 'auto', maxHeight: '60vh', touchAction: 'pan-x pan-y pinch-zoom' }}>
+        <div style={{ minWidth: 0 }}>
           <BoardView
             board={board}
             objects={board.objects ?? []}
