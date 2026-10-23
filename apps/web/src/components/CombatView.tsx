@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { api, gmFetch } from '../api.js';
 import {
   Combat,
+  combatDamageFormula,
+  damageDiceGuide,
   CombatParticipant,
   CombatActionDef,
   CombatChange,
@@ -3179,7 +3181,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         <option value="">-- 武器を選択してください --</option>
                         {weaponEntries.map((wOpt) => (
                           <option key={wOpt.entry_id} value={wOpt.entry_id}>
-                            {wOpt.name} (残弾: {wOpt.ammo !== undefined && wOpt.ammo !== null ? wOpt.ammo : '—'})
+                            {wOpt.name}（{combatDamageFormula('ranged', activePart.character, wOpt) ?? 'ダメージ不明'}） (残弾: {wOpt.ammo !== undefined && wOpt.ammo !== null ? wOpt.ammo : '—'})
                           </option>
                         ))}
                       </select>
@@ -3701,6 +3703,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         </>
                       )}
 
+                      {['ranged', 'aimed', 'autofire', 'melee', 'brawl', 'martial_arts'].includes(selectedActionKey) && (
+                        <div data-testid="gm-damage-guide" style={{ fontSize: '0.85rem', color: 'var(--color-ally)' }}>
+                          ダメージ: {damageDiceGuide(combatDamageFormula(selectedActionKey, activePart.character, weaponEntries.find((w) => w.entry_id === selectedWeaponId)))}
+                        </div>
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>ダメージ出目:</span>
                         {rollSourceTag('damage')}
@@ -4210,6 +4217,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
               }}
             >
               <div
+                role="progressbar"
+                aria-label={`${p.name} HP`}
+                aria-valuemin={0}
+                aria-valuemax={hpMax}
+                aria-valuenow={hp}
+                data-testid={`gm-hp-${p.character_id}`}
                 style={{
                   width: `${hpPercent}%`,
                   height: '100%',

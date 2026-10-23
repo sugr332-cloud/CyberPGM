@@ -1,0 +1,26 @@
+.shop-stock-editor { min-width: 0; }
+.stock-editor-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.shop-stock-editor h2 { margin: 0; font-size: 1.1rem; }
+.shop-stock-editor h3 { margin: 0 0 8px; font-size: 1rem; }
+.shop-stock-editor p { color: var(--color-text-muted); font-size: .8rem; }
+.stock-editor-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.stock-editor-panel { padding: 16px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); min-width: 0; }
+.stock-editor-destination { min-height: 260px; border: 1px dashed var(--color-ally); }
+.shop-stock-editor button, .shop-stock-editor input, .shop-stock-editor select { border: 1px solid var(--color-border); border-radius: 4px; padding: 8px; background: var(--color-surface-elevated); color: var(--color-text); max-width: 100%; min-width: 0; }
+.shop-stock-editor button { cursor: pointer; }
+.shop-stock-editor button:disabled { opacity: .5; cursor: default; }
+.stock-editor-panel > input, .stock-editor-panel > select { width: 100%; margin-bottom: 8px; }
+.stock-editor-items { display: flex; flex-direction: column; gap: 8px; }
+.stock-editor-item { display: flex; align-items: center; gap: 10px; border: 1px solid var(--color-border); border-radius: 6px; padding: 10px; min-width: 0; background: var(--color-bg); }
+.stock-editor-item[draggable=true] { cursor: grab; }
+.stock-editor-item > div:not(.stock-image-placeholder) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.stock-editor-item strong { display: block; font-size: .85rem; }
+.stock-editor-item span { display: block; font-size: .8rem; color: var(--color-text-muted); }
+.stock-editor-item img, .stock-image-placeholder { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; }
+.stock-image-placeholder { display: grid; place-content: center; color: var(--color-text-muted); }
+.stock-row { flex-wrap: wrap; }
+.stock-row > div { flex-basis: calc(100% - 50px) !important; }
+.stock-row label { display: flex; align-items: center; gap: 8px; font-size: .8rem; }
+.stock-row input { width: 90px; }
+.stock-editor-pagination { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 12px; font-size: .8rem; }
+@media (max-width: 700px) { .stock-editor-columns { grid-template-columns: minmax(0, 1fr); } .stock-editor-panel { padding: 10px; } .stock-editor-item { gap: 6px; padding: 8px; } .stock-editor-item img, .stock-image-placeholder { width: 32px; height: 32px; } }

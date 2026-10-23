@@ -70,6 +70,7 @@ function save(ch: MedChar, after: Partial<MedChar>, text: string): void {
     if (now2.level !== before.level && now2.level > 0) sessionManager.announceCombat('サイバーサイコシス', `${ch.name}: ${now2.label}`);
   }
   sessionManager.updateCharacterSheet(ch.id);
+  if (after.hp !== undefined) sessionManager.broadcastCurrentCombat();
   sessionManager.notifyCharacter(ch.id, 'info', '医療・人間性', text);
 }
 
@@ -244,6 +245,7 @@ medicalRoutes.post('/medical/:id/undo', requireGm, async (c) => {
   db.delete(char_log).where(eq(char_log.id, snap.id)).run();
   db.insert(char_log).values({ id: generateUlid(), character_id: id, text: '医療・人間性の操作を 1 つ戻した', at: Date.now() }).run();
   sessionManager.updateCharacterSheet(id);
+  sessionManager.broadcastCurrentCombat();
   return c.json({ ok: true });
 });
 

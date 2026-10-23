@@ -1126,15 +1126,18 @@ export const BoardView: React.FC<BoardViewProps> = ({
               let wound: 'ok' | 'seriously' | 'mortally' | 'dead' = 'ok';
 
               if (hasChar) {
-                if (tok.hp !== null && tok.hp !== undefined) {
-                  currentHp = tok.hp;
-                  maxHp = tok.hp_max ?? Math.max(1, currentHp);
-                } else if (char?.hp !== null && char?.hp !== undefined) {
+                // 戦闘参加者のHPが最新。コマに残ったスナップショットより優先する。
+                if (char?.hp !== null && char?.hp !== undefined) {
                   currentHp = char.hp;
                   maxHp = char.hp_max ?? Math.max(1, currentHp);
+                } else if (tok.hp !== null && tok.hp !== undefined) {
+                  currentHp = tok.hp;
+                  maxHp = tok.hp_max ?? Math.max(1, currentHp);
                 }
 
-                if (tok.wound_state) {
+                if (char?.hp !== null && char?.hp !== undefined) {
+                  wound = currentHp <= 0 ? 'dead' : woundState(currentHp, maxHp);
+                } else if (tok.wound_state) {
                   wound = tok.wound_state;
                 } else if ((char as any)?.wound_state) {
                   const ws = (char as any).wound_state;
@@ -1340,7 +1343,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                         )
                       ) : (
                         /* Case 2: Ally, or GM view -> HP bar with numbers */
-                        <g transform={`translate(${tx - r}, ${hpY})`}>
+                        <g role="progressbar" aria-label={`${name} HP`} aria-valuemin={0} aria-valuemax={maxHp} aria-valuenow={currentHp} data-testid={`board-hp-${tok.character_id}`} transform={`translate(${tx - r}, ${hpY})`}>
                           {/* Bar Background */}
                           <rect
                             width={r * 2}

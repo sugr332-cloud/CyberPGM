@@ -35,7 +35,7 @@ test('equipment question buttons show weapon, armor, cyberware and gear specs, e
   const health = await (await request.get('/api/health')).json();
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const page = await context.newPage();
-  await joinAsPlayer(page, health.session, '装備確認PC');
+  await joinAsPlayer(page, health.session, '装備確認PC', '装備確認の参加者');
   await page.getByTestId('player-tab-gear').click();
   for (const item of catalog) {
     const help = page.getByRole('button', { name: `${displayName(item)}の性能・効果・フレーバー`, exact: true });

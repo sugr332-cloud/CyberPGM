@@ -5,6 +5,11 @@ import { eq } from 'drizzle-orm';
 import { generateUlid } from '@cyberpgm/shared';
 import { joinAsPlayer } from './join.js';
 
+// 手動で作ったコンテキストも必ず閉じ、次のテストに接続を残さない。
+test.afterEach(async ({ browser }) => {
+  await Promise.all(browser.contexts().map((context) => context.close()));
+});
+
 test('Combat Flow: Participant Check, Initiative, Player Attack via Mobile, GM Apply, and Undo', async ({ browser }) => {
   const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
   const { db, sqlite } = createDb(dbPath);

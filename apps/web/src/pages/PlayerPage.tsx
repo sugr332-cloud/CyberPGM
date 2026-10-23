@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   CharacterSheet,
+  combatDamageFormula,
   CharLogEntry,
   WsNotifyPayload,
   formatSkillName,
@@ -1371,6 +1372,12 @@ export const PlayerPage: React.FC = () => {
               >
                 <div
                   className="cp-hp-fill"
+                  role="progressbar"
+                  aria-label="HP"
+                  aria-valuemin={0}
+                  aria-valuemax={sheet.hp_max}
+                  aria-valuenow={sheet.hp}
+                  data-testid="player-hp"
                   style={{
                     color: hpBarColor,
                     height: '100%',
@@ -2199,7 +2206,7 @@ export const PlayerPage: React.FC = () => {
                               style={chip(w.entry_id === weaponId, 'var(--color-ally)')}
                             >
                               {w.name}
-                              {w.damage && `（ダメージ ${w.damage}）`}
+                              {`（ダメージ ${combatDamageFormula('ranged', sheet, w) ?? '不明'}）`}
                               {typeof w.ammo === 'number' && ` (残弾 ${w.ammo})`}
                             </button>
                           ))}

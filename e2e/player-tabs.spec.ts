@@ -3,6 +3,11 @@ import { createDb } from '../apps/server/src/db/client.js';
 import { joinAsPlayer } from './join.js';
 
 // Phase 5g E2E: スマホの「装備」「技能」「商店」。商店は GM が出した店の在庫だけで、購入は GM に申請 → GM が承認すると買える
+// 手動で作ったコンテキストも必ず閉じ、次のテストに接続を残さない。
+test.afterEach(async ({ browser }) => {
+  await Promise.all(browser.contexts().map((context) => context.close()));
+});
+
 test('Player phone: equipment, skills, and shop purchase requests approved by the GM', async ({ browser, request }) => {
   // ほかのスペックのスマホがヴァイパーを使っていると「GM の許可待ち」になるので、接続を片付ける
   const { sqlite } = createDb(process.env.DATABASE_URL || 'data/test-e2e.db');

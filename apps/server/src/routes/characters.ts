@@ -180,6 +180,7 @@ charactersRoutes.patch('/characters/:id', requireGm, async (c) => {
     .run();
 
   sessionManager.updateCharacterSheet(id);
+  if (d.hp !== undefined || d.hp_max !== undefined) sessionManager.broadcastCurrentCombat();
   triggerAutoSave('Character updated: ' + (d.name ?? existing.name));
 
   const updated = getCharacterSheetById(id);
