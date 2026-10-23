@@ -1,3 +1,4 @@
+import { getCoreSourceDir } from '../src/source-data.js';
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,7 +12,6 @@ import {
   generateNetArchitecture,
   validateCyberdeck,
   calculateArchitecturePriceEb,
-  getProjectRoot,
   BLACK_ICE_CATALOG,
   DEMON_CATALOG,
   DEFAULT_LOBBY_TABLE,
@@ -23,7 +23,7 @@ import {
 describe('Phase 5z: Netrunning', () => {
   let H: Record<string, string>;
   const now = Date.now();
-  const dir = path.join(getProjectRoot(), 'data', 'sources', 'core-ja');
+  const dir = getCoreSourceDir();
   const file = path.join(dir, 'netrun.json');
   let wrote = false;
 

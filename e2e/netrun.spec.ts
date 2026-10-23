@@ -5,6 +5,19 @@ import { eq } from 'drizzle-orm';
 import { generateUlid } from '@cyberpgm/shared';
 import { joinAsPlayer } from './join.js';
 
+let originalViper: typeof characters.$inferSelect | undefined;
+test.afterEach(() => {
+  if (!originalViper) return;
+  const { db, sqlite } = createDb(process.env.DATABASE_URL || 'data/test-e2e.db');
+  try {
+    // NET 試験のために変更した PC を戻す。後続の session 試験は元のロールを確認する。
+    db.update(characters).set(originalViper).where(eq(characters.id, originalViper.id)).run();
+  } finally {
+    sqlite.close();
+    originalViper = undefined;
+  }
+});
+
 test('Phase 5z Netrun Flow: Create Architecture, Jack In, Pathfinder, Backdoor, Descend, Encounter ICE, Sword, Mobile Player View, and Jack Out', async ({
   browser,
 }) => {
@@ -50,6 +63,7 @@ test('Phase 5z Netrun Flow: Create Architecture, Jack In, Pathfinder, Backdoor, 
 
   // Ensure Viper is configured as Netrunner Rank 4 with Cyberdeck (Sword + Armor) and Virtuality Goggles
   const viper = db.select().from(characters).where(eq(characters.name, 'ヴァイパー')).get();
+  originalViper = viper;
   if (viper) {
     const skills = JSON.parse(viper.skills || '{}');
     skills.interface = 4;

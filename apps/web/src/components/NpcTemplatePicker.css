@@ -1,0 +1,9 @@
+.npc-template-picker button {
+  background: var(--color-surface-elevated); color: var(--color-text);
+  border: 1px solid var(--color-border-light); border-radius: 4px;
+  padding: 6px 10px; cursor: pointer; font: inherit; white-space: nowrap;
+}
+.npc-template-picker button:disabled { opacity: .5; cursor: wait; }
+.npc-template-picker h3 { margin: 0; }
+.npc-template-picker th, .npc-template-picker td { padding: 10px 8px; }
+.npc-template-picker tbody tr { border-top: 1px solid var(--color-border); }

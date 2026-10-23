@@ -25,7 +25,7 @@ import {
   handleStoryChoose,
   handleStoryRoll,
 } from './routes/scenario-play.js';
-import { db } from './db/client.js';
+import { db, resolveDbPath } from './db/client.js';
 import { initPhase3bData } from './db/init-phase3b.js';
 import { initPhase4aData } from './db/init-phase4a.js';
 import { initPhase5cData } from './db/init-phase5c.js';
@@ -43,6 +43,8 @@ import { medicalRoutes } from './routes/medical.js';
 import { rolesRoutes } from './routes/roles.js';
 import { vehiclesRoutes } from './routes/vehicles.js';
 import { netrunRoutes } from './routes/netrun.js';
+import { loreRoutes } from './routes/lore.js';
+import { npcTemplatesRoutes } from './routes/npc-templates.js';
 
 export const app = new Hono();
 
@@ -64,6 +66,8 @@ app.route('/api', medicalRoutes);
 app.route('/api', rolesRoutes);
 app.route('/api', vehiclesRoutes);
 app.route('/api', netrunRoutes);
+app.route('/api', loreRoutes);
+app.route('/api', npcTemplatesRoutes);
 app.route('/api/money', moneyRoutes);
 app.route('/api/saves', savesRoutes);
 app.route('/api', settingsRoutes);
@@ -277,7 +281,8 @@ export async function startServer(): Promise<void> {
   console.log(`[log] ログは ${logFile} にも残します`);
   // 1. Daily backup
   const dbPath = path.join(root, 'data', 'cyberpgm.db');
-  const backupFile = createDailyBackup(dbPath);
+  // 別の DB を指定したテスト起動では、本番 DB のバックアップも作らない。
+  const backupFile = path.resolve(resolveDbPath()) === dbPath ? createDailyBackup(dbPath) : null;
   if (backupFile) {
     console.log(`[backup] Daily snapshot created: ${backupFile}`);
   }

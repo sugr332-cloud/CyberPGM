@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { createDb } from '../apps/server/src/db/client.js';
 import { execFileSync } from 'node:child_process';
-import { e2eImagesDir, e2eSavesDir } from '../playwright.config.js';
+import { e2eImagesDir, e2eSavesDir, e2eCoreSourceDir } from '../playwright.config.js';
 
 export default async function globalSetup() {
   const dbPath = process.env.DATABASE_URL || 'data/test-e2e.db';
@@ -29,6 +29,13 @@ export default async function globalSetup() {
 
   if (fs.existsSync(e2eSavesDir)) fs.rmSync(e2eSavesDir, { recursive: true, force: true });
   fs.mkdirSync(e2eSavesDir, { recursive: true });
+  fs.mkdirSync(e2eCoreSourceDir);
+  const coreDir = path.resolve('data/sources/core-ja');
+  if (fs.existsSync(coreDir)) {
+    for (const name of fs.readdirSync(coreDir).filter((file) => file.endsWith('.json'))) {
+      fs.copyFileSync(path.join(coreDir, name), path.join(e2eCoreSourceDir, name));
+    }
+  }
 
   // Ensure e2e images temporary directory exists and is clean
   if (fs.existsSync(e2eImagesDir)) {

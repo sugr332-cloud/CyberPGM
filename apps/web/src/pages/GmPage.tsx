@@ -27,6 +27,7 @@ import { CharacterDetail } from '../components/CharacterDetail.js';
 import { BgmPlayer, BgmState } from '../components/BgmPlayer.js';
 import { getGmBgmOn, onGmBgmChange } from '../gmBgm.js';
 import { GlobalSearch } from '../components/GlobalSearch.js';
+import { LoreView } from '../components/LoreView.js';
 
 export const GmPage: React.FC = () => {
   const [token, setToken] = useState<string | null>(getGmToken());
@@ -55,7 +56,8 @@ export const GmPage: React.FC = () => {
   }, []);
 
   // GM Main View State
-  const [activeTab, setActiveTab] = useState<'pc' | 'chara' | 'combat' | 'scenario' | 'shop' | 'skills' | 'db'>('pc');
+  const [activeTab, setActiveTab] = useState<'pc' | 'chara' | 'combat' | 'scenario' | 'shop' | 'skills' | 'lore' | 'db'>('pc');
+  const [loreRequest, setLoreRequest] = useState<{ id: string } | null>(null);
   const [scenarioSubMode, setScenarioSubMode] = useState<'maker' | 'play'>('maker');
   const [isMobile, setIsMobile] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -421,10 +423,12 @@ export const GmPage: React.FC = () => {
       {/* Top Header */}
       <header
         style={{
-          height: '60px',
+          height: isMobile ? 'auto' : '60px',
           borderBottom: '1px solid var(--color-border)',
           backgroundColor: 'var(--color-surface)',
-          padding: isMobile ? '0 12px' : '0 24px',
+          padding: isMobile ? '10px 12px' : '0 24px',
+          flexWrap: isMobile ? 'wrap' : 'nowrap',
+          gap: isMobile ? '8px' : undefined,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -466,6 +470,7 @@ export const GmPage: React.FC = () => {
                 { id: 'scenario', label: 'シナリオ' },
                 { id: 'shop', label: '商店' },
                 { id: 'skills', label: '技能' },
+                { id: 'lore', label: '資料' },
                 { id: 'db', label: 'DB' },
               ].map((tab) => (
                 <button
@@ -498,13 +503,16 @@ export const GmPage: React.FC = () => {
         </div>
 
         {/* Header Right Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '6px' : '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '6px' : '12px', width: isMobile ? '100%' : undefined }}>
           {/* 全文検索（Phase 5n）。選んだものの種類のタブに移る */}
           <GlobalSearch
             compact={isMobile}
-            onOpen={(hit) =>
-              setActiveTab(hit.kind === 'character' ? 'pc' : hit.kind === 'item' ? 'shop' : 'scenario')
-            }
+            onOpen={(hit) => {
+              if (hit.kind === 'lore') {
+                setLoreRequest({ id: hit.id });
+                setActiveTab('lore');
+              } else setActiveTab(hit.kind === 'character' ? 'pc' : hit.kind === 'item' ? 'shop' : 'scenario');
+            }}
           />
           <button
             onClick={handleOpenQr}
@@ -1176,6 +1184,8 @@ export const GmPage: React.FC = () => {
           <ShopView characters={characters} onRefreshCharacters={refreshAllData} purchaseRefreshKey={purchaseRefreshKey} />
         ) : activeTab === 'skills' ? (
           <SkillsView characters={characters} />
+        ) : activeTab === 'lore' ? (
+          <LoreView request={loreRequest} />
         ) : activeTab === 'scenario' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', height: '100%' }}>
             <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
@@ -1668,7 +1678,7 @@ export const GmPage: React.FC = () => {
             backgroundColor: 'var(--color-surface)',
             borderTop: '1px solid var(--color-border)',
             display: 'grid',
-            gridTemplateColumns: 'repeat(7, 1fr)',
+            gridTemplateColumns: 'repeat(8, 1fr)',
             zIndex: 100,
           }}
         >
@@ -1679,6 +1689,7 @@ export const GmPage: React.FC = () => {
             { id: 'scenario', label: 'シナリオ' },
             { id: 'shop', label: '商店' },
             { id: 'skills', label: '技能' },
+            { id: 'lore', label: '資料' },
             { id: 'db', label: 'DB' },
           ].map((tab) => {
             const isActive = activeTab === tab.id;

@@ -9,6 +9,8 @@ export interface ImportOptions {
   dbPath: string;
   dryRun?: boolean;
   quiet?: boolean;
+  imagesDir?: string;
+  reportDir?: string;
 }
 
 export interface CreditEntry {
@@ -262,7 +264,7 @@ export function runImport(options: ImportOptions): ImportReportData {
     missing_in_fvtt: [],
   };
 
-  const imagesTargetDir = path.resolve(process.cwd(), 'data/images');
+  const imagesTargetDir = options.imagesDir ?? path.resolve(process.cwd(), 'data/images');
 
   const tx = sqlite.transaction(() => {
     // 1. Initialize price_category in rule_constants if not exists
@@ -708,7 +710,7 @@ export function runImport(options: ImportOptions): ImportReportData {
   report.finished_at = finishedAt.toISOString();
 
   const timestampStr = finishedAt.toISOString().replace(/[:.]/g, '-');
-  const reportDir = path.resolve(process.cwd(), 'data/import-reports');
+  const reportDir = options.reportDir ?? path.resolve(process.cwd(), 'data/import-reports');
   if (!fs.existsSync(reportDir)) {
     fs.mkdirSync(reportDir, { recursive: true });
   }

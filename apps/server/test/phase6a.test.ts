@@ -1,3 +1,4 @@
+import { getCoreSourceDir } from '../src/source-data.js';
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,7 +14,6 @@ import {
   combat_participants,
 } from '../src/db/schema.js';
 import { registerDevice } from '../src/auth.js';
-import { getProjectRoot } from '@cyberpgm/shared';
 
 describe('Phase 6a: Combat GM Token Drag Move & Skill Info API', () => {
   let H: Record<string, string>;
@@ -261,7 +261,7 @@ describe('Phase 6a: Combat GM Token Drag Move & Skill Info API', () => {
   });
 
   it('returns skill info when data/sources/core-ja/skills.json is present and empty fallback when absent', async () => {
-    const dir = path.join(getProjectRoot(), 'data', 'sources', 'core-ja');
+    const dir = getCoreSourceDir();
     const file = path.join(dir, 'skills.json');
     const backup = path.join(dir, 'skills.json.bak-test');
     const hadOriginal = fs.existsSync(file);
