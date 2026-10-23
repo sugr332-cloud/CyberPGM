@@ -238,6 +238,9 @@ export interface InventoryEntry {
   malfunctioned?: boolean;
   damage?: string;
   armor_penalty?: number;
+  dv_table_key?: string | null;
+  dv_table?: DvTable | null;
+  is_ranged?: boolean;
 }
 
 /**

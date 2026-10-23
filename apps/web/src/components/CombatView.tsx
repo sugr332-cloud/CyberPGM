@@ -1407,6 +1407,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
             drops={boardData.drops}
             combat={combat}
             activeParticipantId={activePart?.id}
+            selectedWeaponEntryId={selectedWeaponId}
             targetParticipantId={targetParticipantId}
             focusedParticipantId={focusedMapParticipantId}
             mode={placementParticipantId ? 'setup' : selectedActionKey === 'move' || selectedActionKey === 'run' ? 'move' : 'view'}

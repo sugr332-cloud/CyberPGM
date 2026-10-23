@@ -35,6 +35,7 @@ import {
   burnDamage,
   soloEffects,
   roleRank,
+  DvTable,
 } from '@cyberpgm/shared';
 import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES, listActionAvailability } from '../services/combat-resolver.js';
 import { netActionBlockReason } from '../services/netrun-resolver.js';
@@ -109,6 +110,18 @@ export function getHydratedCombat(combatId: string): Combat | null {
             wRow && typeof wRow.ignore_armor_percent === 'number'
               ? wRow.ignore_armor_percent
               : (inv.ignore_armor_percent ?? null);
+          const dvTableRow = wRow?.dv_table_key
+            ? db.select().from(rule_constants).where(eq(rule_constants.key, `dv_table.${wRow.dv_table_key}`)).get() ??
+              db.select().from(rule_constants).where(eq(rule_constants.key, wRow.dv_table_key)).get()
+            : undefined;
+          let dvTable: DvTable | null = null;
+          if (dvTableRow) {
+            try {
+              dvTable = JSON.parse(dvTableRow.value) as DvTable;
+            } catch {
+              dvTable = null;
+            }
+          }
 
           return {
             ...inv,
@@ -117,7 +130,7 @@ export function getHydratedCombat(combatId: string): Combat | null {
             ignore_armor_percent: ignoreArmorPercent,
             // スマホの攻撃ボタンの基準値を武器に合わせるため（Phase 5k）
             ...(wRow
-              ? { skill_key: skillNameToKey(wRow.skill), is_ranged: Boolean(wRow.is_ranged), autofire: wRow.autofire ?? null, damage: wRow.damage, weapon_type: wRow.weapon_type, rof: wRow.rof }
+              ? { skill_key: skillNameToKey(wRow.skill), is_ranged: Boolean(wRow.is_ranged), autofire: wRow.autofire ?? null, damage: wRow.damage, weapon_type: wRow.weapon_type, rof: wRow.rof, dv_table_key: wRow.dv_table_key ?? null, dv_table: dvTable }
               : {}),
           };
         });

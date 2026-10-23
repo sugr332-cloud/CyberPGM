@@ -472,6 +472,16 @@ export class SessionManager {
     if (isCombatActive) {
       // Sanitize combat participants
       const sanitizedParticipants = (combat.participants || []).map((p: any) => {
+        const isTurn = p.id === combat.participants?.[combat.turn_index]?.id;
+        const rangeRingInfo = isTurn && p.character
+          ? {
+              stats: { move: p.character.stats?.move ?? 6 },
+              inventory: (p.character.inventory || [])
+                .filter((entry: any) => entry.kind === 'weapon' && entry.is_ranged !== false && entry.dv_table)
+                .slice(0, 1)
+                .map((entry: any) => ({ entry_id: entry.entry_id, kind: entry.kind, is_ranged: entry.is_ranged, dv_table: entry.dv_table })),
+            }
+          : {};
         if (p.side === 'ally') {
           return {
             id: p.id,
@@ -494,6 +504,7 @@ export class SessionManager {
                   sp_body: p.character.sp_body,
                   status: p.character.status,
                   crit_injuries: p.character.crit_injuries,
+                  ...rangeRingInfo,
                 }
               : null,
           };
@@ -537,6 +548,7 @@ export class SessionManager {
                 wound_state: woundLabel,
                 status: p.character.status,
                 crit_injuries: p.character.crit_injuries,
+                ...rangeRingInfo,
               }
             : null,
         };
