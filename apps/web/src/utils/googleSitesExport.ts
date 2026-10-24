@@ -1,11 +1,11 @@
-// Google サイト埋め込み用 単一 HTML 書き出しジェネレータ (Phase 6j)
-// 厳格な要件:
+// Google サイト埋め込み用 単一 HTML 書き出しジェネレータ (Phase 6j - Hardened Security)
+// セキュリティ方針:
 // - 外部サーバー、CDN、CyberPGM API へのネットワーク通信は一切行わない。
-// - スクリプトタグの src 読み込み、外部 CSS link は一切含めない（完全自己完結）。
+// - 外部スクリプトの src 読み込み、外部 CSS link は一切含めない（完全自己完結）。
 // - 画像・アイコン・スキャン画像・他プレイヤー情報・GM 保存データ・DB ダンプは含めない。
-// - 既存デザインシステム（モック v5）に準拠したレスポンシブ UI（360px〜1440px）。
-// - ルール検証（能力値・技能・資金・人間性）、localStorage 一時保存、ファイル保存、
-//   Web Share API 検査、mailto 案内、破損検出チェックサム付きテキストコード出力を完備。
+// - DOM 操作に innerHTML を使用せず、textContent と addEventListener を使用して XSS を完全防止。
+// - カタログの stats は許可された公開フィールドのみサニタイズ（ホワイトリスト方式）。
+// - GM メールアドレスの厳格な検証と mailto URL エンコード。
 
 import { SKILL_CATALOG, SKILL_CATEGORIES } from '@cyberpgm/shared';
 
@@ -17,7 +17,7 @@ export interface GoogleSitesExportItem {
   price: number;
   category?: string;
   description?: string;
-  stats?: Record<string, string | number | boolean>;
+  stats?: Record<string, any>;
 }
 
 export interface GoogleSitesExportOptions {
@@ -28,17 +28,71 @@ export interface GoogleSitesExportOptions {
   skillNotes?: Record<string, string>;
 }
 
+// 許可された公開 stats フィールド（ホワイトリスト）
+const ALLOWED_STATS_FIELDS = new Set([
+  'damage',
+  'rof',
+  'mag',
+  'weapon_type',
+  'sp',
+  'penalty',
+  'install',
+  'humanity_loss',
+]);
+
+/**
+ * stats フィールドをホワイトリストに基づいてサニタイズする。
+ * 任意のオブジェクトや内部管理プロパティは破棄する。
+ */
+export function sanitizePublicStats(rawStats?: Record<string, any>): Record<string, string | number | boolean> {
+  const sanitized: Record<string, string | number | boolean> = {};
+  if (!rawStats || typeof rawStats !== 'object') return sanitized;
+
+  for (const [k, v] of Object.entries(rawStats)) {
+    if (!ALLOWED_STATS_FIELDS.has(k)) continue;
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      sanitized[k] = typeof v === 'string' ? v.slice(0, 100) : v;
+    }
+  }
+  return sanitized;
+}
+
+/**
+ * GM メールアドレスを検証・サニタイズする。
+ * 改行・制御文字（CRLF インジェクション）や不正な形式を拒絶する。
+ */
+export function validateAndSanitizeGmEmail(email: string): string {
+  if (!email || typeof email !== 'string') {
+    throw new Error('GM メールアドレスが指定されていません。');
+  }
+  const trimmed = email.trim();
+  // 制御文字（CR, LF, NULL 等）の検出と拒否 (CRLF / ヘッダインジェクション対策)
+  // eslint-disable-next-line no-control-regex
+  if (/[\r\n\x00-\x1f\x7f]/.test(trimmed)) {
+    throw new Error('GM メールアドレスに不正な制御文字が含まれています。');
+  }
+  // 基本的なメールアドレスフォーマット検証
+  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+  if (!emailRegex.test(trimmed)) {
+    throw new Error('GM メールアドレスの形式が不正です。');
+  }
+  return trimmed;
+}
+
 export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions): string {
-  // 1. カタログデータのサニタイズ（テキスト・数値のみ。画像や内部パスは完全排除）
+  // GM メールアドレスの厳格な検証
+  const validatedGmEmail = validateAndSanitizeGmEmail(options.gmEmail);
+
+  // 1. カタログデータのサニタイズ（テキスト・数値のみ。許可 stats のみ保持）
   const sanitizedCatalog = options.catalogItems.map((item) => ({
-    id: String(item.id),
+    id: String(item.id || ''),
     kind: String(item.kind || 'gear'),
     name: String(item.name_ja || ''),
     name_en: item.name_en ? String(item.name_en) : undefined,
     price: Number(item.price) || 0,
     category: item.category ? String(item.category) : undefined,
     description: item.description ? String(item.description) : undefined,
-    stats: item.stats || {},
+    stats: sanitizePublicStats(item.stats),
   }));
 
   // 2. 技能基本データの抽出（テキストのみ）
@@ -49,12 +103,12 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
     category: s.category,
     basic: s.basic,
     diff: s.difficulty === 'difficult' ? 2 : 1,
-    note: options.skillNotes?.[s.key] || '',
+    note: options.skillNotes?.[s.key] ? String(options.skillNotes[s.key]) : '',
   }));
 
   // 埋め込み用設定 JSON
   const embedConfig = {
-    gmEmail: options.gmEmail.trim(),
+    gmEmail: validatedGmEmail,
     method: options.creationMethodKey,
     startingFunds: options.startingFunds,
     catalog: sanitizedCatalog,
@@ -62,7 +116,11 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
     skillCategories: SKILL_CATEGORIES,
   };
 
-  const serializedConfig = JSON.stringify(embedConfig).replace(/<\/script>/gi, '<\\/script>');
+  // JSON 内の </script> や < を安全にエスケープ
+  const serializedConfig = JSON.stringify(embedConfig)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
 
   return `<!DOCTYPE html>
 <html lang="ja">
@@ -129,7 +187,6 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       border-radius: 4px;
       border: 1px solid var(--color-border);
     }
-    /* Steps Navigation */
     .steps-nav {
       display: flex;
       gap: 8px;
@@ -200,7 +257,6 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 16px;
     }
-    /* Stat Counter Box */
     .stat-row {
       display: flex;
       justify-content: space-between;
@@ -241,7 +297,6 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       min-width: 28px;
       text-align: center;
     }
-    /* Action Buttons */
     .nav-actions {
       display: flex;
       justify-content: space-between;
@@ -260,7 +315,6 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
     .btn:hover { opacity: 0.9; }
     .btn-primary { background: var(--color-ally); color: #000; }
     .btn-secondary { background: var(--color-surface-elevated); color: var(--color-text); border: 1px solid var(--color-border-light); }
-    .btn-success { background: var(--color-success); color: #000; }
     .badge-info {
       padding: 4px 8px;
       border-radius: 4px;
@@ -314,11 +368,11 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
 
     <!-- Step Navigation -->
     <div class="steps-nav" id="steps-nav">
-      <button class="step-btn active" onclick="switchStep(1)">1. 基本</button>
-      <button class="step-btn" onclick="switchStep(2)">2. 能力値</button>
-      <button class="step-btn" onclick="switchStep(3)">3. 技能</button>
-      <button class="step-btn" onclick="switchStep(4)">4. 装備</button>
-      <button class="step-btn" onclick="switchStep(5)">5. GMに送る</button>
+      <button class="step-btn active" id="nav-btn-1">1. 基本</button>
+      <button class="step-btn" id="nav-btn-2">2. 能力値</button>
+      <button class="step-btn" id="nav-btn-3">3. 技能</button>
+      <button class="step-btn" id="nav-btn-4">4. 装備</button>
+      <button class="step-btn" id="nav-btn-5">5. GMに送る</button>
     </div>
 
     <!-- STEP 1: 基本 -->
@@ -326,11 +380,11 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       <div class="section-title">ステップ 1: 基本情報</div>
       <div class="form-group">
         <label>ハンドル名（キャラクター名）*</label>
-        <input type="text" id="input-name" placeholder="例: ヴァイパー" oninput="saveDraft()">
+        <input type="text" id="input-name" placeholder="例: ヴァイパー">
       </div>
       <div class="form-group">
         <label>ロール（役割）*</label>
-        <select id="input-role" onchange="saveDraft()">
+        <select id="input-role">
           <option value="Solo">ソロ (Solo)</option>
           <option value="Netrunner">ネットランナー (Netrunner)</option>
           <option value="Tech">テク (Tech)</option>
@@ -348,7 +402,7 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       </div>
       <div class="nav-actions">
         <div></div>
-        <button class="btn btn-primary" onclick="switchStep(2)">能力値へ進む →</button>
+        <button class="btn btn-primary" id="btn-goto-2">能力値へ進む →</button>
       </div>
     </div>
 
@@ -366,8 +420,8 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
         <!-- 動的レンダリング -->
       </div>
       <div class="nav-actions">
-        <button class="btn btn-secondary" onclick="switchStep(1)">← 基本に戻る</button>
-        <button class="btn btn-primary" onclick="switchStep(3)">技能へ進む →</button>
+        <button class="btn btn-secondary" id="btn-back-1">← 基本に戻る</button>
+        <button class="btn btn-primary" id="btn-goto-3">技能へ進む →</button>
       </div>
     </div>
 
@@ -378,8 +432,8 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
         <div style="font-size: 0.9rem;">使用 pt: <span id="skill-points-total" class="mono" style="font-weight: 700; color: var(--color-ally);">0</span> / 86 pt</div>
       </div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-        <input type="text" id="skill-search" placeholder="技能名で検索..." oninput="renderSkills()" style="flex: 1 1 200px;">
-        <select id="skill-cat-filter" onchange="renderSkills()">
+        <input type="text" id="skill-search" placeholder="技能名で検索..." style="flex: 1 1 200px;">
+        <select id="skill-cat-filter">
           <option value="all">すべての系統</option>
           <option value="rangedWeaponSkills">遠隔戦闘系</option>
           <option value="fightingSkills">近接戦闘系</option>
@@ -392,12 +446,12 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
           <option value="performanceSkills">芸能系</option>
         </select>
       </div>
-      <div id="skills-container" style="display: flex; flexDirection: column; gap: 6px; max-height: 480px; overflow-y: auto;">
+      <div id="skills-container" style="display: flex; flex-direction: column; gap: 6px; max-height: 480px; overflow-y: auto;">
         <!-- 動的レンダリング -->
       </div>
       <div class="nav-actions">
-        <button class="btn btn-secondary" onclick="switchStep(2)">← 能力値に戻る</button>
-        <button class="btn btn-primary" onclick="switchStep(4)">装備へ進む →</button>
+        <button class="btn btn-secondary" id="btn-back-2">← 能力値に戻る</button>
+        <button class="btn btn-primary" id="btn-goto-4">装備へ進む →</button>
       </div>
     </div>
 
@@ -411,8 +465,8 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
         </div>
       </div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-        <input type="text" id="equip-search" placeholder="装備品を検索..." oninput="renderCatalog()" style="flex: 1 1 200px;">
-        <select id="equip-kind-filter" onchange="renderCatalog()">
+        <input type="text" id="equip-search" placeholder="装備品を検索..." style="flex: 1 1 200px;">
+        <select id="equip-kind-filter">
           <option value="all">すべての種別</option>
           <option value="weapon">武器</option>
           <option value="armor">防具</option>
@@ -429,8 +483,8 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
         <!-- カート -->
       </div>
       <div class="nav-actions">
-        <button class="btn btn-secondary" onclick="switchStep(3)">← 技能に戻る</button>
-        <button class="btn btn-primary" onclick="switchStep(5)">GMに送るへ進む →</button>
+        <button class="btn btn-secondary" id="btn-back-3">← 技能に戻る</button>
+        <button class="btn btn-primary" id="btn-goto-5">GMに送るへ進む →</button>
       </div>
     </div>
 
@@ -448,12 +502,11 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
           以下の手順で GM（<span id="final-gm-email" style="color: var(--color-text); font-weight: 700;"></span>）へキャラクターをお送りください。
         </p>
 
-        <!-- アクションボタン群 -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px;">
-          <button class="btn btn-primary" onclick="downloadCpgmFile()">
+          <button class="btn btn-primary" id="btn-download-cpgm">
             1. ファイル保存 (.cpgm)
           </button>
-          <button class="btn btn-secondary" id="btn-webshare" onclick="handleWebShare()">
+          <button class="btn btn-secondary" id="btn-webshare">
             2. 共有シートを開く (Web Share)
           </button>
         </div>
@@ -472,7 +525,7 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       <div style="display: flex; flex-direction: column; gap: 8px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <strong style="font-size: 0.9rem;">テキストコード（メール本文コピー用）</strong>
-          <button class="btn btn-secondary" onclick="copyCharacterCode()" style="padding: 4px 12px; font-size: 0.8rem;">
+          <button class="btn btn-secondary" id="btn-copy-code" style="padding: 4px 12px; font-size: 0.8rem;">
             コードをコピー
           </button>
         </div>
@@ -481,14 +534,14 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       </div>
 
       <div class="nav-actions">
-        <button class="btn btn-secondary" onclick="switchStep(4)">← 装備に戻る</button>
+        <button class="btn btn-secondary" id="btn-back-4">← 装備に戻る</button>
       </div>
     </div>
   </div>
 
   <script>
-    // 埋め込みデータ
-    const CONFIG = ${serializedConfig};
+    // 埋め込みデータ (XSS 防止のため文字列・数値・オブジェクトは安全にパース)
+    const CONFIG = JSON.parse('${serializedConfig}');
     const STORAGE_KEY = 'cpgm_embed_draft_v1';
 
     // ドラフトステート
@@ -500,11 +553,11 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       cart: []
     };
 
-    // 初期化と保存ドラフト復元
     function init() {
+      // DOM textContent による安全な描画（innerHTML を使用しない）
       document.getElementById('display-gm-email').textContent = CONFIG.gmEmail || '未設定';
       document.getElementById('final-gm-email').textContent = CONFIG.gmEmail || '未設定';
-      document.getElementById('funds-initial').textContent = CONFIG.startingFunds.toLocaleString();
+      document.getElementById('funds-initial').textContent = Number(CONFIG.startingFunds).toLocaleString();
 
       try {
         const saved = localStorage.getItem(STORAGE_KEY);
@@ -518,8 +571,36 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
         console.warn('Failed to load local draft:', e);
       }
 
-      document.getElementById('input-name').value = draft.name || '';
-      document.getElementById('input-role').value = draft.role || 'Solo';
+      const inputName = document.getElementById('input-name');
+      const inputRole = document.getElementById('input-role');
+      inputName.value = draft.name || '';
+      inputRole.value = draft.role || 'Solo';
+
+      inputName.addEventListener('input', saveDraft);
+      inputRole.addEventListener('change', saveDraft);
+
+      // ナビゲーションイベントバインド
+      for (let i = 1; i <= 5; i++) {
+        const navBtn = document.getElementById('nav-btn-' + i);
+        if (navBtn) navBtn.addEventListener('click', () => switchStep(i));
+      }
+      document.getElementById('btn-goto-2')?.addEventListener('click', () => switchStep(2));
+      document.getElementById('btn-back-1')?.addEventListener('click', () => switchStep(1));
+      document.getElementById('btn-goto-3')?.addEventListener('click', () => switchStep(3));
+      document.getElementById('btn-back-2')?.addEventListener('click', () => switchStep(2));
+      document.getElementById('btn-goto-4')?.addEventListener('click', () => switchStep(4));
+      document.getElementById('btn-back-3')?.addEventListener('click', () => switchStep(3));
+      document.getElementById('btn-goto-5')?.addEventListener('click', () => switchStep(5));
+      document.getElementById('btn-back-4')?.addEventListener('click', () => switchStep(4));
+
+      document.getElementById('skill-search')?.addEventListener('input', renderSkills);
+      document.getElementById('skill-cat-filter')?.addEventListener('change', renderSkills);
+      document.getElementById('equip-search')?.addEventListener('input', renderCatalog);
+      document.getElementById('equip-kind-filter')?.addEventListener('change', renderCatalog);
+
+      document.getElementById('btn-download-cpgm')?.addEventListener('click', downloadCpgmFile);
+      document.getElementById('btn-webshare')?.addEventListener('click', handleWebShare);
+      document.getElementById('btn-copy-code')?.addEventListener('click', copyCharacterCode);
 
       renderStats();
       renderSkills();
@@ -528,7 +609,6 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       updateCalculations();
       setupMailtoLink();
 
-      // Web Share API ファイル共有検査
       const shareBtn = document.getElementById('btn-webshare');
       if (!navigator.canShare) {
         shareBtn.style.opacity = '0.5';
@@ -551,15 +631,16 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
         const el = document.getElementById('step-' + i);
         if (el) el.style.display = i === stepNum ? 'flex' : 'none';
       }
-      const buttons = document.querySelectorAll('.step-btn');
-      buttons.forEach((btn, idx) => {
-        if (idx === stepNum - 1) btn.classList.add('active');
-        else btn.classList.remove('active');
-      });
+      for (let i = 1; i <= 5; i++) {
+        const btn = document.getElementById('nav-btn-' + i);
+        if (btn) {
+          if (i === stepNum) btn.classList.add('active');
+          else btn.classList.remove('active');
+        }
+      }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    // 能力値
     const STAT_KEYS = [
       { key: 'int', label: '知力 (INT)' },
       { key: 'ref', label: '反応 (REF)' },
@@ -575,19 +656,39 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
 
     function renderStats() {
       const container = document.getElementById('stats-container');
-      container.innerHTML = '';
+      while (container.firstChild) container.removeChild(container.firstChild);
+
       STAT_KEYS.forEach(s => {
         const val = draft.stats[s.key] || 6;
         const row = document.createElement('div');
         row.className = 'stat-row';
-        row.innerHTML = \`
-          <span class="stat-label">\${s.label}</span>
-          <div class="counter-ctrls">
-            <button type="button" class="btn-counter" onclick="adjustStat('\${s.key}', -1)">-</button>
-            <span class="counter-value" id="stat-val-\${s.key}">\${val}</span>
-            <button type="button" class="btn-counter" onclick="adjustStat('\${s.key}', 1)">+</button>
-          </div>
-        \`;
+
+        const label = document.createElement('span');
+        label.className = 'stat-label';
+        label.textContent = s.label;
+
+        const ctrls = document.createElement('div');
+        ctrls.className = 'counter-ctrls';
+
+        const btnMinus = document.createElement('button');
+        btnMinus.type = 'button';
+        btnMinus.className = 'btn-counter';
+        btnMinus.textContent = '-';
+        btnMinus.addEventListener('click', () => adjustStat(s.key, -1));
+
+        const valSpan = document.createElement('span');
+        valSpan.className = 'counter-value';
+        valSpan.id = 'stat-val-' + s.key;
+        valSpan.textContent = String(val);
+
+        const btnPlus = document.createElement('button');
+        btnPlus.type = 'button';
+        btnPlus.className = 'btn-counter';
+        btnPlus.textContent = '+';
+        btnPlus.addEventListener('click', () => adjustStat(s.key, 1));
+
+        ctrls.append(btnMinus, valSpan, btnPlus);
+        row.append(label, ctrls);
         container.appendChild(row);
       });
     }
@@ -596,22 +697,23 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       const current = draft.stats[key] || 6;
       const next = Math.max(2, Math.min(8, current + delta));
       draft.stats[key] = next;
-      document.getElementById('stat-val-' + key).textContent = next;
+      const el = document.getElementById('stat-val-' + key);
+      if (el) el.textContent = String(next);
       saveDraft();
     }
 
-    // 技能
     function renderSkills() {
       const container = document.getElementById('skills-container');
       const cat = document.getElementById('skill-cat-filter').value;
       const q = (document.getElementById('skill-search').value || '').toLowerCase().trim();
 
-      container.innerHTML = '';
+      while (container.firstChild) container.removeChild(container.firstChild);
+
       CONFIG.skills.forEach(s => {
         if (cat !== 'all' && s.category !== cat) return;
         if (q && !s.name.toLowerCase().includes(q) && !s.key.toLowerCase().includes(q) && !s.note.toLowerCase().includes(q)) return;
 
-        const val = draft.skills[s.key] || (s.basic ? 2 : 0);
+        const val = draft.skills[s.key] != null ? draft.skills[s.key] : (s.basic ? 2 : 0);
         const row = document.createElement('div');
         row.className = 'stat-row';
         row.style.padding = '6px 12px';
@@ -619,24 +721,64 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
         const baseStatVal = draft.stats[s.stat] || 0;
         const baseTotal = baseStatVal + val;
 
-        row.innerHTML = \`
-          <div style="display: flex; flex-direction: column;">
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-weight: 700; font-size: 0.85rem;">\${s.name}</span>
-              \${s.diff > 1 ? '<span style="font-size: 0.7rem; color: var(--color-warning);">×2</span>' : ''}
-              \${s.basic ? '<span style="font-size: 0.7rem; color: var(--color-ally);">基礎</span>' : ''}
-            </div>
-            <div style="font-size: 0.75rem; color: var(--color-text-muted);">
-              \${s.stat.toUpperCase()} \${baseStatVal} + Lv \${val} = 基本値 \${baseTotal}
-              \${s.note ? '・ ' + s.note : ''}
-            </div>
-          </div>
-          <div class="counter-ctrls">
-            <button type="button" class="btn-counter" onclick="adjustSkill('\${s.key}', -1, \${s.basic})">-</button>
-            <span class="counter-value">\${val}</span>
-            <button type="button" class="btn-counter" onclick="adjustSkill('\${s.key}', 1, \${s.basic})">+</button>
-          </div>
-        \`;
+        const textCol = document.createElement('div');
+        textCol.style.display = 'flex';
+        textCol.style.flexDirection = 'column';
+
+        const nameLine = document.createElement('div');
+        nameLine.style.display = 'flex';
+        nameLine.style.alignItems = 'center';
+        nameLine.style.gap = '6px';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.style.fontWeight = '700';
+        nameSpan.style.fontSize = '0.85rem';
+        nameSpan.textContent = s.name;
+        nameLine.appendChild(nameSpan);
+
+        if (s.diff > 1) {
+          const diffBadge = document.createElement('span');
+          diffBadge.style.fontSize = '0.7rem';
+          diffBadge.style.color = 'var(--color-warning)';
+          diffBadge.textContent = '×2';
+          nameLine.appendChild(diffBadge);
+        }
+        if (s.basic) {
+          const basicBadge = document.createElement('span');
+          basicBadge.style.fontSize = '0.7rem';
+          basicBadge.style.color = 'var(--color-ally)';
+          basicBadge.textContent = '基礎';
+          nameLine.appendChild(basicBadge);
+        }
+
+        const detailLine = document.createElement('div');
+        detailLine.style.fontSize = '0.75rem';
+        detailLine.style.color = 'var(--color-text-muted)';
+        detailLine.textContent = s.stat.toUpperCase() + ' ' + baseStatVal + ' + Lv ' + val + ' = 基本値 ' + baseTotal + (s.note ? ' ・ ' + s.note : '');
+
+        textCol.append(nameLine, detailLine);
+
+        const ctrls = document.createElement('div');
+        ctrls.className = 'counter-ctrls';
+
+        const btnMinus = document.createElement('button');
+        btnMinus.type = 'button';
+        btnMinus.className = 'btn-counter';
+        btnMinus.textContent = '-';
+        btnMinus.addEventListener('click', () => adjustSkill(s.key, -1, s.basic));
+
+        const valSpan = document.createElement('span');
+        valSpan.className = 'counter-value';
+        valSpan.textContent = String(val);
+
+        const btnPlus = document.createElement('button');
+        btnPlus.type = 'button';
+        btnPlus.className = 'btn-counter';
+        btnPlus.textContent = '+';
+        btnPlus.addEventListener('click', () => adjustSkill(s.key, 1, s.basic));
+
+        ctrls.append(btnMinus, valSpan, btnPlus);
+        row.append(textCol, ctrls);
         container.appendChild(row);
       });
     }
@@ -650,30 +792,45 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       renderSkills();
     }
 
-    // カタログ
     function renderCatalog() {
       const container = document.getElementById('catalog-container');
       const kind = document.getElementById('equip-kind-filter').value;
       const q = (document.getElementById('equip-search').value || '').toLowerCase().trim();
 
-      container.innerHTML = '';
+      while (container.firstChild) container.removeChild(container.firstChild);
+
       CONFIG.catalog.forEach(item => {
         if (kind !== 'all' && item.kind !== kind) return;
         if (q && !item.name.toLowerCase().includes(q) && !(item.name_en || '').toLowerCase().includes(q)) return;
 
         const row = document.createElement('div');
         row.className = 'item-card';
-        row.innerHTML = \`
-          <div style="display: flex; flex-direction: column;">
-            <div style="font-weight: 700; font-size: 0.85rem;">\${item.name}</div>
-            <div style="font-size: 0.75rem; color: var(--color-text-muted);">
-              \${item.price.toLocaleString()} eb \${item.category ? '・' + item.category : ''}
-            </div>
-          </div>
-          <button type="button" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" onclick="addToCart('\${item.id}')">
-            購入
-          </button>
-        \`;
+
+        const infoCol = document.createElement('div');
+        infoCol.style.display = 'flex';
+        infoCol.style.flexDirection = 'column';
+
+        const title = document.createElement('div');
+        title.style.fontWeight = '700';
+        title.style.fontSize = '0.85rem';
+        title.textContent = item.name;
+
+        const desc = document.createElement('div');
+        desc.style.fontSize = '0.75rem';
+        desc.style.color = 'var(--color-text-muted)';
+        desc.textContent = Number(item.price).toLocaleString() + ' eb' + (item.category ? ' ・ ' + item.category : '');
+
+        infoCol.append(title, desc);
+
+        const buyBtn = document.createElement('button');
+        buyBtn.type = 'button';
+        buyBtn.className = 'btn btn-secondary';
+        buyBtn.style.padding = '4px 10px';
+        buyBtn.style.fontSize = '0.8rem';
+        buyBtn.textContent = '購入';
+        buyBtn.addEventListener('click', () => addToCart(item.id));
+
+        row.append(infoCol, buyBtn);
         container.appendChild(row);
       });
     }
@@ -706,68 +863,96 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
 
     function renderCart() {
       const container = document.getElementById('cart-container');
-      container.innerHTML = '';
+      while (container.firstChild) container.removeChild(container.firstChild);
+
       if (draft.cart.length === 0) {
-        container.innerHTML = '<div style="font-size: 0.8rem; color: var(--color-text-muted);">所持品はありません</div>';
+        const empty = document.createElement('div');
+        empty.style.fontSize = '0.8rem';
+        empty.style.color = 'var(--color-text-muted)';
+        empty.textContent = '所持品はありません';
+        container.appendChild(empty);
         return;
       }
+
       draft.cart.forEach(c => {
         const row = document.createElement('div');
         row.className = 'item-card';
-        row.innerHTML = \`
-          <div>
-            <strong>\${c.name}</strong> × \${c.qty}
-            <span style="font-size: 0.8rem; color: var(--color-ally); margin-left: 8px;">\${(c.price * c.qty).toLocaleString()} eb</span>
-          </div>
-          <button type="button" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" onclick="removeFromCart('\${c.id}')">削除</button>
-        \`;
+
+        const info = document.createElement('div');
+        const strong = document.createElement('strong');
+        strong.textContent = c.name;
+        const qtyText = document.createTextNode(' × ' + c.qty + ' ');
+        const priceSpan = document.createElement('span');
+        priceSpan.style.fontSize = '0.8rem';
+        priceSpan.style.color = 'var(--color-ally)';
+        priceSpan.style.marginLeft = '8px';
+        priceSpan.textContent = Number(c.price * c.qty).toLocaleString() + ' eb';
+
+        info.append(strong, qtyText, priceSpan);
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn btn-secondary';
+        delBtn.style.padding = '2px 8px';
+        delBtn.style.fontSize = '0.75rem';
+        delBtn.textContent = '削除';
+        delBtn.addEventListener('click', () => removeFromCart(c.id));
+
+        row.append(info, delBtn);
         container.appendChild(row);
       });
     }
 
-    // 計算とルール検証
     function updateCalculations() {
       let statSum = 0;
       Object.values(draft.stats).forEach(v => statSum += v);
-      document.getElementById('stat-total').textContent = statSum;
+      document.getElementById('stat-total').textContent = String(statSum);
 
       const emp = draft.stats.emp || 6;
-      document.getElementById('stat-humanity').textContent = emp * 10;
-      document.getElementById('stat-emp-display').textContent = emp;
+      document.getElementById('stat-humanity').textContent = String(emp * 10);
+      document.getElementById('stat-emp-display').textContent = String(emp);
 
       let skillSpent = 0;
       CONFIG.skills.forEach(s => {
         const val = draft.skills[s.key] != null ? draft.skills[s.key] : (s.basic ? 2 : 0);
         skillSpent += val * s.diff;
       });
-      document.getElementById('skill-points-total').textContent = skillSpent;
+      document.getElementById('skill-points-total').textContent = String(skillSpent);
 
       let spentEb = 0;
       draft.cart.forEach(c => spentEb += c.price * c.qty);
-      const remaining = CONFIG.startingFunds - spentEb;
+      const remaining = Number(CONFIG.startingFunds) - spentEb;
       document.getElementById('funds-remaining').textContent = remaining.toLocaleString();
 
-      // 検証ボックス
       const valBox = document.getElementById('validation-box');
+      while (valBox.firstChild) valBox.removeChild(valBox.firstChild);
+
       const errors = [];
       if (!draft.name.trim()) errors.push('ハンドル名が入力されていません。');
-      if (statSum > 62) errors.push(\`能力値ポイントが超過しています（現在 \${statSum} / 62 pt）。\`);
-      if (skillSpent > 86) errors.push(\`技能ポイントが超過しています（現在 \${skillSpent} / 86 pt）。\`);
-      if (remaining < 0) errors.push(\`所持金が不足しています（超過: \${Math.abs(remaining).toLocaleString()} eb）。\`);
+      if (statSum > 62) errors.push('能力値ポイントが超過しています（現在 ' + statSum + ' / 62 pt）。');
+      if (skillSpent > 86) errors.push('技能ポイントが超過しています（現在 ' + skillSpent + ' / 86 pt）。');
+      if (remaining < 0) errors.push('所持金が不足しています（超過: ' + Math.abs(remaining).toLocaleString() + ' eb）。');
 
       if (errors.length > 0) {
         valBox.className = 'alert-box alert-warning';
-        valBox.innerHTML = '<strong>確認事項があります:</strong><br>' + errors.join('<br>');
+        const strong = document.createElement('strong');
+        strong.textContent = '確認事項があります:';
+        valBox.appendChild(strong);
+        errors.forEach(err => {
+          const p = document.createElement('div');
+          p.textContent = err;
+          valBox.appendChild(p);
+        });
       } else {
         valBox.className = 'alert-box alert-success';
-        valBox.innerHTML = '<strong>ルール適合:</strong> 能力値・技能・開始資金のすべてがルール上限を満たしています。';
+        const strong = document.createElement('strong');
+        strong.textContent = 'ルール適合: 能力値・技能・開始資金のすべてがルール上限を満たしています。';
+        valBox.appendChild(strong);
       }
 
-      // テキストコード生成
       updateOutputCode();
     }
 
-    // Adler-32 チェックサム計算
     function calculateAdler32(str) {
       let a = 1, b = 0;
       for (let i = 0; i < str.length; i++) {
@@ -809,7 +994,6 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       const data = buildCharacterJson();
       const jsonStr = JSON.stringify(data);
       const checksum = calculateAdler32(jsonStr);
-      // UTF-8 to Base64
       const b64 = btoa(encodeURIComponent(jsonStr).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))));
       const code = 'CPGM1:' + checksum + ':' + b64;
       document.getElementById('output-code').value = code;
@@ -817,21 +1001,22 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       const len = code.length;
       const infoEl = document.getElementById('code-length-info');
       if (len > 1800) {
-        infoEl.textContent = \`コード長: \${len}文字（推奨安全長1800文字を超えているため、mailto自動リンクではなく下の「コードをコピー」をご利用ください）\`;
+        infoEl.textContent = 'コード長: ' + len + '文字（推奨安全長1800文字を超えているため、mailto自動リンクではなく下の「コードをコピー」をご利用ください）';
         infoEl.style.color = 'var(--color-warning)';
       } else {
-        infoEl.textContent = \`コード長: \${len}文字（メール本文への貼り付けに最適化されています）\`;
+        infoEl.textContent = 'コード長: ' + len + '文字（メール本文への貼り付けに最適化されています）';
         infoEl.style.color = 'var(--color-text-muted)';
       }
     }
 
     function setupMailtoLink() {
       const mailtoBtn = document.getElementById('btn-mailto');
-      const subject = \`[CyberPGM] キャラクター提出: \${draft.name.trim() || '無名'} (\${draft.role})\`;
+      const subject = '[CyberPGM] キャラクター提出: ' + (draft.name.trim() || '無名') + ' (' + draft.role + ')';
       const code = document.getElementById('output-code')?.value || '';
-      const body = \`GM 様\\n\\nCyberPGM にてキャラクターを作成しました。\\nハンドル名: \${draft.name.trim()}\\nロール: \${draft.role}\\n\\n【キャラクターコード】\\n\${code}\\n\\n※CyberPGM の「キャラ受付」画面で「コードから取り込む」を開き、上記のコードを貼り付けてください。\\n（または添付の .cpgm ファイルを取り込んでください）\`;
+      const body = 'GM 様\\n\\nCyberPGM にてキャラクターを作成しました。\\nハンドル名: ' + draft.name.trim() + '\\nロール: ' + draft.role + '\\n\\n【キャラクターコード】\\n' + code + '\\n\\n※CyberPGM の「キャラ受付」画面で「コードから取り込む」を開き、上記のコードを貼り付けてください。\\n（または添付の .cpgm ファイルを取り込んでください）';
 
-      mailtoBtn.href = \`mailto:\${CONFIG.gmEmail}?subject=\${encodeURIComponent(subject)}&body=\${encodeURIComponent(body)}\`;
+      // GM メールアドレスおよびパラメータの完全 URL エンコード
+      mailtoBtn.href = 'mailto:' + encodeURIComponent(CONFIG.gmEmail) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
     }
 
     function downloadCpgmFile() {
@@ -840,7 +1025,7 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = \`\${draft.name.trim() || 'character'}.cpgm\`;
+      a.download = (draft.name.trim() || 'character') + '.cpgm';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -863,15 +1048,15 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
     async function handleWebShare() {
       const data = buildCharacterJson();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const filename = \`\${draft.name.trim() || 'character'}.cpgm\`;
+      const filename = (draft.name.trim() || 'character') + '.cpgm';
       const file = new File([blob], filename, { type: 'application/json' });
 
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
           await navigator.share({
             files: [file],
-            title: \`CyberPGM キャラクター: \${draft.name.trim()}\`,
-            text: \`GM (\${CONFIG.gmEmail}) 宛てキャラクターデータ\`
+            title: 'CyberPGM キャラクター: ' + draft.name.trim(),
+            text: 'GM (' + CONFIG.gmEmail + ') 宛てキャラクターデータ'
           });
         } catch (e) {
           if (e.name !== 'AbortError') {

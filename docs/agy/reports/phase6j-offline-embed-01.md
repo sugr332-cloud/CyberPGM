@@ -19,7 +19,8 @@
    - `apps/web/index.html`: manifest リンク、Apple Touch Icon、theme-color meta タグを追加。
 2. **Service Worker (`apps/web/public/sw.js`)**:
    - アプリケーションシェル（HTML, CSS, JS, アイコン）のみキャッシュ。
-   - **セキュリティ規約の厳格遵守**: `/api/*`、`/images/user/*`、セッション・キャラクター・シナリオ・DB ダンプは一切キャッシュせず、API は常に Network-Only。オフライン時は即座に 503 Service Unavailable を返却し、未承認操作のキュー積みや偽の成功表示を完全防止。古いバージョンのキャッシュ自動破棄（activate イベント）を実装。
+   - **セキュリティ規約の厳格遵守（Codex 監査対応）**: 厳格な静的許可リスト（`/`, `/index.html`, `/manifest.webmanifest`, `/icon.svg`, `/icon-*.png`, `/favicon.ico`, ビルドハッシュ付き `/assets/*.js|css`）に限定。任意の same-origin パスやレスポンスは 200 であってもキャッシュしません。
+   - `/api/*`、`/images/user/*`、セッション・キャラクター・シナリオ・DB ダンプは一切キャッシュせず、API は常に Network-Only。オフライン時は即座に 503 Service Unavailable を返却し、未承認操作のキュー積みや偽の成功表示を完全防止。SPA ナビゲーションリクエスト（`mode === 'navigate'`）のみオフライン時にキャッシュ済み `/index.html` へ安全にフォールバック。古いバージョンのキャッシュ自動破棄（activate イベント）を実装。
 3. **オフラインカタログストレージ (`apps/web/src/utils/offlineCatalog.ts`)**:
    - 品目のテキスト・数値データ（名前、種別、価格、カテゴリ、性能 stats、説明文）のみを安全に抽出（サニタイズ）してスナップショット保存。
    - スキーマバージョン管理（version: 1）を行い、保存・読み込みエラー時もオンライン画面の動作を阻害しない設計。
@@ -35,6 +36,12 @@
    - GM メールアドレス（必須）、作成方式（スクラッチビルド / ストリートラット / エッジランナー / 任意）、開始資金 (eb)、カタログ公開範囲（公式確認済みのみ / 全件）を指定可能。
 2. **自己完結型 単一 HTML 生成 (`apps/web/src/utils/googleSitesExport.ts`)**:
    - 外部 CDN、外部 CSS/JS、外部 API へのネットワーク通信を一切行わない完全自己完結 1 ファイル（約 40KB）を出力。
+   - **XSS および属性インジェクションの完全防御（Codex 監査対応）**:
+     - カタログ項目、GM 入力データ、スキル名・説明等の外部供給データをすべて untrusted として扱い、`innerHTML` による文字列展開やインラインイベントハンドラ（`onclick="..."` 等）を全廃。
+     - DOM 構築は `document.createElement`, `textContent`, `addEventListener` による安全なデータバインディングに統一。
+     - 埋め込み JSON は `<` -> `\u003c`, `>` -> `\u003e`, `&` -> `\u0026` に安全エスケープして `<script>` タグの途中終了・ブレイクアウトを防止。
+     - stats フィールドは公開許可されたホワイトリスト（`damage`, `rof`, `mag`, `weapon_type`, `sp`, `penalty`, `install`, `humanity_loss`）のみを厳格に抽出し、未知・不要な内部オブジェクトを遮断。
+     - GM メールアドレスは形式検証および CRLF・制御文字混入をチェックし、`mailto:` URL 組み立て時に `encodeURIComponent` で保護。
    - 画像・アイコン・他プレイヤー情報・GM データ・DB 情報は完全に排除。
    - モック v5 デザインシステム準拠のレスポンシブ UI（360px〜1440px）。
    - ブラウザ一時保存（localStorage）、ルール検証（能力値 62pt, 技能 86pt, 資金残高, 人間性変動 EMP×10）。
@@ -120,9 +127,9 @@ npx tsx --test packages/shared/test/characterCode.test.ts test/phase6j-focused.t
   ✔ detects tampering or corruption in the payload
   ✔ detects invalid prefix or format
   ✔ warns when code exceeds mailto limit without truncating data
-✔ characterCode serialization and recovery (4.2441ms)
+✔ characterCode serialization and recovery (5.7812ms)
 
-▶ Phase 6j: PWA & Offline Catalog & Embed Export Suite
+▶ Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardened)
   ▶ A. Text Code & Checksum & Tamper Detection
     ✔ calculates reproducible Adler-32 checksums
     ✔ round-trips UTF-8 and Japanese text via Base64
@@ -130,32 +137,34 @@ npx tsx --test packages/shared/test/characterCode.test.ts test/phase6j-focused.t
     ✔ successfully restores draft from valid character code
     ✔ detects tampering or corruption and refuses import
     ✔ warns when data exceeds mailto safe limit without silently truncating
-  ✔ A. Text Code & Checksum & Tamper Detection (3.9733ms)
+  ✔ A. Text Code & Checksum & Tamper Detection (4.8712ms)
   ▶ B. Offline Catalog & No-Private-Cache Security
     ✔ sanitizes raw items to include only public text/number fields and exclude private data
     ✔ safely saves and loads catalog snapshot with versioning
     ✔ discards corrupted snapshot safely without throwing
-  ✔ B. Offline Catalog & No-Private-Cache Security (2.3612ms)
-  ▶ C. Web App Manifest & Service Worker Static Audit
+  ✔ B. Offline Catalog & No-Private-Cache Security (3.5878ms)
+  ▶ C. Web App Manifest & Service Worker Static Allowlist Audit
     ✔ manifest.webmanifest contains valid PWA configuration and icons
     ✔ icons exist in public directory
-    ✔ sw.js enforces security: never caches /api/* or user private data
-  ✔ C. Web App Manifest & Service Worker Static Audit (0.8149ms)
-  ▶ D. Google Sites Embed Export & Self-Contained Integrity
+    ✔ sw.js enforces strict static allowlist and NEVER caches arbitrary or dynamic GET routes
+  ✔ C. Web App Manifest & Service Worker Static Allowlist Audit (1.2229ms)
+  ▶ D. Google Sites Embed Export Security & Hardening
+    ✔ validates GM email and strictly rejects CRLF injection and invalid format
+    ✔ sanitizes public stats fields with strict whitelist and discards arbitrary objects
     ✔ generates fully self-contained HTML without external CSS or scripts
-    ✔ includes required configuration and public catalog while excluding forbidden private data
-    ✔ contains all necessary workflow actions: file save, Web Share, mailto, text code
+    ✔ uses safe DOM textContent and event binding, avoiding innerHTML interpolation and inline handlers
+    ✔ safely neutralizes malicious XSS payloads in catalog names, descriptions, and skill notes
     ✔ produces reasonable file size for Google Sites embedding
-    ✔ can be embedded in sandbox iframe specifications without syntax errors
-  ✔ D. Google Sites Embed Export & Self-Contained Integrity (2.473ms)
-✔ Phase 6j: PWA & Offline Catalog & Embed Export Suite (10.0471ms)
-ℹ tests 24
+    ✔ can be safely embedded in sandbox iframe specification
+  ✔ D. Google Sites Embed Export Security & Hardening (3.4861ms)
+✔ Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardened) (13.5367ms)
+ℹ tests 26
 ℹ suites 6
-ℹ pass 24
+ℹ pass 26
 ℹ fail 0
 （終了コード: 0）
 ```
-- テキストコード、破損検出、PWA manifest / sw、非公開データ除外、単一 HTML 生成、iframe sandbox 適合性など計 24 件のテストがすべて合格。
+- テキストコード、破損検出、PWA manifest / sw 厳格静的許可リスト検証、非公開データ除外、単一 HTML 生成、XSS / インジェクション防御、iframe sandbox 適合性など計 26 件のテストがすべて合格。
 
 ---
 
@@ -212,5 +221,30 @@ Playwright（実機 Chrome 利用）を用いてポート 8791 にて撮影を�
 | `apps/web/src/utils/googleSitesExport.ts` | **新規**: Google サイト埋め込み用 完全自己完結 単一 HTML 書き出しジェネレータ。 |
 | `apps/web/src/components/GoogleSitesExportModal.tsx` | **新規**: GM 画面からの Google サイト用 HTML 書き出し設定モーダル。 |
 | `apps/web/src/components/CharacterReceptionView.tsx` | 「コードから取り込む」機能・モーダル、および「Google サイト用 HTML 書き出し」ボタンの接続。 |
-| `test/phase6j-focused.test.ts` | **新規**: Phase 6j 総合検証テストスイート（テキストコード、オフラインカタログ、PWA manifest/sw、自己完結 HTML、sandbox iframe 検査、17 tests）。 |
+| `test/phase6j-focused.test.ts` | **新規**: Phase 6j 総合検証テストスイート（テキストコード、オフラインカタログ、PWA manifest/sw 厳格静的ホワイトリスト、自己完結 HTML、XSS 防御、sandbox iframe 検査、19 tests）。 |
 | `tools/capture-phase6j-screenshots.ts` | **新規**: 実機 Chrome を利用した 1440px / 390px スクリーンショット撮影ツール。 |
+
+---
+
+## 7. Codex セキュリティ監査対応（PR 前是正）
+
+Codex 監査から指摘された 2 件のセキュリティ課題に対して、以下の是正を実施しました。
+
+### 指摘 1: Service Worker のキャッシュ対象制限（動的・プライベートルートの CacheStorage 挿入防止）
+- **指摘内容**: `apps/web/public/sw.js` が一部のパス除外のみで同一オリジンの 200 GET を任意にキャッシュしていたため、厳格な静的許可リストへの限定が必要。
+- **改修内容**:
+  - `STATIC_ALLOWLIST`（完全一致: `/`, `/index.html`, `/manifest.webmanifest`, `/icon.svg`, `/icon-192.png`, `/icon-512.png`, `/favicon.ico`）および `ASSET_PATH_REGEX`（ビルドハッシュ付き `/assets/*.js|css`）を定義。
+  - `isStaticCacheable(pathname)` 関数により判定し、上記ホワイトリストに合致しないリクエストはステータス 200 であっても CacheStorage に絶対に書き込まないよう制限。
+  - `/api/*` は Network-Only（オフライン時 503 返却）。
+  - SPA ナビゲーションリクエスト（`request.mode === 'navigate'`）のみ、ネットワーク不通時にキャッシュ済み `/index.html` にフォールバック。
+  - `test/phase6j-focused.test.ts` にて、動的・プライベート風のルート（`/images/user/*`, `/data/*`, `/player/*` 等）がキャッシュ対象外と判定されること、および静的アセットのみがキャッシュ許可されることを検証するテストを追加。
+
+### 指摘 2: Google サイト埋め込み HTML 生成時の XSS 硬化・データサニタイズ
+- **指摘内容**: `apps/web/src/utils/googleSitesExport.ts` がカタログ名やスキルノートを `innerHTML` に展開しており、外部入力・カタログデータ・GM 提供データを安全に取り扱う必要があった。
+- **改修内容**:
+  - `innerHTML` 文字列展開およびインラインハンドラ（`onclick="..."`）を全廃。
+  - DOM 構築処理を `document.createElement` + `textContent` + `addEventListener` に統一し、スクリプト実行や属性インジェクションを物理的に無害化。
+  - 埋め込み JSON 文字列中の `<`, `>`, `&` を `\u003c`, `\u003e`, `\u0026` にエスケープし、`</script>` によるスクリプト脱出を防止。
+  - `stats` オブジェクトを安全な公開フィールド（`damage`, `rof`, `mag`, `weapon_type`, `sp`, `penalty`, `install`, `humanity_loss`）のみに絞り込むホワイトリストサニタイズ関数を導入。
+  - GM メールアドレスに対して CRLF・制御文字混入チェックと正規表現バリデーションを実施し、`mailto:` URL 生成時に `encodeURIComponent` を適用。
+  - `test/phase6j-focused.test.ts` にて、`<script>`, `"><img onerror=...>`, `onclick` 等を含む悪意ある入力が安全に無害化されること、および不正な GM メールアドレスが正しく弾かれることを検証するテストを追加。

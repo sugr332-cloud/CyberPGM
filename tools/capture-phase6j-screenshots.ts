@@ -33,7 +33,7 @@ async function main() {
   // 2. ポート 8791 で静的ファイルサーバーを起動
   const server = http.createServer((req, res) => {
     const parsedUrl = new URL(req.url || '/', `http://localhost:${PORT}`);
-    let pathname = parsedUrl.pathname;
+    const pathname = parsedUrl.pathname;
 
     // テスト埋め込み HTML
     if (pathname === '/test-embed.html') {
@@ -182,8 +182,7 @@ async function main() {
     // ハンドル名入力と Step 5 (GMに送る) への遷移
     await pagePc.fill('#input-name', 'ヴァイパー');
     await pagePc.evaluate(() => {
-      // @ts-ignore
-      window.switchStep(5);
+      (window as any).switchStep(5);
     });
     await pagePc.waitForTimeout(300);
     await pagePc.screenshot({ path: path.join(imgDir, 'phase6j-character-create-1440.png') });
@@ -193,8 +192,7 @@ async function main() {
     await pageMobile.waitForTimeout(500);
     await pageMobile.fill('#input-name', 'ヴァイパー');
     await pageMobile.evaluate(() => {
-      // @ts-ignore
-      window.switchStep(5);
+      (window as any).switchStep(5);
     });
     await pageMobile.waitForTimeout(300);
     await pageMobile.screenshot({ path: path.join(imgDir, 'phase6j-character-create-390.png') });

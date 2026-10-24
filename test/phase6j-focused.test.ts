@@ -25,9 +25,11 @@ import {
 import {
   generateGoogleSitesEmbedHtml,
   GoogleSitesExportOptions,
+  validateAndSanitizeGmEmail,
+  sanitizePublicStats,
 } from '../apps/web/src/utils/googleSitesExport.js';
 
-describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite', () => {
+describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardened)', () => {
   const sampleCharacterFile: CpgmCharacterFile = {
     format: 'cpgm-character',
     version: 1,
@@ -101,7 +103,6 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite', () => {
       assert.ok(res.warning?.includes('mailto URL の推奨安全上限'));
       assert.ok(res.length > MAILTO_SAFE_LIMIT);
 
-      // 復元しても一切切り詰められていないことを確認
       const decoded = decodeCharacterFromCode(res.code);
       assert.strictEqual(decoded.success, true);
       assert.strictEqual(decoded.file?.character.image_path, largeFile.character.image_path);
@@ -112,7 +113,6 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite', () => {
   // 2. オフラインカタログストレージ & セキュリティ（非公開データ除外）
   // --------------------------------------------------------------------------
   describe('B. Offline Catalog & No-Private-Cache Security', () => {
-    // localStorage mock for Node environment
     const storageMap = new Map<string, string>();
     const mockLocalStorage = {
       getItem: (k: string) => storageMap.get(k) || null,
@@ -122,14 +122,12 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite', () => {
     };
 
     before(() => {
-      // @ts-ignore
-      globalThis.localStorage = mockLocalStorage;
+      (globalThis as any).localStorage = mockLocalStorage;
     });
 
     after(() => {
       storageMap.clear();
-      // @ts-ignore
-      delete globalThis.localStorage;
+      delete (globalThis as any).localStorage;
     });
 
     it('sanitizes raw items to include only public text/number fields and exclude private data', () => {
@@ -144,7 +142,6 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite', () => {
           category: 'weapon',
           description: '威力のある大型拳銃',
           weapon: { damage: '3d6', rof: 2, mag: 8, type: 'heavy_pistol' },
-          // プライベート・管理用フィールド（漏洩してはならない）
           user_id: 'secret-player-99',
           session_id: 'session-secret-123',
           image_file: '/images/user/secret-photo.jpg',
@@ -156,7 +153,6 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite', () => {
       assert.strictEqual(sanitized.length, 1);
       const item = sanitized[0];
 
-      // 保持されるべき公開テキスト・数値データ
       assert.strictEqual(item.id, 'item-101');
       assert.strictEqual(item.name_ja, 'ヘビー・ピストル');
       assert.strictEqual(item.price, 100);
@@ -164,15 +160,10 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite', () => {
       assert.strictEqual(item.stats?.damage, '3d6');
       assert.strictEqual(item.stats?.rof, 2);
 
-      // 除外されるべきプライベートデータ
-      // @ts-ignore
-      assert.strictEqual(item.user_id, undefined);
-      // @ts-ignore
-      assert.strictEqual(item.session_id, undefined);
-      // @ts-ignore
-      assert.strictEqual(item.image_file, undefined);
-      // @ts-ignore
-      assert.strictEqual(item.raw_db_dump, undefined);
+      assert.strictEqual((item as any).user_id, undefined);
+      assert.strictEqual((item as any).session_id, undefined);
+      assert.strictEqual((item as any).image_file, undefined);
+      assert.strictEqual((item as any).raw_db_dump, undefined);
     });
 
     it('safely saves and loads catalog snapshot with versioning', () => {
@@ -203,9 +194,9 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite', () => {
   });
 
   // --------------------------------------------------------------------------
-  // 3. Web App Manifest & Service Worker 監査
+  // 3. Web App Manifest & Service Worker 厳格静的ホワイトリスト監査
   // --------------------------------------------------------------------------
-  describe('C. Web App Manifest & Service Worker Static Audit', () => {
+  describe('C. Web App Manifest & Service Worker Static Allowlist Audit', () => {
     it('manifest.webmanifest contains valid PWA configuration and icons', () => {
       const manifestPath = path.resolve('apps/web/public/manifest.webmanifest');
       assert.ok(fs.existsSync(manifestPath), 'manifest.webmanifest must exist');
@@ -233,36 +224,83 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite', () => {
       assert.ok(fs.existsSync('apps/web/public/icon-512.png'), 'icon-512.png must exist');
     });
 
-    it('sw.js enforces security: never caches /api/* or user private data', () => {
+    it('sw.js enforces strict static allowlist and NEVER caches arbitrary or dynamic GET routes', () => {
       const swPath = path.resolve('apps/web/public/sw.js');
       assert.ok(fs.existsSync(swPath), 'sw.js must exist');
 
       const swContent = fs.readFileSync(swPath, 'utf-8');
 
-      // API キャッシュ禁止チェック
+      // 1. 静的許可ホワイトリストの存在チェック
+      assert.ok(swContent.includes('STATIC_ALLOWLIST'), 'Must define STATIC_ALLOWLIST');
+      assert.ok(swContent.includes('ASSET_PATH_REGEX'), 'Must define ASSET_PATH_REGEX');
+      assert.ok(swContent.includes('isStaticCacheable'), 'Must define isStaticCacheable check');
+
+      // 2. API は Network-Only (503 on offline)
       assert.ok(swContent.includes("url.pathname.startsWith('/api/')"));
       assert.ok(swContent.includes('status: 503'));
-      assert.ok(swContent.includes('オフラインのためAPIに接続できません'));
 
-      // ユーザー画像・非公開パス除外チェック
-      assert.ok(swContent.includes("url.pathname.startsWith('/images/user/')"));
+      // 3. SPA ナビゲーションの index.html フォールバック
+      assert.ok(swContent.includes("event.request.mode === 'navigate'"));
+      assert.ok(swContent.includes("caches.match('/index.html')"));
 
-      // 古いキャッシュパージ
-      assert.ok(swContent.includes('caches.delete(key)'));
+      // 4. ホワイトリスト外パスの cache.put 拒絶を正規表現＆ロジックで検証
+      const STATIC_ALLOWLIST = new Set([
+        '/',
+        '/index.html',
+        '/manifest.webmanifest',
+        '/icon.svg',
+        '/icon-192.png',
+        '/icon-512.png',
+        '/favicon.ico',
+      ]);
+      const ASSET_PATH_REGEX = /^\/assets\/[\w.-]+\.(js|css)$/;
+      const isAllowed = (p: string) => STATIC_ALLOWLIST.has(p) || ASSET_PATH_REGEX.test(p);
+
+      // 許可されるべきパス
+      assert.strictEqual(isAllowed('/'), true);
+      assert.strictEqual(isAllowed('/index.html'), true);
+      assert.strictEqual(isAllowed('/manifest.webmanifest'), true);
+      assert.strictEqual(isAllowed('/icon.svg'), true);
+      assert.strictEqual(isAllowed('/assets/index-CS2UVSh9.css'), true);
+      assert.strictEqual(isAllowed('/assets/index-sb9BT0tQ.js'), true);
+
+      // 拒絶されるべきプライベート・動的・未知のパス（200 OK でもキャッシュ不可）
+      assert.strictEqual(isAllowed('/images/user/secret-photo.jpg'), false, 'Private user images must NOT be cacheable');
+      assert.strictEqual(isAllowed('/data/cyberpgm.db'), false, 'DB files must NOT be cacheable');
+      assert.strictEqual(isAllowed('/data/backups/dump.sqlite'), false, 'DB dumps must NOT be cacheable');
+      assert.strictEqual(isAllowed('/api/characters'), false, 'API routes must NOT be cacheable');
+      assert.strictEqual(isAllowed('/player/secret-sheet'), false, 'Dynamic player routes must NOT be cacheable');
+      assert.strictEqual(isAllowed('/gm/combat'), false, 'GM routes must NOT be cacheable');
+      assert.strictEqual(isAllowed('/assets/malicious.exe'), false, 'Non-js/css assets must NOT be cacheable');
+      assert.strictEqual(isAllowed('/random/path'), false, 'Arbitrary paths must NOT be cacheable');
     });
   });
 
   // --------------------------------------------------------------------------
-  // 4. Google サイト埋め込み HTML 書き出し & sandbox iframe
+  // 4. Google サイト埋め込み HTML 書き出し & セキュリティ強化検査
   // --------------------------------------------------------------------------
-  describe('D. Google Sites Embed Export & Self-Contained Integrity', () => {
-    const testOptions: GoogleSitesExportOptions = {
+  describe('D. Google Sites Embed Export Security & Hardening', () => {
+    const validOptions: GoogleSitesExportOptions = {
       gmEmail: 'test-gm@example.com',
       creationMethodKey: 'complete_package',
       startingFunds: 2550,
       catalogItems: [
-        { id: '1', kind: 'weapon', name_ja: 'ヘビー・ピストル', price: 100, category: 'weapon' },
-        { id: '2', kind: 'armor', name_ja: 'ケブラー・ベスト', price: 100, category: 'armor' },
+        {
+          id: '1',
+          kind: 'weapon',
+          name_ja: 'ヘビー・ピストル',
+          price: 100,
+          category: 'weapon',
+          stats: { damage: '3d6', rof: 2, mag: 8, forbidden_internal_token: 'SECRET_123' },
+        },
+        {
+          id: '2',
+          kind: 'armor',
+          name_ja: 'ケブラー・ベスト',
+          price: 100,
+          category: 'armor',
+          stats: { sp: 7, penalty: 0, admin_note: 'PRIVATE' },
+        },
       ],
       skillNotes: {
         handgun: '拳銃で撃つ',
@@ -270,58 +308,124 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite', () => {
       },
     };
 
+    it('validates GM email and strictly rejects CRLF injection and invalid format', () => {
+      // 正常なメールアドレス
+      assert.strictEqual(validateAndSanitizeGmEmail('gm@example.com'), 'gm@example.com');
+      assert.strictEqual(validateAndSanitizeGmEmail('  user.name+tag@sub.domain.co.jp  '), 'user.name+tag@sub.domain.co.jp');
+
+      // CRLF ヘッダインジェクション攻撃
+      assert.throws(() => validateAndSanitizeGmEmail('gm@example.com\r\nBcc: victim@example.com'), /不正な制御文字/);
+      assert.throws(() => validateAndSanitizeGmEmail('gm@example.com\nSubject: Injected'), /不正な制御文字/);
+      assert.throws(() => validateAndSanitizeGmEmail('gm@example.com\x00admin'), /不正な制御文字/);
+
+      // 不正なメール形式
+      assert.throws(() => validateAndSanitizeGmEmail('invalid-email'), /形式が不正/);
+      assert.throws(() => validateAndSanitizeGmEmail(''), /指定されていません/);
+      assert.throws(() => validateAndSanitizeGmEmail('gm@'), /形式が不正/);
+    });
+
+    it('sanitizes public stats fields with strict whitelist and discards arbitrary objects', () => {
+      const raw = {
+        damage: '3d6',
+        rof: 2,
+        mag: 8,
+        weapon_type: 'heavy_pistol',
+        sp: 11,
+        penalty: 0,
+        install: 'clinic',
+        humanity_loss: 7,
+        // 許可外フィールド
+        secret_hash: 'abc123456',
+        internal_db_row: { table: 'items', id: 42 },
+        sql_query: 'SELECT * FROM players',
+      };
+
+      const sanitized = sanitizePublicStats(raw);
+      // 許可された公開フィールドのみ保持
+      assert.strictEqual(sanitized.damage, '3d6');
+      assert.strictEqual(sanitized.rof, 2);
+      assert.strictEqual(sanitized.mag, 8);
+      assert.strictEqual(sanitized.sp, 11);
+      assert.strictEqual(sanitized.install, 'clinic');
+      assert.strictEqual(sanitized.humanity_loss, 7);
+
+      // 許可外フィールドは排除
+      assert.strictEqual((sanitized as any).secret_hash, undefined);
+      assert.strictEqual((sanitized as any).internal_db_row, undefined);
+      assert.strictEqual((sanitized as any).sql_query, undefined);
+    });
+
     it('generates fully self-contained HTML without external CSS or scripts', () => {
-      const html = generateGoogleSitesEmbedHtml(testOptions);
+      const html = generateGoogleSitesEmbedHtml(validOptions);
 
-      // 外部スクリプトの src 読み込みがないこと
+      // 外部リソース・通信の非存在
       assert.strictEqual(/<script\s+[^>]*src=/i.test(html), false, 'Must not contain external <script src>');
-
-      // 外部スタイルシートの link がないこと
       assert.strictEqual(/<link\s+[^>]*rel=["']stylesheet["']/i.test(html), false, 'Must not contain external stylesheet link');
-
-      // 外部 URL (http:// または https://) へのスクリプト通信参照がないこと
       assert.strictEqual(/fetch\(["']https?:\/\//i.test(html), false, 'Must not fetch external HTTP URLs');
       assert.strictEqual(/XMLHttpRequest/i.test(html), false, 'Must not use XMLHttpRequest');
       assert.strictEqual(/WebSocket/i.test(html), false, 'Must not use WebSocket');
     });
 
-    it('includes required configuration and public catalog while excluding forbidden private data', () => {
-      const html = generateGoogleSitesEmbedHtml(testOptions);
+    it('uses safe DOM textContent and event binding, avoiding innerHTML interpolation and inline handlers', () => {
+      const html = generateGoogleSitesEmbedHtml(validOptions);
 
-      // 含まれるべきデータ
-      assert.ok(html.includes('test-gm@example.com'));
-      assert.ok(html.includes('ヘビー・ピストル'));
-      assert.ok(html.includes('2550'));
-      assert.ok(html.includes('拳銃で撃つ'));
+      // innerHTML による補間がないこと（DOM textContent / append の使用）
+      assert.strictEqual(html.includes('.innerHTML ='), false, 'Must NOT use innerHTML interpolation');
 
-      // 禁止データの排除（DB, 内部トークン等）
-      assert.strictEqual(html.includes('cyberpgm.db'), false);
-      assert.strictEqual(html.includes('secret-player'), false);
+      // 文字列補間によるインラインハンドラ (onclick="addToCart('...')") がないこと
+      assert.strictEqual(html.includes('onclick="addToCart'), false, 'Must NOT use inline onclick handler for addToCart');
+      assert.strictEqual(html.includes('onclick="adjustSkill'), false, 'Must NOT use inline onclick handler for adjustSkill');
+      assert.strictEqual(html.includes('onclick="adjustStat'), false, 'Must NOT use inline onclick handler for adjustStat');
+
+      // mailto URL が encodeURIComponent されていること
+      assert.ok(html.includes("mailto:' + encodeURIComponent(CONFIG.gmEmail)"));
     });
 
-    it('contains all necessary workflow actions: file save, Web Share, mailto, text code', () => {
-      const html = generateGoogleSitesEmbedHtml(testOptions);
+    it('safely neutralizes malicious XSS payloads in catalog names, descriptions, and skill notes', () => {
+      const maliciousOptions: GoogleSitesExportOptions = {
+        gmEmail: 'clean-gm@example.com',
+        creationMethodKey: 'complete_package',
+        startingFunds: 2550,
+        catalogItems: [
+          {
+            id: 'xss-item-1',
+            kind: 'weapon',
+            name_ja: '<script>alert("xss-name")</script>',
+            name_en: '"><img src=x onerror=alert(1)>',
+            price: 100,
+            category: 'weapon" onclick="alert(2)"',
+            description: '<svg onload=alert("xss-desc")>',
+          },
+        ],
+        skillNotes: {
+          handgun: '</script><script>alert("injected-script")</script>',
+        },
+      };
 
-      assert.ok(html.includes('downloadCpgmFile'), 'Must have file download handler');
-      assert.ok(html.includes('handleWebShare'), 'Must have Web Share API handler');
-      assert.ok(html.includes('navigator.canShare'), 'Must test Web Share capability');
-      assert.ok(html.includes('mailto:'), 'Must configure mailto link');
-      assert.ok(html.includes('CPGM1:'), 'Must generate CPGM1 checksummed text code');
-      assert.ok(html.includes('copyCharacterCode'), 'Must support copying character code');
+      const html = generateGoogleSitesEmbedHtml(maliciousOptions);
+
+      // 1. スクリプトタグブレイクアウトの防止 (<script> が閉じられていないこと)
+      // JSON 内の <, >, & は \\u003c, \\u003e, \\u0026 にエスケープされるため </script> にならない
+      assert.strictEqual(html.includes('</script><script>alert("injected-script")</script>'), false);
+      assert.ok(html.includes('\\u003c/script\\u003e\\u003cscript\\u003e'));
+
+      // 2. インライン属性 XSS の防止
+      assert.strictEqual(html.includes('onclick="alert(2)"'), false);
+
+      // 3. 有効な HTML 構造とサイズ
+      assert.ok(html.startsWith('<!DOCTYPE html>'));
+      assert.ok(html.endsWith('</html>'));
     });
 
     it('produces reasonable file size for Google Sites embedding', () => {
-      const html = generateGoogleSitesEmbedHtml(testOptions);
+      const html = generateGoogleSitesEmbedHtml(validOptions);
       const byteLength = Buffer.byteLength(html, 'utf-8');
-      // 文字情報とインライン UI で通常 20KB〜100KB 程度
       assert.ok(byteLength < 500 * 1024, `Embed HTML size (${byteLength} bytes) should be well within limits (< 500KB)`);
       assert.ok(byteLength > 5 * 1024, 'Embed HTML must contain complete markup and logic');
     });
 
-    it('can be embedded in sandbox iframe specifications without syntax errors', () => {
-      const html = generateGoogleSitesEmbedHtml(testOptions);
-
-      // Google サイトが iframe sandbox に適用する標準的な属性
+    it('can be safely embedded in sandbox iframe specification', () => {
+      const html = generateGoogleSitesEmbedHtml(validOptions);
       const sandboxAttributes = 'allow-scripts allow-forms allow-downloads allow-popups';
       const iframeWrapper = `<iframe sandbox="${sandboxAttributes}" srcdoc="${html.replace(/"/g, '&quot;')}"></iframe>`;
 
