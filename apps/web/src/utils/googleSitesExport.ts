@@ -539,9 +539,13 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
     </div>
   </div>
 
+  <!-- 設定データブロック (application/json によりスクリプト実行・脱出・シングルクォート破壊を物理的に防止) -->
+  <script id="cyberpgm-config-data" type="application/json">${serializedConfig}</script>
+
   <script>
-    // 埋め込みデータ (XSS 防止のため文字列・数値・オブジェクトは安全にパース)
-    const CONFIG = JSON.parse('${serializedConfig}');
+    // 埋め込みデータ (JSON データブロックから安全にパース)
+    const configDataEl = document.getElementById('cyberpgm-config-data');
+    const CONFIG = JSON.parse(configDataEl ? configDataEl.textContent || '{}' : '{}');
     const STORAGE_KEY = 'cpgm_embed_draft_v1';
 
     // ドラフトステート
@@ -1015,8 +1019,8 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       const code = document.getElementById('output-code')?.value || '';
       const body = 'GM 様\\n\\nCyberPGM にてキャラクターを作成しました。\\nハンドル名: ' + draft.name.trim() + '\\nロール: ' + draft.role + '\\n\\n【キャラクターコード】\\n' + code + '\\n\\n※CyberPGM の「キャラ受付」画面で「コードから取り込む」を開き、上記のコードを貼り付けてください。\\n（または添付の .cpgm ファイルを取り込んでください）';
 
-      // GM メールアドレスおよびパラメータの完全 URL エンコード
-      mailtoBtn.href = 'mailto:' + encodeURIComponent(CONFIG.gmEmail) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+      // RFC 6068 addr-spec に従い検証済み GM メールアドレスは生の @ セパレータのまま保持し、クエリパラメータ (subject, body) のみ URL エンコード
+      mailtoBtn.href = 'mailto:' + CONFIG.gmEmail + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
     }
 
     function downloadCpgmFile() {

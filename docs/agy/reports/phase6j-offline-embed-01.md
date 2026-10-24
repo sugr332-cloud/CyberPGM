@@ -127,7 +127,7 @@ npx tsx --test packages/shared/test/characterCode.test.ts test/phase6j-focused.t
   ✔ detects tampering or corruption in the payload
   ✔ detects invalid prefix or format
   ✔ warns when code exceeds mailto limit without truncating data
-✔ characterCode serialization and recovery (5.7812ms)
+✔ characterCode serialization and recovery (4.4392ms)
 
 ▶ Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardened)
   ▶ A. Text Code & Checksum & Tamper Detection
@@ -137,34 +137,35 @@ npx tsx --test packages/shared/test/characterCode.test.ts test/phase6j-focused.t
     ✔ successfully restores draft from valid character code
     ✔ detects tampering or corruption and refuses import
     ✔ warns when data exceeds mailto safe limit without silently truncating
-  ✔ A. Text Code & Checksum & Tamper Detection (4.8712ms)
+  ✔ A. Text Code & Checksum & Tamper Detection (6.6418ms)
   ▶ B. Offline Catalog & No-Private-Cache Security
     ✔ sanitizes raw items to include only public text/number fields and exclude private data
     ✔ safely saves and loads catalog snapshot with versioning
     ✔ discards corrupted snapshot safely without throwing
-  ✔ B. Offline Catalog & No-Private-Cache Security (3.5878ms)
+  ✔ B. Offline Catalog & No-Private-Cache Security (2.4886ms)
   ▶ C. Web App Manifest & Service Worker Static Allowlist Audit
     ✔ manifest.webmanifest contains valid PWA configuration and icons
     ✔ icons exist in public directory
-    ✔ sw.js enforces strict static allowlist and NEVER caches arbitrary or dynamic GET routes
-  ✔ C. Web App Manifest & Service Worker Static Allowlist Audit (1.2229ms)
+    ✔ sw.js enforces strict static allowlist and NEVER caches arbitrary, query-parameterized, cross-origin, or dynamic GET routes
+  ✔ C. Web App Manifest & Service Worker Static Allowlist Audit (1.2081ms)
   ▶ D. Google Sites Embed Export Security & Hardening
     ✔ validates GM email and strictly rejects CRLF injection and invalid format
     ✔ sanitizes public stats fields with strict whitelist and discards arbitrary objects
     ✔ generates fully self-contained HTML without external CSS or scripts
     ✔ uses safe DOM textContent and event binding, avoiding innerHTML interpolation and inline handlers
     ✔ safely neutralizes malicious XSS payloads in catalog names, descriptions, and skill notes
+    ✔ safely handles malicious apostrophe payloads in JSON data block without syntax errors or escaping
     ✔ produces reasonable file size for Google Sites embedding
     ✔ can be safely embedded in sandbox iframe specification
-  ✔ D. Google Sites Embed Export Security & Hardening (3.4861ms)
-✔ Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardened) (13.5367ms)
-ℹ tests 26
+  ✔ D. Google Sites Embed Export Security & Hardening (2.4837ms)
+✔ Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardened) (13.5021ms)
+ℹ tests 27
 ℹ suites 6
-ℹ pass 26
+ℹ pass 27
 ℹ fail 0
 （終了コード: 0）
 ```
-- テキストコード、破損検出、PWA manifest / sw 厳格静的許可リスト検証、非公開データ除外、単一 HTML 生成、XSS / インジェクション防御、iframe sandbox 適合性など計 26 件のテストがすべて合格。
+- テキストコード、破損検出、PWA manifest / sw 厳格静的許可リスト検証（同一オリジン・クエリ禁止・ハッシュ付きアセット）、非公開データ除外、単一 HTML 生成、XSS / アポストロフィ脱出防御、RFC 6068 mailto 準拠、iframe sandbox 適合性など計 27 件のテストがすべて合格。
 
 ---
 
@@ -221,30 +222,41 @@ Playwright（実機 Chrome 利用）を用いてポート 8791 にて撮影を�
 | `apps/web/src/utils/googleSitesExport.ts` | **新規**: Google サイト埋め込み用 完全自己完結 単一 HTML 書き出しジェネレータ。 |
 | `apps/web/src/components/GoogleSitesExportModal.tsx` | **新規**: GM 画面からの Google サイト用 HTML 書き出し設定モーダル。 |
 | `apps/web/src/components/CharacterReceptionView.tsx` | 「コードから取り込む」機能・モーダル、および「Google サイト用 HTML 書き出し」ボタンの接続。 |
-| `test/phase6j-focused.test.ts` | **新規**: Phase 6j 総合検証テストスイート（テキストコード、オフラインカタログ、PWA manifest/sw 厳格静的ホワイトリスト、自己完結 HTML、XSS 防御、sandbox iframe 検査、19 tests）。 |
+| `test/phase6j-focused.test.ts` | **新規**: Phase 6j 総合検証テストスイート（テキストコード、オフラインカタログ、PWA manifest/sw 厳格静的ホワイトリスト（同一オリジン・クエリ禁止・ハッシュ付き判定）、自己完結 HTML、XSS/アポストロフィ防御、RFC 6068 mailto、sandbox iframe 検査、20 tests）。 |
 | `tools/capture-phase6j-screenshots.ts` | **新規**: 実機 Chrome を利用した 1440px / 390px スクリーンショット撮影ツール。 |
 
 ---
 
 ## 7. Codex セキュリティ監査対応（PR 前是正）
 
-Codex 監査から指摘された 2 件のセキュリティ課題に対して、以下の是正を実施しました。
+Codex 監査から指摘されたセキュリティ課題に対して、以下の通り二段階の是正を実施しました。
 
-### 指摘 1: Service Worker のキャッシュ対象制限（動的・プライベートルートの CacheStorage 挿入防止）
-- **指摘内容**: `apps/web/public/sw.js` が一部のパス除外のみで同一オリジンの 200 GET を任意にキャッシュしていたため、厳格な静的許可リストへの限定が必要。
-- **改修内容**:
-  - `STATIC_ALLOWLIST`（完全一致: `/`, `/index.html`, `/manifest.webmanifest`, `/icon.svg`, `/icon-192.png`, `/icon-512.png`, `/favicon.ico`）および `ASSET_PATH_REGEX`（ビルドハッシュ付き `/assets/*.js|css`）を定義。
-  - `isStaticCacheable(pathname)` 関数により判定し、上記ホワイトリストに合致しないリクエストはステータス 200 であっても CacheStorage に絶対に書き込まないよう制限。
-  - `/api/*` は Network-Only（オフライン時 503 返却）。
-  - SPA ナビゲーションリクエスト（`request.mode === 'navigate'`）のみ、ネットワーク不通時にキャッシュ済み `/index.html` にフォールバック。
-  - `test/phase6j-focused.test.ts` にて、動的・プライベート風のルート（`/images/user/*`, `/data/*`, `/player/*` 等）がキャッシュ対象外と判定されること、および静的アセットのみがキャッシュ許可されることを検証するテストを追加。
+### 第1次指摘および対応
+1. **Service Worker のキャッシュ対象制限**:
+   - `apps/web/public/sw.js` において、`STATIC_ALLOWLIST` および `ASSET_PATH_REGEX` を定義。動的・プライベートデータ（`/images/user/*`, `/data/*`, `/player/*` 等）は 200 であっても CacheStorage に絶対に書き込まないよう制限。
+   - `/api/*` は Network-Only（オフライン時 503 返却）。
+   - SPA ナビゲーションリクエスト（`request.mode === 'navigate'`）のみキャッシュ済み `/index.html` にフォールバック。
+2. **Google サイト埋め込み HTML 生成時の XSS 硬化**:
+   - `apps/web/src/utils/googleSitesExport.ts` において `innerHTML` 展開およびインラインハンドラ（`onclick="..."`）を全廃し、`document.createElement` + `textContent` + `addEventListener` に統一。
+   - `stats` のホワイトリストサニタイズ（`damage`, `rof`, `mag`, `weapon_type`, `sp`, `penalty`, `install`, `humanity_loss` のみ保持）。
+   - GM メールアドレスの制御文字・CRLF 排除バリデーション。
 
-### 指摘 2: Google サイト埋め込み HTML 生成時の XSS 硬化・データサニタイズ
-- **指摘内容**: `apps/web/src/utils/googleSitesExport.ts` がカタログ名やスキルノートを `innerHTML` に展開しており、外部入力・カタログデータ・GM 提供データを安全に取り扱う必要があった。
-- **改修内容**:
-  - `innerHTML` 文字列展開およびインラインハンドラ（`onclick="..."`）を全廃。
-  - DOM 構築処理を `document.createElement` + `textContent` + `addEventListener` に統一し、スクリプト実行や属性インジェクションを物理的に無害化。
-  - 埋め込み JSON 文字列中の `<`, `>`, `&` を `\u003c`, `\u003e`, `\u0026` にエスケープし、`</script>` によるスクリプト脱出を防止。
-  - `stats` オブジェクトを安全な公開フィールド（`damage`, `rof`, `mag`, `weapon_type`, `sp`, `penalty`, `install`, `humanity_loss`）のみに絞り込むホワイトリストサニタイズ関数を導入。
-  - GM メールアドレスに対して CRLF・制御文字混入チェックと正規表現バリデーションを実施し、`mailto:` URL 生成時に `encodeURIComponent` を適用。
-  - `test/phase6j-focused.test.ts` にて、`<script>`, `"><img onerror=...>`, `onclick` 等を含む悪意ある入力が安全に無害化されること、および不正な GM メールアドレスが正しく弾かれることを検証するテストを追加。
+### 第2次指摘および対応（追加是正）
+1. **JSON 埋め込み時のアポストロフィ脱出防止と構文妥当性の担保**:
+   - **指摘内容**: `CONFIG = JSON.parse('...')` のようにシングルクォートで JSON 文字列を囲んでいたため、品名やスキルノートにアポストロフィ（`'`）が含まれると JS 文字列が壊れて構文エラーやスクリプト脱出の原因になり得た。
+   - **改修内容**:
+     - 設定データを `<script id="cyberpgm-config-data" type="application/json">` のデータブロックとして埋め込み、JS 側から `JSON.parse(document.getElementById('cyberpgm-config-data').textContent)` で取得する方式に移行。
+     - `<` は `\u003c` にエスケープされているため `</script>` による早期脱出は物理的に不可能となり、アポストロフィがどれだけ含まれていても JS 文字列リテラル構文と干渉しない構造を実現。
+     - `test/phase6j-focused.test.ts` にて、品名・カテゴリ・スキルノートにアポストロフィやインジェクション文字列を含む回帰テストを追加し、Node.js `vm.Script` による構文パースでインラインスクリプトが構文エラーなく正常（syntactically valid & inert）であることを検証。
+2. **Service Worker の同一オリジン・クエリ排除・真正ハッシュ判定の強化**:
+   - **指摘内容**: `sw.js` が pathname のみをチェックしていたため、`/index.html?token=...` や `/assets/file.js?user=...` のようにクエリが付与されたパーソナライズレスポンスが誤ってキャッシュされるリスク、およびクロスオリジンや任意 JS/CSS のキャッシュリスクが存在した。
+   - **改修内容**:
+     - `isStaticCacheable(url)` において `url.origin === self.location.origin` の同一オリジン判定を必須化。
+     - `url.search === ''`（クエリ文字列が完全に空であること）を必須化。
+     - アセット正規表現を `/^\/assets\/[a-zA-Z0-9_.-]+-[a-zA-Z0-9_-]{8,}\.(js|css)$/` に強化し、Vite のハッシュ付き（8文字以上のハッシュ付き）アセットのみ許可。ハッシュのない任意アセットはキャッシュ拒絶。
+     - `test/phase6j-focused.test.ts` にクエリパラメータ付き URL、クロスオリジン URL、ハッシュなしアセットが CacheStorage 対象外となるテストケースを追加。
+3. **RFC 6068 mailto addr-spec 準拠**:
+   - **指摘内容**: GM メールアドレス全体を `encodeURIComponent` していたため、アドレス内の `@` が `%40` に変換され一部のクライアントで問題となる可能性があった。
+   - **改修内容**:
+     - RFC 6068 に準拠し、事前バリデーション済みの GM メールアドレスは生の `@` セパレータのまま `mailto:` の直後に配置し、クエリパラメータ（`subject`, `body`）の値のみを `encodeURIComponent` するよう修正。
+     - テストにて `mailto:test-gm@example.com?subject=...` となり `%40` が含まれないことを検証。

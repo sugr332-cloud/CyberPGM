@@ -2,11 +2,12 @@
 // CyberPGM Service Worker (Phase 6j PWA - Hardened Security)
 // セキュリティ方針:
 // - 厳格な静的許可リスト（シェル文書、マニフェスト、アイコン、ハッシュ付き/assets/*.js|css）のみキャッシュ。
-// - 任意の same-origin パスやレスポンスは 200 であっても絶対にキャッシュしない。
+// - 同一オリジン (url.origin === self.location.origin) かつクエリパラメータなし (url.search === '') のみ許可。
+// - 任意の same-origin パス、クエリ付きリクエスト、クロスオリジン、動的レスポンスは 200 であっても絶対にキャッシュしない。
 // - /api/* は Network-Only。オフライン時は即座に 503 Service Unavailable を返却。
 // - SPA ナビゲーションはオフライン時にキャッシュ済み /index.html にフォールバック。
 
-const CACHE_NAME = 'cyberpgm-shell-v2';
+const CACHE_NAME = 'cyberpgm-shell-v3';
 
 // 1. 厳格な完全一致静的ファイル許可リスト
 const STATIC_ALLOWLIST = new Set([
@@ -19,15 +20,25 @@ const STATIC_ALLOWLIST = new Set([
   '/favicon.ico',
 ]);
 
-// 2. ビルドハッシュ付きアセットの正規表現 (/assets/*.js, /assets/*.css)
-const ASSET_PATH_REGEX = /^\/assets\/[\w.-]+\.(js|css)$/;
+// 2. Vite などの真正なビルドハッシュ付き静的アセット (/assets/[name]-[hash8+].[js|css])
+// 例: /assets/index-BCSy4_yR.js, /assets/index-CS2UVSh9.css
+const ASSET_PATH_REGEX = /^\/assets\/[a-zA-Z0-9_.-]+-[a-zA-Z0-9_-]{8,}\.(js|css)$/;
 
 /**
- * リクエストパスが静的キャッシュ対象かを厳格に判定するホワイトリスト検査
+ * リクエスト URL が静的キャッシュ対象かを厳格に判定するホワイトリスト検査
+ * - 同一オリジンであること
+ * - クエリパラメータがないこと (url.search === '')
+ * - 静的許可リストまたは真正なハッシュ付きアセットであること
  */
-function isStaticCacheable(pathname) {
-  if (STATIC_ALLOWLIST.has(pathname)) return true;
-  if (ASSET_PATH_REGEX.test(pathname)) return true;
+function isStaticCacheable(url) {
+  // 1. 同一オリジン検査
+  if (url.origin !== self.location.origin) return false;
+  // 2. クエリパラメータ禁止（パーソナライズ/動的レスポンスのキャッシュ防止）
+  if (url.search !== '') return false;
+  // 3. 静的許可リスト完全一致
+  if (STATIC_ALLOWLIST.has(url.pathname)) return true;
+  // 4. 真正なハッシュ付きアセット正規表現一致
+  if (ASSET_PATH_REGEX.test(url.pathname)) return true;
   return false;
 }
 
@@ -103,7 +114,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // 4. 静的ホワイトリストに合致するリソースのみキャッシュ対象 (Network-First)
-  if (isStaticCacheable(url.pathname)) {
+  if (isStaticCacheable(url)) {
     event.respondWith(
       fetch(event.request)
         .then((networkResponse) => {

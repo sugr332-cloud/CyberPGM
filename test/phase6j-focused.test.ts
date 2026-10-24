@@ -2,6 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as vm from 'node:vm';
 
 // Shared modules
 import {
@@ -224,16 +225,18 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardene
       assert.ok(fs.existsSync('apps/web/public/icon-512.png'), 'icon-512.png must exist');
     });
 
-    it('sw.js enforces strict static allowlist and NEVER caches arbitrary or dynamic GET routes', () => {
+    it('sw.js enforces strict static allowlist and NEVER caches arbitrary, query-parameterized, cross-origin, or dynamic GET routes', () => {
       const swPath = path.resolve('apps/web/public/sw.js');
       assert.ok(fs.existsSync(swPath), 'sw.js must exist');
 
       const swContent = fs.readFileSync(swPath, 'utf-8');
 
-      // 1. 静的許可ホワイトリストの存在チェック
+      // 1. 静的許可ホワイトリストおよび厳格検査の存在チェック
       assert.ok(swContent.includes('STATIC_ALLOWLIST'), 'Must define STATIC_ALLOWLIST');
       assert.ok(swContent.includes('ASSET_PATH_REGEX'), 'Must define ASSET_PATH_REGEX');
       assert.ok(swContent.includes('isStaticCacheable'), 'Must define isStaticCacheable check');
+      assert.ok(swContent.includes('url.origin !== self.location.origin'), 'Must enforce same-origin check');
+      assert.ok(swContent.includes("url.search !== ''"), 'Must reject query-parameterized URLs');
 
       // 2. API は Network-Only (503 on offline)
       assert.ok(swContent.includes("url.pathname.startsWith('/api/')"));
@@ -243,7 +246,7 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardene
       assert.ok(swContent.includes("event.request.mode === 'navigate'"));
       assert.ok(swContent.includes("caches.match('/index.html')"));
 
-      // 4. ホワイトリスト外パスの cache.put 拒絶を正規表現＆ロジックで検証
+      // 4. ホワイトリスト外パス・クエリ・クロスオリジンの拒絶を正規表現＆ロジックで検証
       const STATIC_ALLOWLIST = new Set([
         '/',
         '/index.html',
@@ -253,26 +256,51 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardene
         '/icon-512.png',
         '/favicon.ico',
       ]);
-      const ASSET_PATH_REGEX = /^\/assets\/[\w.-]+\.(js|css)$/;
-      const isAllowed = (p: string) => STATIC_ALLOWLIST.has(p) || ASSET_PATH_REGEX.test(p);
+      const ASSET_PATH_REGEX = /^\/assets\/[a-zA-Z0-9_.-]+-[a-zA-Z0-9_-]{8,}\.(js|css)$/;
 
-      // 許可されるべきパス
-      assert.strictEqual(isAllowed('/'), true);
-      assert.strictEqual(isAllowed('/index.html'), true);
-      assert.strictEqual(isAllowed('/manifest.webmanifest'), true);
-      assert.strictEqual(isAllowed('/icon.svg'), true);
-      assert.strictEqual(isAllowed('/assets/index-CS2UVSh9.css'), true);
-      assert.strictEqual(isAllowed('/assets/index-sb9BT0tQ.js'), true);
+      const baseOrigin = 'http://localhost:8791';
+      const isAllowedUrl = (urlStr: string) => {
+        const u = new URL(urlStr);
+        if (u.origin !== baseOrigin) return false;
+        if (u.search !== '') return false;
+        if (STATIC_ALLOWLIST.has(u.pathname)) return true;
+        if (ASSET_PATH_REGEX.test(u.pathname)) return true;
+        return false;
+      };
+
+      // 許可されるべき純粋な静的パス（クエリなし、同一オリジン、真正なビルドハッシュ付き）
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/'), true);
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/index.html'), true);
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/manifest.webmanifest'), true);
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/icon.svg'), true);
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/icon-192.png'), true);
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/icon-512.png'), true);
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/favicon.ico'), true);
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/assets/index-CS2UVSh9.css'), true);
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/assets/index-BCSy4_yR.js'), true);
+
+      // クエリパラメータ付き URL はパーソナライズ/動的レスポンスの危険があるため絶対に拒絶
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/index.html?token=secret123'), false, 'Query in index.html must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/assets/index-BCSy4_yR.js?user=456'), false, 'Query in assets must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/?v=2'), false, 'Query in root must NOT be cacheable');
+
+      // クロスオリジン URL は絶対に拒絶
+      assert.strictEqual(isAllowedUrl('https://external-cdn.com/assets/index-BCSy4_yR.js'), false, 'Cross-origin asset must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('https://attacker.com/index.html'), false, 'Cross-origin HTML must NOT be cacheable');
+
+      // ハッシュのないアセット（任意 JS/CSS）は拒絶（genuinely hashed asset filename のみ許可）
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/assets/file.js'), false, 'Unhashed JS must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/assets/app.css'), false, 'Unhashed CSS must NOT be cacheable');
 
       // 拒絶されるべきプライベート・動的・未知のパス（200 OK でもキャッシュ不可）
-      assert.strictEqual(isAllowed('/images/user/secret-photo.jpg'), false, 'Private user images must NOT be cacheable');
-      assert.strictEqual(isAllowed('/data/cyberpgm.db'), false, 'DB files must NOT be cacheable');
-      assert.strictEqual(isAllowed('/data/backups/dump.sqlite'), false, 'DB dumps must NOT be cacheable');
-      assert.strictEqual(isAllowed('/api/characters'), false, 'API routes must NOT be cacheable');
-      assert.strictEqual(isAllowed('/player/secret-sheet'), false, 'Dynamic player routes must NOT be cacheable');
-      assert.strictEqual(isAllowed('/gm/combat'), false, 'GM routes must NOT be cacheable');
-      assert.strictEqual(isAllowed('/assets/malicious.exe'), false, 'Non-js/css assets must NOT be cacheable');
-      assert.strictEqual(isAllowed('/random/path'), false, 'Arbitrary paths must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/images/user/secret-photo.jpg'), false, 'Private user images must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/data/cyberpgm.db'), false, 'DB files must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/data/backups/dump.sqlite'), false, 'DB dumps must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/api/characters'), false, 'API routes must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/player/secret-sheet'), false, 'Dynamic player routes must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/gm/combat'), false, 'GM routes must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/assets/malicious.exe'), false, 'Non-js/css assets must NOT be cacheable');
+      assert.strictEqual(isAllowedUrl('http://localhost:8791/random/path'), false, 'Arbitrary paths must NOT be cacheable');
     });
   });
 
@@ -377,8 +405,9 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardene
       assert.strictEqual(html.includes('onclick="adjustSkill'), false, 'Must NOT use inline onclick handler for adjustSkill');
       assert.strictEqual(html.includes('onclick="adjustStat'), false, 'Must NOT use inline onclick handler for adjustStat');
 
-      // mailto URL が encodeURIComponent されていること
-      assert.ok(html.includes("mailto:' + encodeURIComponent(CONFIG.gmEmail)"));
+      // mailto URL: RFC 6068 addr-spec に従い GM メールアドレスの @ を生で保持し、クエリフィールド値のみ encodeURIComponent されること
+      assert.ok(html.includes("mailto:' + CONFIG.gmEmail + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body)"), 'Must keep raw GM email and encode query values only');
+      assert.strictEqual(html.includes("encodeURIComponent(CONFIG.gmEmail)"), false, 'Must NOT percent-encode GM email address into %40');
     });
 
     it('safely neutralizes malicious XSS payloads in catalog names, descriptions, and skill notes', () => {
@@ -415,6 +444,49 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardene
       // 3. 有効な HTML 構造とサイズ
       assert.ok(html.startsWith('<!DOCTYPE html>'));
       assert.ok(html.endsWith('</html>'));
+    });
+
+    it('safely handles malicious apostrophe payloads in JSON data block without syntax errors or escaping', () => {
+      const apostropheOptions: GoogleSitesExportOptions = {
+        gmEmail: 'test-gm@example.com',
+        creationMethodKey: 'complete_package',
+        startingFunds: 2550,
+        catalogItems: [
+          {
+            id: 'apo-item-1',
+            kind: 'weapon',
+            name_ja: "O'Connor's Heavy Pistol '; alert('xss'); //",
+            name_en: "Devil's 'Arm' \"quotes\"",
+            price: 100,
+            category: "Rockerboy's Gear ' OR '1'='1",
+            description: "Can't touch this; it's protected by JSON data block.",
+          },
+        ],
+        skillNotes: {
+          handgun: "Don't fire without aiming; it's risky.",
+        },
+      };
+
+      const html = generateGoogleSitesEmbedHtml(apostropheOptions);
+
+      // 1. application/json データブロックに格納されていること
+      assert.ok(html.includes('<script id="cyberpgm-config-data" type="application/json">'));
+      assert.ok(html.includes("O'Connor's Heavy Pistol"));
+
+      // 2. JSON.parse('...') のシングルクォート展開が行われていないこと
+      assert.strictEqual(html.includes("const CONFIG = JSON.parse('"), false, 'Must not use single-quoted JSON.parse');
+
+      // 3. 実行用インライン <script> を抽出し、構文エラー (SyntaxError) なくパース可能（syntactically valid）であることを検証
+      const scriptMatch = html.match(/<script>(?!id=[\s\S]*?)[\s\S]*?<\/script>/g);
+      assert.ok(scriptMatch && scriptMatch.length > 0, 'Must have inline script block');
+
+      for (const tag of scriptMatch) {
+        const jsCode = tag.replace(/^<script>/, '').replace(/<\/script>$/, '');
+        // vm.Script により構文チェックを実行
+        assert.doesNotThrow(() => {
+          new vm.Script(jsCode);
+        }, `Inline script must be syntactically valid despite apostrophes in catalog`);
+      }
     });
 
     it('produces reasonable file size for Google Sites embedding', () => {
