@@ -223,7 +223,7 @@ Playwright（実機 Chrome 利用）を用いてポート 8791 にて撮影を�
 | `apps/web/src/utils/googleSitesExport.ts` | **新規**: Google サイト埋め込み用 完全自己完結 単一 HTML 書き出しジェネレータ。 |
 | `apps/web/src/components/GoogleSitesExportModal.tsx` | **新規**: GM 画面からの Google サイト用 HTML 書き出し設定モーダル。 |
 | `apps/web/src/components/CharacterReceptionView.tsx` | 「コードから取り込む」機能・モーダル、および「Google サイト用 HTML 書き出し」ボタンの接続。 |
-| `test/phase6j-focused.test.ts` | **新規**: Phase 6j 総合検証テストスイート（テキストコード、オフラインカタログ、PWA manifest/sw 厳格静的ホワイトリスト（同一オリジン・クエリ禁止・ハッシュ付き判定）、自己完結 HTML、XSS/アポストロフィ防御、RFC 6068 §2 mailto addr-spec、sandbox iframe 検査、21 tests）。 |
+| `test/phase6j-focused.test.ts` | **新規**: Phase 6j 総合検証テストスイート（テキストコード、オフラインカタログ、PWA manifest/sw 厳格静的ホワイトリスト（同一オリジン・クエリ禁止・ハッシュ付き判定）、自己完結 HTML、XSS/アポストロフィ防御、RFC 6068 §2 mailto addr-spec、sandbox iframe 検査、28 tests）。 |
 | `tools/capture-phase6j-screenshots.ts` | **新規**: 実機 Chrome を利用した 1440px / 390px スクリーンショット撮影ツール。 |
 
 ---
