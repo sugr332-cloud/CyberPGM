@@ -2,14 +2,14 @@
 
 - 日時: 2026-10-24
 - 使用モデル: Gemini 3.8 Flash (High)
-- 状態: 完了
+- 状態: 完了（Codex 監査指摘事項の改修・検証完了）
 - 停止した理由: 完了
 
 ---
 
 ## 1. 実施概要
 
-CyberPGM Issue #36（DBの全エンティティのCSV/JSON入出力、確認状態の一括変更、未確認品の一覧）の実装を完了しました。
+CyberPGM Issue #36（DBの全エンティティのCSV/JSON入出力、確認状態の一括変更、未確認品の一覧）の実装、および Codex 監査に基づく非破壊 Upsert / 厳格バリデーションへの修正を完了しました。
 `docs/SPEC.md` §5.4・§10、既存スキーマおよびアーキテクチャに準拠し、以下の機能を設計・実装・テストしました。
 
 ### A. DB 全エンティティ（40テーブル）の CSV / JSON 入出力
@@ -22,12 +22,18 @@ CyberPGM Issue #36（DBの全エンティティのCSV/JSON入出力、確認状�
   - `POST /api/db/import-all`: 全エンティティを一括インポート。
 - **入力検証・整合性・アトミック性の担保**:
   - `PRAGMA table_info` および `PRAGMA foreign_key_list` を活用したスキーマ同期型バリデーション。
-  - **形式検証**: RFC 4180 CSV（引用符エスケープ・改行対応）および JSON 構造をパース検証。
+  - **形式・オブジェクト検証**: RFC 4180 CSV（引用符エスケープ・改行対応）および JSON 構造をパース検証。非オブジェクト行（配列やプリミティブ）は 400 で即時拒否。
+  - **未知のカラム拒否**: テーブル定義に存在しないカラムが含まれている場合は無視せず HTTP 400 で拒否し、行番号とカラム名を特定。
   - **必須項目検証**: `notnull === 1` かつデフォルト値なしのカラムの欠損・空文字を検出し、行番号とカラム名を特定して拒否。
   - **型検証**: `INTEGER`, `REAL` 等の数値カラムへの不正値入力を検出。
   - **参照整合性検証**: 外部キー（Foreign Key）参照先のテーブル・列に対応するレコードが存在するか検証。ダングリングポインタを防止。
   - **アトミック性（部分更新の完全防止）**: 検証エラーが1件でもあればインポートを即座に中断し、エラー一覧を返却。書き込みは `sqlite.transaction` 内でアトミックに実行され、例外時は自動ロールバックされるため、データが中途半端に部分更新されることは一切ありません。
-  - **既存データの保護**: 既存テーブルを消去（DROP/TRUNCATE/全行削除）する破壊的処理は行わず、`INSERT OR REPLACE`（UPSERT）方式を採用。
+  - **非破壊 Upsert（Codex 監査対応）**:
+    - SQLite の `INSERT OR REPLACE` は競合時に既存行を内部的に DELETE してから再 INSERT するため、親行更新時に子行（`weapons`, `armors`, `cyberwares`）が失われる危険性がありました。
+    - これを完全に解消するため、`INSERT ... ON CONFLICT(primary-key columns) DO UPDATE SET col = excluded.col` に改修しました。
+    - 主キー列は `PRAGMA table_info` の `pk > 0` を `pk` 順序付きで取得・特定し、更新対象は入力された非主キー列のみに限定。
+    - 主キーのないテーブルは標準の `INSERT` のみとし、制約違反時はトランザクション全体をロールバックします。
+    - 主キー以外の UNIQUE 制約競合時もトランザクション全体がロールバックされエラーとなります。
 
 ### B. 確認状態の一括変更（Bulk verify_status update）
 - **対象**: `items` テーブルの `verify_status`（許容4値: `official_verified` | `unofficial` | `unverified` | `homebrew`）。
@@ -66,9 +72,9 @@ CyberPGM Issue #36（DBの全エンティティのCSV/JSON入出力、確認状�
 | `packages/shared/src/csv.ts` | **新規**: RFC 4180 準拠の CSV シリアライザ（`exportToCsv`）およびパーサ（`parseCsv`）の実装。外部 npm パッケージ追加なし。 |
 | `packages/shared/src/index.ts` | `csv.ts` のエクスポートを追加。 |
 | `packages/shared/test/csv.test.ts` | **新規**: CSV エスケープ・パース・配列変換の単体テスト（4 tests）。 |
-| `apps/server/src/routes/db-admin.ts` | **新規**: DB 管理 API（全エンティティ一覧・単一/一括エクスポート・形式/必須/型/FK検証付きインポート・未確認品一覧・一括確認状態更新）。 |
+| `apps/server/src/routes/db-admin.ts` | **新規/改修**: DB 管理 API。<br>1. 全40エンティティ一覧・単一/一括エクスポート・インポート・未確認品一覧・一括確認更新。<br>2. **Codex監査対応**: `INSERT OR REPLACE` を廃止し、`PRAGMA table_info` から順序付き主キー列を特定した `INSERT ... ON CONFLICT(pk) DO UPDATE SET` へ改修（入力非PK列のみ更新、PKなしテーブルは標準INSERT）。<br>3. **Codex監査対応**: 未知のカラムおよび非オブジェクト行を HTTP 400 で拒否するバリデーションを追加。 |
 | `apps/server/src/index.ts` | `dbAdminRoutes` を `/api/db` にマウント。 |
-| `apps/server/test/db-admin.test.ts` | **新規**: DB 管理 API の総合テスト（全40エンティティ取得、CSV/JSONエクスポート、必須列欠損時ロールバック、FK参照整合性違反時ロールバック、未確認品一覧フィルタ、一括ステータス更新、全テーブル一括エクスポート/インポート）（8 tests）。 |
+| `apps/server/test/db-admin.test.ts` | **新規/拡充**: DB 管理 API の総合テスト（計10 tests）。<br>- 全40エンティティ取得・メタデータ検証<br>- JSON/CSV 単一エクスポート<br>- JSON/CSV 単一インポート<br>- 必須列欠損時の 400 検証およびアトミックロールバック（部分更新なし）<br>- 未知のカラム・非オブジェクト行の 400 拒否およびロールバック<br>- **Codex監査対応回帰テスト**: 親 `items` 行のインポート更新時に子 `weapons`/`armors`/`cyberwares` 行が削除されず保持されることの検証<br>- 外部キー参照整合性エラーの検出とロールバック<br>- 未確認品一覧・種別絞り込み・検索<br>- 一括ステータス更新 (`bulk-verify`)<br>- 全テーブル一括エクスポート/インポート（親行更新時の子防具行保持および未知カラム時のロールバック検証を含む） |
 | `apps/web/src/api.ts` | DB 管理用の API クライアント関数およびインターフェース（`getDbEntities`, `exportAllDb`, `getUnverifiedItems`, `bulkVerifyItems`, `importDbEntity`, `importAllDb`）を追加。 |
 | `apps/web/src/components/DbAdminTab.tsx` | **新規**: GM 画面の DB タブ用コンポーネント（未確認品一覧・一括変更・全エンティティ一覧・CSV/JSON入出力エディタ）。 |
 | `apps/web/src/pages/GmPage.tsx` | DB タブプレースホルダーを `DbAdminTab` に差し替え。 |
@@ -84,7 +90,7 @@ CyberPGM Issue #36（DBの全エンティティのCSV/JSON入出力、確認状�
 > cyberpgm@0.1.0 lint
 > eslint .
 
-✖ 784 problems (0 errors, 784 warnings)
+✖ 780 problems (0 errors, 780 warnings)
 ```
 - エラー 0 件で正常終了。
 
@@ -92,35 +98,27 @@ CyberPGM Issue #36（DBの全エンティティのCSV/JSON入出力、確認状�
 ```text
 > cyberpgm@0.1.0 typecheck
 > tsc --noEmit
-
-（エラーなし・終了コード 0）
 ```
 - 全ワークスペースで型エラー 0 件。
 
-### `npm test`（単体・結合テスト）
+### `npm test`（単体・結合テスト結果）
 ```text
- ✓ apps/server/test/db-admin.test.ts (8 tests) 48ms
- ✓ packages/shared/test/csv.test.ts (4 tests) 7ms
- ✓ apps/server/test/combat.test.ts (58 tests) 1265ms
- ✓ apps/server/test/shop.test.ts (14 tests) 102ms
- ✓ tools/import-fvtt/test/import.test.ts (6 tests) 3270ms
- ...
- Test Files  50 passed (51)
-      Tests  346 passed (348)
+Test Files  1 failed | 50 passed (51)
+     Tests  2 failed | 348 passed (350)
 ```
-- Phase 6i で新設した `db-admin.test.ts` (8 tests) および `csv.test.ts` (4 tests) を含む計 346 件のテストが完全に成功。
-
-### `npm run build`
-```text
-> cyberpgm@0.1.0 build
-> npm run build -w @cyberpgm/shared -w @cyberpgm/rules --if-present && npm run build --workspaces --if-present
-
-dist/index.html                     1.72 kB │ gzip:   0.80 kB
-dist/assets/index-CS2UVSh9.css     13.17 kB │ gzip:   3.37 kB
-dist/assets/index-BdbUJjI0.js   1,118.35 kB │ gzip: 286.85 kB
-✓ built in 1.77s
-```
-- フロントエンドおよび全共有パッケージのプロダクションビルドが正常に完了。
+- **Phase 6i 新規・拡充テスト**:
+  - `apps/server/test/db-admin.test.ts` (10 tests) : **全件成功 (10 passed)**
+  - `packages/shared/test/csv.test.ts` (4 tests) : **全件成功 (4 passed)**
+- **失敗テストの特定と分析**:
+  - 失敗ファイル: `apps/server/test/item-notes.test.ts`
+  - 失敗したテスト名:
+    1. `Item effect and flavor notes (Phase 5c) > seeds every item from the drafts and marks them as drafts`
+       - エラー内容: `AssertionError: expected 1 to be 5` (`apps/server/test/item-notes.test.ts:29`)
+    2. `Item effect and flavor notes (Phase 5c) > only GM-edited notes go into the save file`
+       - エラー内容: `AssertionError: expected 1 to be less than 0` (`apps/server/test/item-notes.test.ts:94`)
+  - **原因**:
+    - 本 worktree 内のテスト DB (`data/test-e2e.db`) の初期フィクスチャにおいて、`fvtt_id` を持つアイテムの件数が Phase 5c の初期作成時フィクスチャ（5件）と異なり 1 件であることによる、以前のフェーズ（Phase 5c）由来の既知のベースライン差異です。
+    - 指示に従い、無関係な既存テストの修正は行わず、成功件数・失敗件数および対象テスト名をそのまま記録しています。
 
 ---
 
@@ -140,14 +138,31 @@ dist/assets/index-BdbUJjI0.js   1,118.35 kB │ gzip: 286.85 kB
 
 ---
 
-## 5. 次にやること（OK が出たら実行すること）
+## 5. Codex 監査への対応根拠
 
-- レビュー・監査の確認を受け、問題がなければ main ブランチへのマージへ進む。
+1. **非破壊 Upsert の実装**:
+   - `INSERT OR REPLACE` から `INSERT ... ON CONFLICT(pk) DO UPDATE SET col=excluded.col` に改修。
+   - `PRAGMA table_info` から `pk > 0` を `pk` 昇順で特定し、コンフリクトターゲットに設定。
+   - 更新列は入力データに含まれる非主キー列に限定。
+   - 主キーのないテーブルは `INSERT` のみとし、衝突時はトランザクション全体をロールバック。
+   - これにより、親 `items` 行の更新時に子テーブル（`weapons`, `armors`, `cyberwares`）の行が暗黙に削除されることがなくなりました。
+2. **厳格なスキーマ検証**:
+   - 未知のカラムや非オブジェクト行が含まれる場合、即座に HTTP 400 エラーを返しトランザクションを中断。
+   - 部分更新（一部の正常行だけが保存される状態）が発生しないことを回帰テストで証明。
+3. **回帰テストの拡充**:
+   - `db-admin.test.ts` に、親アイテムを更新しても既存の武器・防具・サイバーウェア子行が維持されることの検証（単一インポートおよび一括インポートの両方）、未知カラム・非オブジェクト行の 400 拒否とロールバック検証を追加（計 10 tests）。
 
 ---
 
-## 6. 問題・仕様との食い違い（残課題）
+## 6. 次にやること（OK が出たら実行すること）
+
+- 本修正内容の確認を受け、問題がなければ PR のマージへ進む。
+- （※指示に従い、`main` へのマージやプッシュは行わず、`agy/phase6i-db-io` ブランチのみを更新・プッシュします）
+
+---
+
+## 7. 問題・仕様との食い違い（残課題）
 
 - 仕様との食い違いや未決事項はありません。
-- 外部 npm パッケージの新規追加は行わず、標準機能・既存ライブラリ・自作の RFC 4180 パーサで完結させました。
-- 破壊的操作（テーブルの削除やDROP）は一切行わず、UPSERT とロールバック保護により既存データの安全性を確保しています。
+- 外部 npm パッケージの新規追加は行わず、自作の RFC 4180 パーサで完結しています。
+- 破壊的操作は一切行わず、ON CONFLICT DO UPDATE とアトミックトランザクション保護により既存データの安全性を確保しています。

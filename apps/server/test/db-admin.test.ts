@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { app } from '../src/index.js';
 import { db, sqlite } from '../src/db/client.js';
-import { items, weapons, characters } from '../src/db/schema.js';
+import { items, weapons, armors, cyberwares } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { exportToCsv } from '@cyberpgm/shared';
 
@@ -38,7 +38,6 @@ describe('DB Admin API (Issue #36)', () => {
   });
 
   it('GET /api/db/export/:entity exports JSON and CSV', async () => {
-    // Insert a test item
     const testId = 'test-export-item-01';
     db.insert(items).values({
       id: testId,
@@ -166,8 +165,125 @@ describe('DB Admin API (Issue #36)', () => {
     expect(badRow).toBeUndefined();
   });
 
+  it('POST /api/db/import/:entity rejects unknown columns and non-object rows with 400 and rolls back', async () => {
+    const testIdUnknown = 'test-unknown-col-item';
+    const testIdValid = 'test-valid-col-item';
+
+    // 1. Unknown column check
+    const resUnknown = await app.request('/api/db/import/items', {
+      method: 'POST',
+      headers: H('application/json'),
+      body: JSON.stringify([
+        {
+          id: testIdValid,
+          kind: 'gear',
+          name_en: 'Valid Row',
+          name_ja: '有効行',
+          origin: 'homebrew',
+          verify_status: 'unverified',
+          created_at: 100,
+          updated_at: 100,
+        },
+        {
+          id: testIdUnknown,
+          kind: 'gear',
+          name_en: 'Unknown Col Row',
+          name_ja: '未知列行',
+          origin: 'homebrew',
+          verify_status: 'unverified',
+          created_at: 100,
+          updated_at: 100,
+          some_bogus_column_that_does_not_exist: 'bad',
+        },
+      ]),
+    });
+
+    expect(resUnknown.status).toBe(400);
+    const errBody = await resUnknown.json();
+    expect(errBody.error).toContain('検証エラー');
+    expect(errBody.details.some((d: string) => d.includes('未知のカラム'))).toBe(true);
+
+    // Verify rollback
+    expect(db.select().from(items).where(eq(items.id, testIdValid)).get()).toBeUndefined();
+    expect(db.select().from(items).where(eq(items.id, testIdUnknown)).get()).toBeUndefined();
+
+    // 2. Non-object row check
+    const resNonObj = await app.request('/api/db/import/items', {
+      method: 'POST',
+      headers: H('application/json'),
+      body: JSON.stringify([
+        'just_a_string_row_not_an_object',
+      ]),
+    });
+    expect(resNonObj.status).toBe(400);
+    const errBody2 = await resNonObj.json();
+    expect(errBody2.details.some((d: string) => d.includes('オブジェクトである必要があります'))).toBe(true);
+  });
+
+  it('POST /api/db/import/:entity non-destructively updates items without deleting child weapons/armors/cyberwares', async () => {
+    const parentId = 'test-non-destructive-parent-01';
+
+    // Setup parent item and children in weapons, armors, cyberwares
+    db.insert(items).values({
+      id: parentId,
+      kind: 'weapon',
+      name_en: 'Parent Weapon Original',
+      name_ja: '親武器元名称',
+      price_eb: 500,
+      origin: 'official_verified',
+      verify_status: 'official_verified',
+      created_at: 1000,
+      updated_at: 1000,
+    }).run();
+
+    db.insert(weapons).values({
+      item_id: parentId,
+      weapon_type: 'assaultRifle',
+      skill: 'shoulder_arms',
+      damage: '5d6',
+      rof: 1,
+      magazine_max: 30,
+      hands: 2,
+      concealable: false,
+      quality: 'standard',
+      autofire: 4,
+      is_ranged: true,
+    }).run();
+
+    // Import update on parent item (updating name_ja and price_eb)
+    const updateRes = await app.request('/api/db/import/items', {
+      method: 'POST',
+      headers: H('application/json'),
+      body: JSON.stringify([
+        {
+          id: parentId,
+          kind: 'weapon',
+          name_en: 'Parent Weapon Original',
+          name_ja: '親武器更新後名称',
+          price_eb: 850,
+          origin: 'official_verified',
+          verify_status: 'official_verified',
+          created_at: 1000,
+          updated_at: 2000,
+        },
+      ]),
+    });
+
+    expect(updateRes.status).toBe(200);
+
+    // Verify parent is updated
+    const updatedParent = db.select().from(items).where(eq(items.id, parentId)).get();
+    expect(updatedParent?.name_ja).toBe('親武器更新後名称');
+    expect(updatedParent?.price_eb).toBe(850);
+
+    // Verify child in weapons is STILL INTACT (NOT deleted by REPLACE)
+    const childWeapon = db.select().from(weapons).where(eq(weapons.item_id, parentId)).get();
+    expect(childWeapon).toBeDefined();
+    expect(childWeapon?.damage).toBe('5d6');
+    expect(childWeapon?.weapon_type).toBe('assaultRifle');
+  });
+
   it('POST /api/db/import/:entity validates foreign key references and rejects dangling pointers', async () => {
-    // weapons requires existing items.id in item_id
     const danglingItemId = 'non-existent-item-fk-999';
 
     const res = await app.request('/api/db/import/weapons', {
@@ -305,7 +421,33 @@ describe('DB Admin API (Issue #36)', () => {
     expect(invalidStatusRes.status).toBe(400);
   });
 
-  it('GET /api/db/export-all exports full database dump and POST /api/db/import-all works atomically', async () => {
+  it('GET /api/db/export-all exports full database dump and POST /api/db/import-all works non-destructively', async () => {
+    const parentId = 'test-dump-item-parent-01';
+
+    // Setup parent item and armor child
+    db.insert(items).values({
+      id: parentId,
+      kind: 'armor',
+      name_en: 'Armor Dump Parent',
+      name_ja: '防具ダンプ親',
+      price_eb: 300,
+      origin: 'official_verified',
+      verify_status: 'official_verified',
+      created_at: 1000,
+      updated_at: 1000,
+    }).run();
+
+    db.insert(armors).values({
+      item_id: parentId,
+      sp_head: 0,
+      sp_body: 11,
+      is_head: false,
+      is_body: true,
+      is_shield: false,
+      shield_hp: 0,
+      penalty: 0,
+    }).run();
+
     const res = await app.request('/api/db/export-all', { headers: H() });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -313,7 +455,7 @@ describe('DB Admin API (Issue #36)', () => {
     expect(body.entities).toBeDefined();
     expect(body.entities.items).toBeDefined();
 
-    // Import-all with valid structure
+    // Import-all updating parent item name_ja and price_eb
     const importAllRes = await app.request('/api/db/import-all', {
       method: 'POST',
       headers: H('application/json'),
@@ -321,21 +463,61 @@ describe('DB Admin API (Issue #36)', () => {
         entities: {
           items: [
             {
-              id: 'test-dump-item-01',
-              kind: 'gear',
-              name_en: 'Dump Test Item',
-              name_ja: 'ダンプ試験品',
-              origin: 'homebrew',
-              verify_status: 'unverified',
-              created_at: 7000,
-              updated_at: 7000,
+              id: parentId,
+              kind: 'armor',
+              name_en: 'Armor Dump Parent',
+              name_ja: '防具ダンプ親更新済み',
+              price_eb: 450,
+              origin: 'official_verified',
+              verify_status: 'official_verified',
+              created_at: 1000,
+              updated_at: 2000,
             },
           ],
         },
       }),
     });
+
     expect(importAllRes.status).toBe(200);
-    const row = db.select().from(items).where(eq(items.id, 'test-dump-item-01')).get();
-    expect(row).toBeDefined();
+
+    // Verify parent updated
+    const updatedParent = db.select().from(items).where(eq(items.id, parentId)).get();
+    expect(updatedParent?.name_ja).toBe('防具ダンプ親更新済み');
+    expect(updatedParent?.price_eb).toBe(450);
+
+    // Verify armor child is still intact
+    const childArmor = db.select().from(armors).where(eq(armors.item_id, parentId)).get();
+    expect(childArmor).toBeDefined();
+    expect(childArmor?.sp_body).toBe(11);
+
+    // Import-all with unknown column should fail with 400 and rollback
+    const badImportRes = await app.request('/api/db/import-all', {
+      method: 'POST',
+      headers: H('application/json'),
+      body: JSON.stringify({
+        entities: {
+          items: [
+            {
+              id: parentId,
+              kind: 'armor',
+              name_en: 'Armor Dump Parent',
+              name_ja: 'これは反映されないべき',
+              bogus_col: 123,
+              origin: 'official_verified',
+              verify_status: 'official_verified',
+              created_at: 1000,
+              updated_at: 3000,
+            },
+          ],
+        },
+      }),
+    });
+    expect(badImportRes.status).toBe(400);
+    const badBody = await badImportRes.json();
+    expect(badBody.details.some((d: string) => d.includes('未知のカラム'))).toBe(true);
+
+    // Check that parent was not updated
+    const afterBad = db.select().from(items).where(eq(items.id, parentId)).get();
+    expect(afterBad?.name_ja).toBe('防具ダンプ親更新済み');
   });
 });

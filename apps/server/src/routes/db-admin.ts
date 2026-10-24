@@ -85,7 +85,7 @@ export function getForeignKeyList(tableName: string): ForeignKeyInfo[] {
 
 /**
  * Validates a single row against table columns and foreign keys.
- * Returns error messages if invalid.
+ * Rejects non-objects and unknown columns with descriptive error messages.
  */
 export function validateRow(
   tableName: string,
@@ -98,6 +98,22 @@ export function validateRow(
   const errors: string[] = [];
   const rowDisplay = `行 ${rowIndex + 1}`;
 
+  // 1. Non-object row check
+  if (!row || typeof row !== 'object' || Array.isArray(row)) {
+    errors.push(`${rowDisplay}: レコードはオブジェクトである必要があります。`);
+    return errors;
+  }
+
+  const colMap = new Map(cols.map((col) => [col.name, col]));
+
+  // 2. Unknown columns check (reject unknown columns with 400)
+  for (const key of Object.keys(row)) {
+    if (!colMap.has(key)) {
+      errors.push(`${rowDisplay}: 未知のカラム "${key}" はテーブル "${tableName}" に存在しません。`);
+    }
+  }
+
+  // 3. Required columns and types check
   for (const col of cols) {
     const val = row[col.name];
     const isMissing = val === undefined || val === null || val === '';
@@ -126,7 +142,7 @@ export function validateRow(
     }
   }
 
-  // Foreign Key reference integrity check
+  // 4. Foreign Key reference integrity check
   for (const fk of fks) {
     const val = row[fk.from];
     if (val !== undefined && val !== null && val !== '') {
@@ -153,6 +169,74 @@ export function validateRow(
   }
 
   return errors;
+}
+
+/**
+ * Builds non-destructive INSERT ... ON CONFLICT DO UPDATE statement.
+ * - Primary keys are identified in order from PRAGMA table_info (pk > 0 sorted by pk).
+ * - Only input non-primary-key columns are updated (DO UPDATE SET col = excluded.col).
+ * - If table has no primary key, falls back to plain INSERT (conflicts cause rollback).
+ */
+export function buildUpsertStatement(
+  tableName: string,
+  row: Record<string, unknown>,
+  cols: ColumnInfo[],
+): { sql: string; values: unknown[] } {
+  const colMap = new Map(cols.map((c) => [c.name, c]));
+  const pkCols = cols.filter((c) => c.pk > 0).sort((a, b) => a.pk - b.pk);
+  const pkNames = pkCols.map((c) => c.name);
+
+  const rowCols: string[] = [];
+  const placeholders: string[] = [];
+  const values: unknown[] = [];
+  const nonPkUpdateCols: string[] = [];
+
+  for (const [key, val] of Object.entries(row)) {
+    const col = colMap.get(key);
+    if (!col) continue;
+
+    rowCols.push(`"${col.name}"`);
+    placeholders.push('?');
+
+    if (!pkNames.includes(col.name)) {
+      nonPkUpdateCols.push(`"${col.name}" = excluded."${col.name}"`);
+    }
+
+    if (val === '' && col.notnull === 0) {
+      values.push(null);
+    } else if (col.type.toUpperCase().includes('INT') && val !== null && val !== '') {
+      values.push(Number(val));
+    } else if (
+      (col.type.toUpperCase().includes('REAL') || col.type.toUpperCase().includes('NUM')) &&
+      val !== null &&
+      val !== ''
+    ) {
+      values.push(Number(val));
+    } else if (typeof val === 'object' && val !== null) {
+      values.push(JSON.stringify(val));
+    } else {
+      values.push(val);
+    }
+  }
+
+  if (rowCols.length === 0) {
+    return { sql: '', values: [] };
+  }
+
+  let sql: string;
+  if (pkNames.length > 0) {
+    const conflictTarget = pkNames.map((n) => `"${n}"`).join(', ');
+    if (nonPkUpdateCols.length > 0) {
+      sql = `INSERT INTO "${tableName}" (${rowCols.join(', ')}) VALUES (${placeholders.join(', ')}) ON CONFLICT(${conflictTarget}) DO UPDATE SET ${nonPkUpdateCols.join(', ')}`;
+    } else {
+      sql = `INSERT INTO "${tableName}" (${rowCols.join(', ')}) VALUES (${placeholders.join(', ')}) ON CONFLICT(${conflictTarget}) DO NOTHING`;
+    }
+  } else {
+    // Tables without primary key: standard INSERT (constraint violations will rollback)
+    sql = `INSERT INTO "${tableName}" (${rowCols.join(', ')}) VALUES (${placeholders.join(', ')})`;
+  }
+
+  return { sql, values };
 }
 
 // 1. GET /api/db/entities - list all tables with count and schema info
@@ -222,7 +306,7 @@ dbAdminRoutes.get('/export-all', requireGm, (c) => {
   });
 });
 
-// 4. POST /api/db/import/:entity - import rows with validation and atomic transaction
+// 4. POST /api/db/import/:entity - import rows with validation and non-destructive atomic transaction
 dbAdminRoutes.post('/import/:entity', requireGm, async (c) => {
   const entity = c.req.param('entity');
   if (!isValidEntity(entity)) {
@@ -258,9 +342,8 @@ dbAdminRoutes.post('/import/:entity', requireGm, async (c) => {
 
   const cols = getTableInfo(entity);
   const fks = getForeignKeyList(entity);
-  const colMap = new Map(cols.map((col) => [col.name, col]));
 
-  // Pre-validate all rows
+  // Pre-validate all rows (unknown columns, non-objects, required fields, types, foreign keys)
   const allErrors: string[] = [];
   for (let idx = 0; idx < rawRows.length; idx++) {
     const rowErrors = validateRow(entity, rawRows[idx], idx, cols, fks);
@@ -274,37 +357,12 @@ dbAdminRoutes.post('/import/:entity', requireGm, async (c) => {
     }, 400);
   }
 
-  // Atomic insert / upsert inside transaction
+  // Non-destructive atomic insert / update inside transaction
   try {
     const insertTransaction = sqlite.transaction((rows: Record<string, unknown>[]) => {
       for (const row of rows) {
-        const rowCols: string[] = [];
-        const placeholders: string[] = [];
-        const values: unknown[] = [];
-
-        for (const [key, val] of Object.entries(row)) {
-          const col = colMap.get(key);
-          if (!col) continue; // Skip columns not in schema
-
-          rowCols.push(`"${col.name}"`);
-          placeholders.push('?');
-
-          if (val === '' && col.notnull === 0) {
-            values.push(null);
-          } else if (col.type.toUpperCase().includes('INT') && val !== null && val !== '') {
-            values.push(Number(val));
-          } else if ((col.type.toUpperCase().includes('REAL') || col.type.toUpperCase().includes('NUM')) && val !== null && val !== '') {
-            values.push(Number(val));
-          } else if (typeof val === 'object' && val !== null) {
-            values.push(JSON.stringify(val));
-          } else {
-            values.push(val);
-          }
-        }
-
-        if (rowCols.length === 0) continue;
-
-        const sql = `INSERT OR REPLACE INTO "${entity}" (${rowCols.join(', ')}) VALUES (${placeholders.join(', ')})`;
+        const { sql, values } = buildUpsertStatement(entity, row, cols);
+        if (!sql) continue;
         sqlite.prepare(sql).run(...values);
       }
     });
@@ -312,8 +370,8 @@ dbAdminRoutes.post('/import/:entity', requireGm, async (c) => {
     insertTransaction(rawRows);
   } catch (err: any) {
     return c.json({
-      error: `DB書き込み中にエラーが発生したため、ロールバックしました: ${err?.message || String(err)}`,
-    }, 500);
+      error: `DB書き込み中に制約違反またはエラーが発生したため、ロールバックしました: ${err?.message || String(err)}`,
+    }, 400);
   }
 
   return c.json({
@@ -332,7 +390,7 @@ dbAdminRoutes.post('/import-all', requireGm, async (c) => {
   }
 
   const entitiesData: Record<string, Record<string, unknown>[]> = body.entities || body;
-  if (!entitiesData || typeof entitiesData !== 'object') {
+  if (!entitiesData || typeof entitiesData !== 'object' || Array.isArray(entitiesData)) {
     return c.json({ error: 'entities オブジェクトが含まれていません。' }, 400);
   }
 
@@ -340,16 +398,27 @@ dbAdminRoutes.post('/import-all', requireGm, async (c) => {
   const allErrors: string[] = [];
   const batchKeys = new Map<string, Set<string>>();
 
-  // First pass: collect PKs present in the batch
+  // First pass: collect PKs present in the batch and check for unknown entity names
   for (const [entityName, rows] of Object.entries(entitiesData)) {
-    if (!isValidEntity(entityName) || !Array.isArray(rows)) continue;
+    if (!isValidEntity(entityName)) {
+      allErrors.push(`[${entityName}] 未知のエンティティ名です。`);
+      continue;
+    }
+    if (!Array.isArray(rows)) {
+      allErrors.push(`[${entityName}] エンティティのデータは配列形式である必要があります。`);
+      continue;
+    }
+
     const cols = getTableInfo(entityName);
-    const pkCol = cols.find((c) => c.pk > 0);
+    const pkCols = cols.filter((c) => c.pk > 0).sort((a, b) => a.pk - b.pk);
+    const pkCol = pkCols[0];
     if (pkCol) {
       const keys = new Set<string>();
       for (const row of rows) {
-        if (row[pkCol.name] !== undefined && row[pkCol.name] !== null) {
-          keys.add(String(row[pkCol.name]));
+        if (row && typeof row === 'object' && !Array.isArray(row)) {
+          if (row[pkCol.name] !== undefined && row[pkCol.name] !== null) {
+            keys.add(String(row[pkCol.name]));
+          }
         }
       }
       batchKeys.set(entityName, keys);
@@ -358,8 +427,7 @@ dbAdminRoutes.post('/import-all', requireGm, async (c) => {
 
   // Second pass: validate each row
   for (const [entityName, rows] of Object.entries(entitiesData)) {
-    if (!isValidEntity(entityName)) continue;
-    if (!Array.isArray(rows)) continue;
+    if (!isValidEntity(entityName) || !Array.isArray(rows)) continue;
 
     const cols = getTableInfo(entityName);
     const fks = getForeignKeyList(entityName);
@@ -387,36 +455,12 @@ dbAdminRoutes.post('/import-all', requireGm, async (c) => {
         if (!Array.isArray(rows) || rows.length === 0) continue;
 
         const cols = getTableInfo(entityName);
-        const colMap = new Map(cols.map((col) => [col.name, col]));
 
         for (const row of rows) {
-          const rowCols: string[] = [];
-          const placeholders: string[] = [];
-          const values: unknown[] = [];
+          const { sql, values } = buildUpsertStatement(entityName, row, cols);
+          if (!sql) continue;
 
-          for (const [key, val] of Object.entries(row)) {
-            const col = colMap.get(key);
-            if (!col) continue;
-
-            rowCols.push(`"${col.name}"`);
-            placeholders.push('?');
-
-            if (val === '' && col.notnull === 0) {
-              values.push(null);
-            } else if (col.type.toUpperCase().includes('INT') && val !== null && val !== '') {
-              values.push(Number(val));
-            } else if ((col.type.toUpperCase().includes('REAL') || col.type.toUpperCase().includes('NUM')) && val !== null && val !== '') {
-              values.push(Number(val));
-            } else if (typeof val === 'object' && val !== null) {
-              values.push(JSON.stringify(val));
-            } else {
-              values.push(val);
-            }
-          }
-
-          if (rowCols.length === 0) continue;
-
-          sqlite.prepare(`INSERT OR REPLACE INTO "${entityName}" (${rowCols.join(', ')}) VALUES (${placeholders.join(', ')})`).run(...values);
+          sqlite.prepare(sql).run(...values);
           totalImported++;
         }
       }
@@ -425,8 +469,8 @@ dbAdminRoutes.post('/import-all', requireGm, async (c) => {
     importAllTransaction();
   } catch (err: any) {
     return c.json({
-      error: `一括インポート中にエラーが発生したため、ロールバックしました: ${err?.message || String(err)}`,
-    }, 500);
+      error: `一括インポート中に制約違反またはエラーが発生したため、ロールバックしました: ${err?.message || String(err)}`,
+    }, 400);
   }
 
   return c.json({
