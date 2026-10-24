@@ -79,6 +79,21 @@ export function validateAndSanitizeGmEmail(email: string): string {
   return trimmed;
 }
 
+/**
+ * RFC 6068 §2 に準拠した mailto 用 addr-spec のフォーマット。
+ * 検証済みメールアドレスを単一の '@' で local-part と domain に分割し、
+ * URI デリミタ（?, #, &, =, %, /, [, ] 等）を安全にパーセントエンコードしつつ、
+ * literal な '@' セパレータを保持する。
+ */
+export function formatMailtoAddrSpec(email: string): string {
+  if (!email || typeof email !== 'string') return '';
+  const atIndex = email.indexOf('@');
+  if (atIndex === -1) return encodeURIComponent(email);
+  const localPart = email.slice(0, atIndex);
+  const domain = email.slice(atIndex + 1);
+  return `${encodeURIComponent(localPart)}@${encodeURIComponent(domain)}`;
+}
+
 export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions): string {
   // GM メールアドレスの厳格な検証
   const validatedGmEmail = validateAndSanitizeGmEmail(options.gmEmail);
@@ -1013,14 +1028,24 @@ export function generateGoogleSitesEmbedHtml(options: GoogleSitesExportOptions):
       }
     }
 
+    function formatMailtoAddrSpec(email) {
+      if (!email) return '';
+      const atIdx = email.indexOf('@');
+      if (atIdx === -1) return encodeURIComponent(email);
+      const lp = email.slice(0, atIdx);
+      const dm = email.slice(atIdx + 1);
+      return encodeURIComponent(lp) + '@' + encodeURIComponent(dm);
+    }
+
     function setupMailtoLink() {
       const mailtoBtn = document.getElementById('btn-mailto');
       const subject = '[CyberPGM] キャラクター提出: ' + (draft.name.trim() || '無名') + ' (' + draft.role + ')';
       const code = document.getElementById('output-code')?.value || '';
       const body = 'GM 様\\n\\nCyberPGM にてキャラクターを作成しました。\\nハンドル名: ' + draft.name.trim() + '\\nロール: ' + draft.role + '\\n\\n【キャラクターコード】\\n' + code + '\\n\\n※CyberPGM の「キャラ受付」画面で「コードから取り込む」を開き、上記のコードを貼り付けてください。\\n（または添付の .cpgm ファイルを取り込んでください）';
 
-      // RFC 6068 addr-spec に従い検証済み GM メールアドレスは生の @ セパレータのまま保持し、クエリパラメータ (subject, body) のみ URL エンコード
-      mailtoBtn.href = 'mailto:' + CONFIG.gmEmail + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+      // RFC 6068 §2 addr-spec 準拠: 単一 @ で local-part と domain を分割して個別に percent-encode し、生の @ をセパレータとして保持
+      const safeAddrSpec = formatMailtoAddrSpec(CONFIG.gmEmail || '');
+      mailtoBtn.href = 'mailto:' + safeAddrSpec + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
     }
 
     function downloadCpgmFile() {

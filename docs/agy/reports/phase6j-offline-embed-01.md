@@ -153,19 +153,20 @@ npx tsx --test packages/shared/test/characterCode.test.ts test/phase6j-focused.t
     ✔ sanitizes public stats fields with strict whitelist and discards arbitrary objects
     ✔ generates fully self-contained HTML without external CSS or scripts
     ✔ uses safe DOM textContent and event binding, avoiding innerHTML interpolation and inline handlers
+    ✔ adheres to RFC 6068 §2 addr-spec: preserves literal @ and percent-encodes URI delimiters in local-part
     ✔ safely neutralizes malicious XSS payloads in catalog names, descriptions, and skill notes
     ✔ safely handles malicious apostrophe payloads in JSON data block without syntax errors or escaping
     ✔ produces reasonable file size for Google Sites embedding
     ✔ can be safely embedded in sandbox iframe specification
-  ✔ D. Google Sites Embed Export Security & Hardening (2.4837ms)
-✔ Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardened) (13.5021ms)
-ℹ tests 27
+  ✔ D. Google Sites Embed Export Security & Hardening (3.0143ms)
+✔ Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardened) (12.5381ms)
+ℹ tests 28
 ℹ suites 6
-ℹ pass 27
+ℹ pass 28
 ℹ fail 0
 （終了コード: 0）
 ```
-- テキストコード、破損検出、PWA manifest / sw 厳格静的許可リスト検証（同一オリジン・クエリ禁止・ハッシュ付きアセット）、非公開データ除外、単一 HTML 生成、XSS / アポストロフィ脱出防御、RFC 6068 mailto 準拠、iframe sandbox 適合性など計 27 件のテストがすべて合格。
+- テキストコード、破損検出、PWA manifest / sw 厳格静的許可リスト検証（同一オリジン・クエリ禁止・ハッシュ付きアセット）、非公開データ除外、単一 HTML 生成、XSS / アポストロフィ脱出防御、RFC 6068 §2 mailto addr-spec 準拠（URI デリミタの個別エンコードと生 @ 保持）、iframe sandbox 適合性など計 28 件のテストがすべて合格。
 
 ---
 
@@ -196,7 +197,7 @@ Playwright（実機 Chrome 利用）を用いてポート 8791 にて撮影を�
 
 ### Issue #19 コメント更新の試行結果
 - コマンド: `gh issue comment 19 --body "..."`
-- 実行結果: PowerShell の引用符・改行引数パースによる CLI 引数超過エラー（`accepts 1 arg(s), received 61`）が発生し、ユーザー指示「Do not retry the GitHub Issue comment. Record its exact failure in the report」に従い再試行を停止しました。Issue #19 に記録すべき未検証境界内容は本報告書に詳細を明記しています。
+- 実行結果: PowerShell の引用符・改行引数パースによる CLI 引数超過エラー（`accepts 1 arg(s), received 61`）が発生しました。Codex 自身のタスク指示（Codex's own task instruction）により、PowerShell パース失敗後の再試行を停止し、その事実を報告書に記録する方針に従って再試行を停止しました。Issue #19 に記録すべき未検証境界内容は本報告書に詳細を明記しています。
 
 ---
 
@@ -222,7 +223,7 @@ Playwright（実機 Chrome 利用）を用いてポート 8791 にて撮影を�
 | `apps/web/src/utils/googleSitesExport.ts` | **新規**: Google サイト埋め込み用 完全自己完結 単一 HTML 書き出しジェネレータ。 |
 | `apps/web/src/components/GoogleSitesExportModal.tsx` | **新規**: GM 画面からの Google サイト用 HTML 書き出し設定モーダル。 |
 | `apps/web/src/components/CharacterReceptionView.tsx` | 「コードから取り込む」機能・モーダル、および「Google サイト用 HTML 書き出し」ボタンの接続。 |
-| `test/phase6j-focused.test.ts` | **新規**: Phase 6j 総合検証テストスイート（テキストコード、オフラインカタログ、PWA manifest/sw 厳格静的ホワイトリスト（同一オリジン・クエリ禁止・ハッシュ付き判定）、自己完結 HTML、XSS/アポストロフィ防御、RFC 6068 mailto、sandbox iframe 検査、20 tests）。 |
+| `test/phase6j-focused.test.ts` | **新規**: Phase 6j 総合検証テストスイート（テキストコード、オフラインカタログ、PWA manifest/sw 厳格静的ホワイトリスト（同一オリジン・クエリ禁止・ハッシュ付き判定）、自己完結 HTML、XSS/アポストロフィ防御、RFC 6068 §2 mailto addr-spec、sandbox iframe 検査、21 tests）。 |
 | `tools/capture-phase6j-screenshots.ts` | **新規**: 実機 Chrome を利用した 1440px / 390px スクリーンショット撮影ツール。 |
 
 ---
@@ -255,8 +256,10 @@ Codex 監査から指摘されたセキュリティ課題に対して、以下�
      - `url.search === ''`（クエリ文字列が完全に空であること）を必須化。
      - アセット正規表現を `/^\/assets\/[a-zA-Z0-9_.-]+-[a-zA-Z0-9_-]{8,}\.(js|css)$/` に強化し、Vite のハッシュ付き（8文字以上のハッシュ付き）アセットのみ許可。ハッシュのない任意アセットはキャッシュ拒絶。
      - `test/phase6j-focused.test.ts` にクエリパラメータ付き URL、クロスオリジン URL、ハッシュなしアセットが CacheStorage 対象外となるテストケースを追加。
-3. **RFC 6068 mailto addr-spec 準拠**:
-   - **指摘内容**: GM メールアドレス全体を `encodeURIComponent` していたため、アドレス内の `@` が `%40` に変換され一部のクライアントで問題となる可能性があった。
+3. **RFC 6068 §2 mailto addr-spec 準拠（URI デリミタの個別エンコードと生 @ 保持）**:
+   - **指摘内容**: RFC 6068 §2 では、addr-spec 内の URI デリミタ（`?`, `#`, `&`, `=`, `%`, `/`, `[`, `]` 等）をパーセントエンコードしつつ、literal な `@` セパレータを保持することが求められる。アドレス全体を raw で挿入すると `test&tag@example.com` 等でクエリ境界が破壊されるリスクがあった。
    - **改修内容**:
-     - RFC 6068 に準拠し、事前バリデーション済みの GM メールアドレスは生の `@` セパレータのまま `mailto:` の直後に配置し、クエリパラメータ（`subject`, `body`）の値のみを `encodeURIComponent` するよう修正。
-     - テストにて `mailto:test-gm@example.com?subject=...` となり `%40` が含まれないことを検証。
+     - `formatMailtoAddrSpec(email)` ヘルパーを新設し、検証済みアドレスを単一の `@` で local-part と domain に分割。
+     - それぞれに対して `encodeURIComponent` を適用し、`${encodeURIComponent(localPart)}@${encodeURIComponent(domain)}` として結合。
+     - `mailto:` + safeAddrSpec + `?subject=` + ... の形式で href を組み立てることで、通常の `test-gm@example.com` は生の `@` のまま保持され、デリミタを含む `test&tag@example.com` は `test%26tag@example.com` と安全にエンコードされてクエリ境界が保護されることを保証。
+     - `test/phase6j-focused.test.ts` にて、通常のメールアドレスで生の `@` が保持されること、およびデリミタを含むアドレスが正しくエンコードされることのテストを追加。

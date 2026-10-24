@@ -28,6 +28,7 @@ import {
   GoogleSitesExportOptions,
   validateAndSanitizeGmEmail,
   sanitizePublicStats,
+  formatMailtoAddrSpec,
 } from '../apps/web/src/utils/googleSitesExport.js';
 
 describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardened)', () => {
@@ -406,8 +407,37 @@ describe('Phase 6j: PWA & Offline Catalog & Embed Export Suite (Security Hardene
       assert.strictEqual(html.includes('onclick="adjustStat'), false, 'Must NOT use inline onclick handler for adjustStat');
 
       // mailto URL: RFC 6068 addr-spec に従い GM メールアドレスの @ を生で保持し、クエリフィールド値のみ encodeURIComponent されること
-      assert.ok(html.includes("mailto:' + CONFIG.gmEmail + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body)"), 'Must keep raw GM email and encode query values only');
+      assert.ok(html.includes("mailto:' + safeAddrSpec + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body)"), 'Must use safeAddrSpec with literal @ and encoded query values');
       assert.strictEqual(html.includes("encodeURIComponent(CONFIG.gmEmail)"), false, 'Must NOT percent-encode GM email address into %40');
+    });
+
+    it('adheres to RFC 6068 §2 addr-spec: preserves literal @ and percent-encodes URI delimiters in local-part', () => {
+      // 1. 通常のメールアドレス: @ は生のまま保持され、%40 にならない
+      assert.strictEqual(formatMailtoAddrSpec('test-gm@example.com'), 'test-gm@example.com');
+
+      // 2. URI デリミタ（&, ?, #, =, %, [, ] 等）を含むローカル部: デリミタが安全にパーセントエンコードされ、クエリ境界が保護される
+      assert.strictEqual(formatMailtoAddrSpec('test&tag@example.com'), 'test%26tag@example.com');
+      assert.strictEqual(formatMailtoAddrSpec('user?query=1#hash@example.com'), 'user%3Fquery%3D1%23hash@example.com');
+      assert.strictEqual(formatMailtoAddrSpec('tag%20[special]@domain.com'), 'tag%2520%5Bspecial%5D@domain.com');
+
+      // 3. デリミタを含むアドレスで HTML を生成した場合の検査
+      const delimiterOptions: GoogleSitesExportOptions = {
+        ...validOptions,
+        gmEmail: 'test&tag@example.com',
+      };
+      const html = generateGoogleSitesEmbedHtml(delimiterOptions);
+
+      // HTML に formatMailtoAddrSpec の定義と safeAddrSpec の利用が含まれていること
+      assert.ok(html.includes('function formatMailtoAddrSpec(email)'));
+      assert.ok(html.includes("mailto:' + safeAddrSpec + '?subject='"));
+
+      // インラインスクリプト内での formatMailtoAddrSpec の構文妥当性検証 (Node vm)
+      const scriptMatch = html.match(/<script>(?!id=[\s\S]*?)[\s\S]*?<\/script>/g);
+      assert.ok(scriptMatch && scriptMatch.length > 0);
+      for (const tag of scriptMatch) {
+        const jsCode = tag.replace(/^<script>/, '').replace(/<\/script>$/, '');
+        new vm.Script(jsCode);
+      }
     });
 
     it('safely neutralizes malicious XSS payloads in catalog names, descriptions, and skill notes', () => {
