@@ -141,6 +141,256 @@ describe('Phase 6h: 状況修正・状態異常の付け外し・戦闘ログを
       expect(faLine?.text).toContain('その他 −2');
       expect(faLine?.text).toContain('= 4');
     });
+
+    it('persists negative default_situation_custom in combat settings and applies it', async () => {
+      const combatId = generateUlid();
+      db.insert(combats)
+        .values({
+          id: combatId,
+          status: 'active',
+          round: 1,
+          turn_index: 0,
+          settings: '{}',
+          created_at: Date.now(),
+        })
+        .run();
+
+      const patchRes = await app.request(`/api/combats/${combatId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GM_TOKEN}`,
+        },
+        body: JSON.stringify({
+          settings: {
+            default_situations: ['obscured'],
+            default_situation_custom: -3,
+          },
+        }),
+      });
+      expect(patchRes.status).toBe(200);
+      const patchJson = await patchRes.json();
+      expect(patchJson.combat.settings.default_situation_custom).toBe(-3);
+      expect(patchJson.combat.settings.default_situations).toEqual(['obscured']);
+
+      // DB persistence
+      const cb = db.select().from(combats).where(eq(combats.id, combatId)).get();
+      const settings = JSON.parse(cb!.settings || '{}');
+      expect(settings.default_situation_custom).toBe(-3);
+      expect(settings.default_situations).toEqual(['obscured']);
+    });
+
+    it('applies situation modifiers to vehicle_control and vehicle_maneuver in resolve and attackLine', async () => {
+      const charId = generateUlid();
+      const vehId = 'test-veh-1';
+      db.insert(characters)
+        .values({
+          id: charId,
+          kind: 'pc',
+          name: 'ドライバー',
+          role: 'Solo',
+          stats: JSON.stringify({ int: 6, ref: 6, dex: 6, tech: 6, cool: 6, will: 6, luck: 0, move: 4, body: 6, emp: 6 }),
+          skills: JSON.stringify({ drive_land_vehicle: 2 }), // driveBase = 6 + 2 = 8 (< 10)
+          hp: 40,
+          hp_max: 40,
+          sp_head: 0,
+          sp_body: 0,
+          humanity: 50,
+          emp_max: 6,
+          status: '[]',
+          extra: JSON.stringify({
+            vehicles: [
+              { id: vehId, kind: 'land', name: '小型地上車', sdp: 50, sdp_max: 50, sp: 0, seats: 4, move: 20, upgrades: [] },
+            ],
+          }),
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        })
+        .run();
+
+      const combatId = generateUlid();
+      db.insert(combats)
+        .values({
+          id: combatId,
+          status: 'active',
+          round: 1,
+          turn_index: 0,
+          settings: '{}',
+          created_at: Date.now(),
+        })
+        .run();
+
+      const partId = generateUlid();
+      db.insert(combat_participants)
+        .values({
+          id: partId,
+          combat_id: combatId,
+          character_id: charId,
+          side: 'ally',
+          name: 'ドライバー',
+          initiative: 10,
+          initiative_roll: '{}',
+          order_index: 0,
+          active: true,
+          out: false,
+          move_used: false,
+          action_used: false,
+          state: JSON.stringify({
+            in_vehicle: { owner_id: charId, vehicle_id: vehId, driver: true, started: true },
+          }),
+        })
+        .run();
+
+      // 1. attackLine の検証: 操縦 (vehicle_control) と 特殊機動 (vehicle_maneuver)
+      const part = {
+        id: partId,
+        combat_id: combatId,
+        character_id: charId,
+        side: 'ally' as const,
+        name: 'ドライバー',
+        initiative: 10,
+        initiative_roll: {},
+        order_index: 0,
+        active: true,
+        out: false,
+        move_used: false,
+        action_used: false,
+        state: { in_vehicle: { owner_id: charId, vehicle_id: vehId, driver: true, started: true } },
+        character: {
+          id: charId,
+          name: 'ドライバー',
+          kind: 'pc' as const,
+          role: 'Solo',
+          stats: { int: 6, ref: 6, dex: 6, tech: 6, cool: 6, will: 6, luck: 0, move: 4, body: 6, emp: 6 },
+          skills: { drive_land_vehicle: 2 },
+          hp: 40,
+          hp_max: 40,
+          sp_head: 0,
+          sp_body: 0,
+          weapons: [],
+          inventory: [],
+          status: [],
+          crit_injuries: [],
+          extra: {
+            vehicles: [
+              { id: vehId, kind: 'land', name: '小型地上車', sdp: 50, sdp_max: 50, sp: 0, seats: 4, move: 20, upgrades: [] },
+            ],
+          },
+        },
+      };
+
+      // 操縦（判定が必要な場合）に煙（-4）+ その他（-1）が効く
+      const ctrlLine = attackLine(
+        {
+          action_key: 'vehicle_control',
+          situations: ['obscured'],
+          situation_custom: -1,
+        },
+        part,
+      );
+      expect(ctrlLine).not.toBeNull();
+      // REF 6 + 地上ヴィークル操縦 2 煙や暗闇で視界が悪い −4 その他 −1 = 3 vs 難易度 10 → 出目 7 以上で成功
+      expect(ctrlLine?.text).toContain('煙や暗闇で視界が悪い −4');
+      expect(ctrlLine?.text).toContain('その他 −1');
+      expect(ctrlLine?.text).toContain('= 3 vs 難易度 10');
+      expect(ctrlLine?.text).toContain('出目 8 以上で成功');
+
+      // 特殊機動（急旋回: DV 13）に煙（-4）が効く
+      const manLine = attackLine(
+        {
+          action_key: 'vehicle_maneuver',
+          maneuver: 'swerve',
+          situations: ['obscured'],
+        },
+        part,
+      );
+      expect(manLine).not.toBeNull();
+      // REF 6 + 陸上ヴィークル運転 2 煙や暗闇で視界が悪い −4 = 4 vs 難易度 13 → 出目 10 以上で成功
+      expect(manLine?.text).toContain('特殊機動「急ハンドル」');
+      expect(manLine?.text).toContain('煙や暗闇で視界が悪い −4');
+      expect(manLine?.text).toContain('= 4 vs 難易度 13');
+      expect(manLine?.text).toContain('出目 10 以上で成功');
+
+      // 2. 実判定 (POST /api/combats/:id/resolve) の検証: 不利な状況がDV判定に反映されること
+      // 状況修正なしだと REF 6 + 操縦 2 + 出目 5 = 13 > 10 で成功するが、
+      // 煙（-4）があると REF 6 + 操縦 2 − 4 + 出目 5 = 9 <= 10 で失敗（制御不能）になる
+      const resolveRes = await app.request(`/api/combats/${combatId}/resolve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GM_TOKEN}`,
+        },
+        body: JSON.stringify({
+          action_key: 'vehicle_control',
+          actor_id: partId,
+          attack_roll: { first: 5 },
+          situations: ['obscured'],
+        }),
+      });
+      expect(resolveRes.status).toBe(200);
+      const resJson = await resolveRes.json();
+      expect(resJson.result.success).toBe(false);
+      expect(resJson.result.formula).toContain('煙や暗闇で視界が悪い −4');
+      expect(resJson.result.formula).toContain('= 9 vs 難易度 10 -> 失敗: 制御不能');
+
+      // 特殊機動（急ハンドル DV 13）でも状況修正がDV判定に反映されること
+      const manResolveRes = await app.request(`/api/combats/${combatId}/resolve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GM_TOKEN}`,
+        },
+        body: JSON.stringify({
+          action_key: 'vehicle_maneuver',
+          maneuver: 'swerve',
+          actor_id: partId,
+          attack_roll: { first: 8 },
+          situations: ['obscured'],
+        }),
+      });
+      expect(manResolveRes.status).toBe(200);
+      const manResJson = await manResolveRes.json();
+      // 8 - 4 + 8 = 12 <= 13 (失敗)
+      expect(manResJson.result.success).toBe(false);
+      expect(manResJson.result.formula).toContain('煙や暗闇で視界が悪い −4');
+      expect(manResJson.result.formula).toContain('= 12 vs 難易度 13 -> 失敗');
+
+      // 3. 基本操縦が自動成功（driveBase >= 10）する場合の挙動が変わらないこと
+      const autoSuccessLine = attackLine(
+        {
+          action_key: 'vehicle_control',
+          situations: ['obscured'], // 不利な状況があっても
+        },
+        {
+          ...part,
+          character: {
+            ...part.character,
+            stats: { ...part.character.stats, ref: 8 },
+            skills: { drive_land_vehicle: 2 }, // 8 + 2 = 10 (>= 10)
+          },
+        },
+      );
+      expect(autoSuccessLine?.text).toContain('基本的な操縦は判定もアクションも要らない');
+
+      // 実判定でも自動成功
+      sqlite.prepare("UPDATE characters SET stats = json_set(stats, '$.ref', 8) WHERE id = ?").run(charId);
+      const autoResolveRes = await app.request(`/api/combats/${combatId}/resolve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GM_TOKEN}`,
+        },
+        body: JSON.stringify({
+          action_key: 'vehicle_control',
+          actor_id: partId,
+          situations: ['obscured'],
+        }),
+      });
+      expect(autoResolveRes.status).toBe(200);
+      const autoResolveJson = await autoResolveRes.json();
+      expect(autoResolveJson.result.success).toBe(true);
+      expect(autoResolveJson.result.formula).toContain('基本的な操縦は判定もアクションも要らない');
+    });
   });
 
   describe('B. 状態異常の付け外し（Issue #34）', () => {
@@ -376,6 +626,112 @@ describe('Phase 6h: 状況修正・状態異常の付け外し・戦闘ログを
       expect(p2.character.status).not.toContain('つかみ');
       expect(p1.state.grappling).toBeFalsy();
       expect(p2.state.grappled_by).toBeFalsy();
+    });
+
+    it('validates status names on add, rejecting unknown or remove-only statuses, while allowing valid manual statuses', async () => {
+      const charId = generateUlid();
+      db.insert(characters)
+        .values({
+          id: charId,
+          kind: 'pc',
+          name: '被験者',
+          role: 'Solo',
+          stats: '{}',
+          skills: '{}',
+          hp: 40,
+          hp_max: 40,
+          sp_head: 0,
+          sp_body: 0,
+          humanity: 50,
+          emp_max: 6,
+          status: '[]',
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        })
+        .run();
+
+      const combatId = generateUlid();
+      db.insert(combats)
+        .values({
+          id: combatId,
+          status: 'active',
+          round: 1,
+          turn_index: 0,
+          settings: '{}',
+          created_at: Date.now(),
+        })
+        .run();
+
+      const partId = generateUlid();
+      db.insert(combat_participants)
+        .values({
+          id: partId,
+          combat_id: combatId,
+          character_id: charId,
+          side: 'ally',
+          name: '被験者',
+          initiative: 10,
+          initiative_roll: '{}',
+          order_index: 0,
+          active: true,
+          out: false,
+          move_used: false,
+          action_used: false,
+          state: '{}',
+        })
+        .run();
+
+      // 1. 未定義の状態名は 400 で拒否されること
+      const unknownRes = await app.request(`/api/combats/${combatId}/status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GM_TOKEN}`,
+        },
+        body: JSON.stringify({
+          participant_id: partId,
+          action: 'add',
+          status: 'invalid_status_name',
+        }),
+      });
+      expect(unknownRes.status).toBe(400);
+      const unknownJson = await unknownRes.json();
+      expect(unknownJson.error).toContain('未対応または手動付与できない状態名');
+
+      // 2. 解除専用の状態名（つかみ・鋼のつかみ）を手動付与しようとすると 400 で拒否されること
+      const grappleAddRes = await app.request(`/api/combats/${combatId}/status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GM_TOKEN}`,
+        },
+        body: JSON.stringify({
+          participant_id: partId,
+          action: 'add',
+          status: 'つかみ',
+        }),
+      });
+      expect(grappleAddRes.status).toBe(400);
+
+      // 3. 許可リストにある状態名（気絶・着火（小））は 200 で付与できること
+      const validAddRes = await app.request(`/api/combats/${combatId}/status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GM_TOKEN}`,
+        },
+        body: JSON.stringify({
+          participant_id: partId,
+          action: 'add',
+          status: '着火（小）',
+          rounds: 2,
+        }),
+      });
+      expect(validAddRes.status).toBe(200);
+      const validJson = await validAddRes.json();
+      const p = validJson.combat.participants.find((x: any) => x.id === partId);
+      expect(p.character.status).toContain('着火（小）');
+      expect(p.state.statusRounds?.['着火（小）']).toBe(2);
     });
   });
 

@@ -206,9 +206,10 @@ test('Phase 6h: 状況修正・状態異常の付け外し・戦闘ログをセ�
     // 成功ラインの内訳に「煙や暗闇で視界が悪い −4」が出る
     await expect(gm.getByTestId('attack-line')).toContainText('煙や暗闇で視界が悪い −4');
 
-    // 「その他 ±」に -2 を入力
+    // 「その他 ±」に -2 を順次入力（キーボードからの負数入力確認）
     const customInput = gm.getByTestId('situation-custom-input');
-    await customInput.fill('-2');
+    await customInput.fill('');
+    await customInput.pressSequentially('-2');
 
     // 成功ラインに「その他 −2」が出る
     await expect(gm.getByTestId('attack-line')).toContainText('その他 −2');

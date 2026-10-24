@@ -196,9 +196,15 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [selectedSituations, setSelectedSituations] = useState<string[]>(
     ((combat?.settings?.default_situations as string[]) ?? []),
   );
-  const [customSituation, setCustomSituation] = useState<number>(
-    Number((combat?.settings?.default_situation_custom as number) ?? 0),
+  const [customSituationText, setCustomSituationText] = useState<string>(
+    combat?.settings?.default_situation_custom !== undefined && combat.settings.default_situation_custom !== 0
+      ? String(combat.settings.default_situation_custom)
+      : '',
   );
+  const customSituation = useMemo(() => {
+    const n = Number(customSituationText);
+    return Number.isFinite(n) ? n : 0;
+  }, [customSituationText]);
 
   // 戦闘が変わったとき、既定値を反映
   useEffect(() => {
@@ -207,7 +213,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
         setSelectedSituations(combat.settings.default_situations as string[]);
       }
       if (typeof combat.settings.default_situation_custom === 'number') {
-        setCustomSituation(combat.settings.default_situation_custom);
+        setCustomSituationText(
+          combat.settings.default_situation_custom !== 0 ? String(combat.settings.default_situation_custom) : '',
+        );
       }
     }
   }, [combat?.id]);
@@ -216,6 +224,13 @@ export const CombatView: React.FC<CombatViewProps> = ({
     setSelectedSituations((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
     );
+  };
+
+  const handleCustomSituationChange = (val: string) => {
+    const normalized = val.replace(/[−–—]/g, '-').replace(/[＋]/g, '+');
+    if (normalized === '' || normalized === '-' || normalized === '+' || /^[+-]?\d*$/.test(normalized)) {
+      setCustomSituationText(normalized);
+    }
   };
 
   const handleSaveDefaultSituations = async () => {
@@ -236,7 +251,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
   const handleResetToDefaultSituations = () => {
     setSelectedSituations(((combat?.settings?.default_situations as string[]) ?? []));
-    setCustomSituation(Number((combat?.settings?.default_situation_custom as number) ?? 0));
+    const def = Number(combat?.settings?.default_situation_custom) || 0;
+    setCustomSituationText(def !== 0 ? String(def) : '');
   };
 
   const situationTotal = useMemo(() => {
@@ -251,7 +267,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [attackLineText, setAttackLineText] = useState<{ text: string; bands?: Array<{range:string;dv:number;needed:string;current?:boolean}> } | null>(null);
   useEffect(() => {
     const cur = combat?.participants?.[combat.turn_index];
-    if (!combat || !cur || !['ranged', 'aimed', 'autofire', 'first_aid', ...MELEE_LIKE].includes(selectedActionKey ?? '')) {
+    if (!combat || !cur || !['ranged', 'aimed', 'autofire', 'first_aid', 'vehicle_control', 'vehicle_maneuver', ...MELEE_LIKE].includes(selectedActionKey ?? '')) {
       setAttackLineText(null);
       return;
     }
@@ -269,6 +285,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         luck_spent: luckSpent || undefined,
         situations: selectedSituations,
         situation_custom: customSituation || undefined,
+        maneuver: selectedActionKey === 'vehicle_maneuver' ? maneuverKey : undefined,
       }),
     })
       .then((r) => r.json())
@@ -277,7 +294,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
     return () => {
       alive = false;
     };
-  }, [combat?.id, combat?.turn_index, selectedActionKey, targetParticipantId, selectedWeaponId, distanceM, dodgeMode, luckSpent, selectedSituations, customSituation]);
+  }, [combat?.id, combat?.turn_index, selectedActionKey, targetParticipantId, selectedWeaponId, distanceM, dodgeMode, luckSpent, selectedSituations, customSituation, maneuverKey]);
 
   // 出目がどのスマホから届いたか（roll_type → 名前。Phase 5n）
   const [rollFrom, setRollFrom] = useState<Record<string, string>>({});
@@ -3765,9 +3782,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             inputMode="numeric"
                             pattern="[+-]?[0-9]*"
                             data-testid="situation-custom-input"
-                            value={customSituation || ''}
+                            value={customSituationText}
                             placeholder="0"
-                            onChange={(e) => setCustomSituation(Number(e.target.value) || 0)}
+                            onChange={(e) => handleCustomSituationChange(e.target.value)}
                             style={{ width: '48px', padding: '2px 4px', textAlign: 'center', backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }}
                           />
                         </label>

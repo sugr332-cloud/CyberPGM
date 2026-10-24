@@ -1778,7 +1778,7 @@ function resolveCombatActionInner(
       const list = Array.isArray(msg) ? msg : [msg];
       return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: list.join(' / '), breakdown: {}, changes: [], missing_inputs: list };
     };
-    const done = (success: boolean, formula: string, changes: CombatChange[]): ResolveResult => ({ action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, target_id: targetPart?.id, target_name: targetPart?.name, success, formula, breakdown: {}, changes });
+    const done = (success: boolean, formula: string, changes: CombatChange[], breakdown?: Record<string, any>): ResolveResult => ({ action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, target_id: targetPart?.id, target_name: targetPart?.name, success, formula, breakdown: breakdown ?? {}, changes });
     const st = (actorPart.state ?? {}) as Record<string, any>;
     const inVeh = st.in_vehicle as { owner_id: string; vehicle_id: string; driver?: boolean; started?: boolean } | undefined;
     // ヴィークルは持ち主のキャラの extra.vehicles にある。同じ行動で 2 回変えるときは、変えたあとの値から
@@ -1848,7 +1848,7 @@ function resolveCombatActionInner(
       return done(true, start ? `${myVeh!.name} を始動した。行動順の先頭になり、【移動】は ${myVeh!.move}（ヴィークルの値）。「走る」はできない` : `${myVeh!.name} を止めた`, changes);
     }
 
-    const skillKey = myVeh ? DRIVE_SKILL[myVeh.kind] : 'drive_land_vehicle';
+    const skillKey = (myVeh?.kind && DRIVE_SKILL[myVeh.kind]) ? DRIVE_SKILL[myVeh.kind] : 'drive_land_vehicle';
     const skill = actorChar.skills[skillKey] ?? 0;
     const driveBase = actorRef + skill;
     if (input.action_key === 'vehicle_control' || input.action_key === 'vehicle_maneuver') {
@@ -1859,13 +1859,21 @@ function resolveCombatActionInner(
       const r = d10v(input.attack_roll);
       if (r === null) return fail(recordRollMissing(input.attack_roll, 'attack_roll', 'attack_extra', '操縦の出目 (1d10) を「攻撃」の欄に入れてください'));
       const dv = man ? man.dv : 10;
-      const total = driveBase + actorWoundPen + luck + r;
+      const sitMods = situationModifiers(input.situations, input.situation_custom);
+      const sitTotal = attackModifierTotal(sitMods);
+      const sitFormula = sitMods.map(formatAttackModifier).join(' ');
+      const total = driveBase + actorWoundPen + luck + sitTotal + r;
       const ok = total > dv;
       const changes: CombatChange[] = [actionChange(man ? `特殊機動: ${man.name}` : '操縦')];
       if (man) changes.push({ target_id: actorPart.id, target_name: actorPart.name, field: 'state', before: { move_used: actorPart.move_used }, after: { move_used: true }, desc: `${actorPart.name} 移動アクション使用 (特殊機動)` });
       if (!ok) changes.push(updateVehicle(veh, { out_of_control: true }, `${myVeh!.name} 制御不能（移動は GM が決める）`));
       else if (myVeh!.out_of_control) changes.push(updateVehicle(veh, { out_of_control: false }, `${myVeh!.name} 制御を取り戻した`));
-      return done(ok, `${man ? `特殊機動「${man.name}」` : '基本的な操縦'}: REF ${actorRef} + ${formatSkillName(skillKey)} ${skill}${actorWoundPen ? ` ${actorWoundPen}` : ''}${luckText} + 出目 ${r} = ${total} vs 難易度 ${dv} -> ${ok ? '成功' : '失敗: 制御不能（移動は GM が決め、何かにぶつかれば体当たりと同じ）'}`, changes);
+      return done(
+        ok,
+        `${man ? `特殊機動「${man.name}」` : '基本的な操縦'}: REF ${actorRef} + ${formatSkillName(skillKey)} ${skill}${actorWoundPen ? ` ${actorWoundPen}` : ''}${sitFormula ? ` ${sitFormula}` : ''}${luckText} + 出目 ${r} = ${total} vs 難易度 ${dv} -> ${ok ? '成功' : '失敗: 制御不能（移動は GM が決め、何かにぶつかれば体当たりと同じ）'}`,
+        changes,
+        { total, dv, situations: sitMods.map((m) => m.key) }
+      );
     }
 
     if (input.action_key === 'vehicle_ram') {

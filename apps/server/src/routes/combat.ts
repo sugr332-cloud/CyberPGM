@@ -38,6 +38,7 @@ import {
   soloEffects,
   roleRank,
   DvTable,
+  MANUAL_STATUS_LIST,
 } from '@cyberpgm/shared';
 import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES, listActionAvailability } from '../services/combat-resolver.js';
 import { generateCombatSummary } from '../services/combat-summary.js';
@@ -1609,6 +1610,10 @@ combatRoutes.post('/combats/:id/status', requireGm, async (c) => {
     return c.json({ error: 'Missing participant_id, action, or status' }, 400);
   }
 
+  if (action !== 'add' && action !== 'remove') {
+    return c.json({ error: 'Action must be add or remove' }, 400);
+  }
+
   const part = combat.participants.find((p) => p.id === participant_id);
   if (!part) return c.json({ error: 'Participant not found' }, 404);
   const char = part.character;
@@ -1618,6 +1623,12 @@ combatRoutes.post('/combats/:id/status', requireGm, async (c) => {
   const HP_AUTO_STATUSES = ['seriously', 'mortally', 'dead', '重傷', '瀕死', '死亡'];
   if (HP_AUTO_STATUSES.includes(status)) {
     return c.json({ error: 'HP から自動で付く状態（重傷・瀕死・死亡）は手動で付け外しできません。HP を直すと変わります' }, 400);
+  }
+
+  // 手動付与できる状態名の検証（未対応の状態名や解除専用の状態名は400で拒否）
+  const ALLOWED_MANUAL_STATUSES = new Set(MANUAL_STATUS_LIST.map((s) => s.key));
+  if (action === 'add' && !ALLOWED_MANUAL_STATUSES.has(status)) {
+    return c.json({ error: `未対応または手動付与できない状態名です: ${status}` }, 400);
   }
 
   const changes: CombatChange[] = [];
