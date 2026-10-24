@@ -4,8 +4,10 @@ import {
   CreationMethodConfig,
   formatRole,
   getSkillDef,
+  decodeCharacterFromCode,
 } from '@cyberpgm/shared';
 import { api } from '../api.js';
+import { GoogleSitesExportModal } from './GoogleSitesExportModal.js';
 
 interface CharacterReceptionViewProps {
   onRefreshCharacters?: () => void;
@@ -34,9 +36,12 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
   const [rejectComment, setRejectComment] = useState<string>('');
   const [actionInProgress, setActionInProgress] = useState<boolean>(false);
 
-  // File import ref
+  // File & Code import ref / states
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [showCodeModal, setShowCodeModal] = useState<boolean>(false);
+  const [codeText, setCodeText] = useState<string>('');
+  const [showExportModal, setShowExportModal] = useState<boolean>(false);
 
   useEffect(() => {
     setLocalStartingFunds(startingFunds);
@@ -144,6 +149,26 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
     }
   };
 
+  const handleImportFromCode = async () => {
+    if (!codeText.trim()) return;
+    setImportError(null);
+    const result = decodeCharacterFromCode(codeText.trim());
+    if (!result.success || !result.file) {
+      setImportError(result.error || 'テキストコードの復元に失敗しました');
+      return;
+    }
+    try {
+      await api.importCharacterSubmission(result.file);
+      await loadData();
+      setShowCodeModal(false);
+      setCodeText('');
+      alert(`「${result.file.character?.name || 'キャラクター'}」のコードを取り込みました`);
+    } catch (err: any) {
+      console.error('Failed to import from code:', err);
+      setImportError(err.message || 'キャラクターの取り込みに失敗しました');
+    }
+  };
+
   const filteredSubs = submissions.filter((s) => {
     if (statusFilter === 'all') return true;
     return s.status === statusFilter;
@@ -212,6 +237,42 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
               }}
             >
               ファイルから取り込む (.cpgm)
+            </button>
+
+            <button
+              onClick={() => {
+                setImportError(null);
+                setCodeText('');
+                setShowCodeModal(true);
+              }}
+              style={{
+                backgroundColor: 'var(--color-surface-elevated)',
+                border: '1px solid var(--color-ally)',
+                color: 'var(--color-ally)',
+                padding: '8px 14px',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              コードから取り込む
+            </button>
+
+            <button
+              onClick={() => setShowExportModal(true)}
+              style={{
+                backgroundColor: 'var(--color-surface-elevated)',
+                border: '1px solid var(--color-warning)',
+                color: 'var(--color-warning)',
+                padding: '8px 14px',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Google サイト用 HTML 書き出し
             </button>
           </div>
         </div>
@@ -981,6 +1042,133 @@ export const CharacterReceptionView: React.FC<CharacterReceptionViewProps> = ({
           </div>
         </div>
       )}
+      {/* Code Import Modal */}
+      {showCodeModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '8px',
+              padding: '24px',
+              maxWidth: '560px',
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--color-ally)' }}>
+                キャラクターコードから取り込む
+              </h3>
+              <button
+                onClick={() => setShowCodeModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-text-muted)',
+                  fontSize: '1.2rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+              Google サイトのキャラ作成埋め込みやメールで送られた「CPGM1:...」形式のテキストコードを貼り付けてください。
+            </p>
+
+            <textarea
+              value={codeText}
+              onChange={(e) => setCodeText(e.target.value)}
+              placeholder="CPGM1:xxxxxxxx:..."
+              rows={6}
+              style={{
+                width: '100%',
+                backgroundColor: 'var(--color-bg)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '6px',
+                padding: '12px',
+                color: 'var(--color-text)',
+                fontFamily: 'monospace',
+                fontSize: '0.8rem',
+                resize: 'vertical',
+                boxSizing: 'border-box',
+              }}
+            />
+
+            {importError && (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  backgroundColor: 'rgba(255, 90, 95, 0.15)',
+                  border: '1px solid var(--color-accent)',
+                  color: 'var(--color-accent)',
+                  fontSize: '0.8rem',
+                }}
+              >
+                {importError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                onClick={() => setShowCodeModal(false)}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--color-border-light)',
+                  backgroundColor: 'transparent',
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                }}
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleImportFromCode}
+                disabled={!codeText.trim()}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: codeText.trim() ? 'var(--color-ally)' : 'var(--color-surface-elevated)',
+                  color: codeText.trim() ? '#000' : 'var(--color-text-muted)',
+                  fontWeight: 700,
+                  cursor: codeText.trim() ? 'pointer' : 'not-allowed',
+                  fontSize: '0.85rem',
+                }}
+              >
+                コードを取り込む
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Google Sites Export Modal */}
+      <GoogleSitesExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        defaultStartingFunds={Number(localStartingFunds) || 2550}
+      />
     </div>
   );
 };
