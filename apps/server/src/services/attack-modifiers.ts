@@ -1,9 +1,29 @@
-import type { CombatParticipant, InventoryEntry } from '@cyberpgm/shared';
+import { SITUATION_MODIFIERS, type CombatParticipant, type InventoryEntry } from '@cyberpgm/shared';
 import type { AppDatabase } from '../db/client.js';
 import { items } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 export interface AttackModifier { key: string; label: string; value: number }
+
+export function situationModifiers(keys?: string[] | null, custom?: number | null): AttackModifier[] {
+  const result: AttackModifier[] = [];
+  for (const key of keys ?? []) {
+    const def = SITUATION_MODIFIERS.find((s) => s.key === key);
+    if (def) {
+      result.push({ key: `situation_${def.key}`, label: def.label, value: def.value });
+    }
+  }
+  if (typeof custom === 'number' && !Number.isNaN(custom) && custom !== 0) {
+    result.push({ key: 'situation_custom', label: 'その他', value: custom });
+  }
+  return result;
+}
+
+export function formatAttackModifier(m: AttackModifier): string {
+  if (m.value === 0) return `${m.label} 0`;
+  const sign = m.value > 0 ? '+' : '−';
+  return `${m.label} ${sign}${Math.abs(m.value)}`;
+}
 
 export function rangedWeaponQuality(db: AppDatabase, weapon: { item_id?: string; quality?: string | null }, entry?: InventoryEntry): 'high' | 'low' | 'normal' {
   let item: typeof items.$inferSelect | undefined;
@@ -33,7 +53,7 @@ export function rangedAttackModifiers(
   entry: InventoryEntry | undefined,
   actionKey: string,
   distanceM: number | undefined,
-  values: { wound: number; grapple: number; ignoreSeriousWound: boolean; precision: number; luck?: number },
+  values: { wound: number; grapple: number; ignoreSeriousWound: boolean; precision: number; luck?: number; situations?: string[]; situation_custom?: number },
 ): AttackModifier[] {
   const result: AttackModifier[] = [];
   const character = actor.character;
@@ -70,6 +90,7 @@ export function rangedAttackModifiers(
   if (values.ignoreSeriousWound && values.wound === -2) result.push({ key: 'ignore_wound', label: '重傷（ドラッグで無視）', value: 0 });
   else if (values.wound) result.push({ key: 'wound', label: values.wound === -4 ? '瀕死' : '重傷', value: values.wound });
   if (values.grapple) result.push({ key: 'grapple', label: 'つかみ', value: values.grapple });
+  result.push(...situationModifiers(values.situations, values.situation_custom));
   return result;
 }
 

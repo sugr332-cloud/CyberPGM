@@ -1453,9 +1453,9 @@ export const ScenarioPlayView: React.FC<ScenarioPlayViewProps> = ({ characters }
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px 12px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
           {logs.map((l) => (
-            <div key={l.id} style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
+            <div key={l.id} style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)', whiteSpace: 'pre-wrap' }}>
               <span style={{ opacity: 0.7 }}>[{new Date(l.at).toLocaleTimeString('ja-JP')}]</span>{' '}
-              <span style={{ color: l.kind === 'check' ? 'var(--color-ally)' : l.kind === 'scene' ? 'var(--color-warning)' : 'var(--color-text)' }}>
+              <span style={{ color: l.kind === 'check' ? 'var(--color-ally)' : l.kind === 'scene' ? 'var(--color-warning)' : l.kind === 'combat' ? 'var(--color-warning)' : 'var(--color-text)' }}>
                 {l.text}
               </span>
             </div>

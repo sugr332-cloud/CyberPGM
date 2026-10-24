@@ -530,6 +530,13 @@ export const api = {
       method: 'POST',
     }, getGmToken()),
 
+  // 手動で状態を付け外しする（Phase 6h: Issue #34）
+  updateCombatStatus: (combatId: string, data: { participant_id: string; action: 'add' | 'remove'; status: string; rounds?: number | null }) =>
+    request<{ success: boolean; combat: any }>(`/api/combats/${combatId}/status`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, getGmToken()),
+
   // 行動ごとの「今できるか・できない理由」（Phase 6a）。GM は participantId の人、プレイヤーは自分
   getCombatAvailability: (token?: string | null, participantId?: string | null) =>
     request<{ participant_id: string | null; actions: Record<string, string | null> }>(
