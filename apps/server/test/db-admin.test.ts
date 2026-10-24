@@ -221,23 +221,50 @@ describe('DB Admin API (Issue #36)', () => {
   });
 
   it('POST /api/db/import/:entity non-destructively updates items without deleting child weapons/armors/cyberwares', async () => {
-    const parentId = 'test-non-destructive-parent-01';
+    const weaponItemId = 'test-non-destructive-weapon-01';
+    const armorItemId = 'test-non-destructive-armor-01';
+    const cyberwareItemId = 'test-non-destructive-cyberware-01';
 
-    // Setup parent item and children in weapons, armors, cyberwares
-    db.insert(items).values({
-      id: parentId,
-      kind: 'weapon',
-      name_en: 'Parent Weapon Original',
-      name_ja: '親武器元名称',
-      price_eb: 500,
-      origin: 'official_verified',
-      verify_status: 'official_verified',
-      created_at: 1000,
-      updated_at: 1000,
-    }).run();
+    // 1. Setup parent items for weapon, armor, and cyberware
+    db.insert(items).values([
+      {
+        id: weaponItemId,
+        kind: 'weapon',
+        name_en: 'Parent Weapon Original',
+        name_ja: '親武器元名称',
+        price_eb: 500,
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: 1000,
+        updated_at: 1000,
+      },
+      {
+        id: armorItemId,
+        kind: 'armor',
+        name_en: 'Parent Armor Original',
+        name_ja: '親防具元名称',
+        price_eb: 200,
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: 1000,
+        updated_at: 1000,
+      },
+      {
+        id: cyberwareItemId,
+        kind: 'cyberware',
+        name_en: 'Parent Cyberware Original',
+        name_ja: '親サイバー元名称',
+        price_eb: 1000,
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: 1000,
+        updated_at: 1000,
+      },
+    ]).run();
 
+    // 2. Setup child rows in all 3 child tables
     db.insert(weapons).values({
-      item_id: parentId,
+      item_id: weaponItemId,
       weapon_type: 'assaultRifle',
       skill: 'shoulder_arms',
       damage: '5d6',
@@ -250,17 +277,60 @@ describe('DB Admin API (Issue #36)', () => {
       is_ranged: true,
     }).run();
 
-    // Import update on parent item (updating name_ja and price_eb)
+    db.insert(armors).values({
+      item_id: armorItemId,
+      sp_head: 0,
+      sp_body: 11,
+      is_head: false,
+      is_body: true,
+      is_shield: false,
+      shield_hp: 0,
+      penalty: 0,
+    }).run();
+
+    db.insert(cyberwares).values({
+      item_id: cyberwareItemId,
+      cw_type: 'neuralware',
+      install_location: 'neural',
+      humanity_loss_roll: '2d6',
+      humanity_loss_static: 7,
+      is_core: true,
+      slot_size: 1,
+    }).run();
+
+    // 3. Import update on all 3 parent items (updating name_ja and price_eb)
     const updateRes = await app.request('/api/db/import/items', {
       method: 'POST',
       headers: H('application/json'),
       body: JSON.stringify([
         {
-          id: parentId,
+          id: weaponItemId,
           kind: 'weapon',
           name_en: 'Parent Weapon Original',
           name_ja: '親武器更新後名称',
           price_eb: 850,
+          origin: 'official_verified',
+          verify_status: 'official_verified',
+          created_at: 1000,
+          updated_at: 2000,
+        },
+        {
+          id: armorItemId,
+          kind: 'armor',
+          name_en: 'Parent Armor Original',
+          name_ja: '親防具更新後名称',
+          price_eb: 350,
+          origin: 'official_verified',
+          verify_status: 'official_verified',
+          created_at: 1000,
+          updated_at: 2000,
+        },
+        {
+          id: cyberwareItemId,
+          kind: 'cyberware',
+          name_en: 'Parent Cyberware Original',
+          name_ja: '親サイバー更新後名称',
+          price_eb: 1500,
           origin: 'official_verified',
           verify_status: 'official_verified',
           created_at: 1000,
@@ -271,16 +341,33 @@ describe('DB Admin API (Issue #36)', () => {
 
     expect(updateRes.status).toBe(200);
 
-    // Verify parent is updated
-    const updatedParent = db.select().from(items).where(eq(items.id, parentId)).get();
-    expect(updatedParent?.name_ja).toBe('親武器更新後名称');
-    expect(updatedParent?.price_eb).toBe(850);
+    // 4. Verify all 3 parents are updated
+    const updatedWeaponParent = db.select().from(items).where(eq(items.id, weaponItemId)).get();
+    expect(updatedWeaponParent?.name_ja).toBe('親武器更新後名称');
+    expect(updatedWeaponParent?.price_eb).toBe(850);
 
-    // Verify child in weapons is STILL INTACT (NOT deleted by REPLACE)
-    const childWeapon = db.select().from(weapons).where(eq(weapons.item_id, parentId)).get();
+    const updatedArmorParent = db.select().from(items).where(eq(items.id, armorItemId)).get();
+    expect(updatedArmorParent?.name_ja).toBe('親防具更新後名称');
+    expect(updatedArmorParent?.price_eb).toBe(350);
+
+    const updatedCyberwareParent = db.select().from(items).where(eq(items.id, cyberwareItemId)).get();
+    expect(updatedCyberwareParent?.name_ja).toBe('親サイバー更新後名称');
+    expect(updatedCyberwareParent?.price_eb).toBe(1500);
+
+    // 5. Verify child rows in weapons, armors, AND cyberwares are ALL STILL INTACT (NOT deleted by REPLACE)
+    const childWeapon = db.select().from(weapons).where(eq(weapons.item_id, weaponItemId)).get();
     expect(childWeapon).toBeDefined();
     expect(childWeapon?.damage).toBe('5d6');
     expect(childWeapon?.weapon_type).toBe('assaultRifle');
+
+    const childArmor = db.select().from(armors).where(eq(armors.item_id, armorItemId)).get();
+    expect(childArmor).toBeDefined();
+    expect(childArmor?.sp_body).toBe(11);
+
+    const childCyberware = db.select().from(cyberwares).where(eq(cyberwares.item_id, cyberwareItemId)).get();
+    expect(childCyberware).toBeDefined();
+    expect(childCyberware?.cw_type).toBe('neuralware');
+    expect(childCyberware?.humanity_loss_static).toBe(7);
   });
 
   it('POST /api/db/import/:entity validates foreign key references and rejects dangling pointers', async () => {
@@ -421,24 +508,64 @@ describe('DB Admin API (Issue #36)', () => {
     expect(invalidStatusRes.status).toBe(400);
   });
 
-  it('GET /api/db/export-all exports full database dump and POST /api/db/import-all works non-destructively', async () => {
-    const parentId = 'test-dump-item-parent-01';
+  it('GET /api/db/export-all exports full database dump and POST /api/db/import-all works non-destructively for weapons/armors/cyberwares', async () => {
+    const weaponId = 'test-dump-weapon-parent-01';
+    const armorId = 'test-dump-armor-parent-01';
+    const cyberwareId = 'test-dump-cyberware-parent-01';
 
-    // Setup parent item and armor child
-    db.insert(items).values({
-      id: parentId,
-      kind: 'armor',
-      name_en: 'Armor Dump Parent',
-      name_ja: '防具ダンプ親',
-      price_eb: 300,
-      origin: 'official_verified',
-      verify_status: 'official_verified',
-      created_at: 1000,
-      updated_at: 1000,
+    // 1. Setup parent items for weapon, armor, and cyberware
+    db.insert(items).values([
+      {
+        id: weaponId,
+        kind: 'weapon',
+        name_en: 'Dump Weapon Parent',
+        name_ja: 'ダンプ武器親',
+        price_eb: 500,
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: 1000,
+        updated_at: 1000,
+      },
+      {
+        id: armorId,
+        kind: 'armor',
+        name_en: 'Dump Armor Parent',
+        name_ja: 'ダンプ防具親',
+        price_eb: 300,
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: 1000,
+        updated_at: 1000,
+      },
+      {
+        id: cyberwareId,
+        kind: 'cyberware',
+        name_en: 'Dump Cyberware Parent',
+        name_ja: 'ダンプサイバー親',
+        price_eb: 800,
+        origin: 'official_verified',
+        verify_status: 'official_verified',
+        created_at: 1000,
+        updated_at: 1000,
+      },
+    ]).run();
+
+    // 2. Setup child rows for all 3 entities
+    db.insert(weapons).values({
+      item_id: weaponId,
+      weapon_type: 'pistol',
+      skill: 'handgun',
+      damage: '3d6',
+      rof: 2,
+      magazine_max: 12,
+      hands: 1,
+      concealable: true,
+      quality: 'standard',
+      is_ranged: true,
     }).run();
 
     db.insert(armors).values({
-      item_id: parentId,
+      item_id: armorId,
       sp_head: 0,
       sp_body: 11,
       is_head: false,
@@ -448,6 +575,16 @@ describe('DB Admin API (Issue #36)', () => {
       penalty: 0,
     }).run();
 
+    db.insert(cyberwares).values({
+      item_id: cyberwareId,
+      cw_type: 'cyberarm',
+      install_location: 'arm',
+      humanity_loss_roll: '2d6',
+      humanity_loss_static: 7,
+      is_core: true,
+      slot_size: 2,
+    }).run();
+
     const res = await app.request('/api/db/export-all', { headers: H() });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -455,7 +592,7 @@ describe('DB Admin API (Issue #36)', () => {
     expect(body.entities).toBeDefined();
     expect(body.entities.items).toBeDefined();
 
-    // Import-all updating parent item name_ja and price_eb
+    // 3. Import-all updating all 3 parent items' name_ja and price_eb
     const importAllRes = await app.request('/api/db/import-all', {
       method: 'POST',
       headers: H('application/json'),
@@ -463,11 +600,33 @@ describe('DB Admin API (Issue #36)', () => {
         entities: {
           items: [
             {
-              id: parentId,
+              id: weaponId,
+              kind: 'weapon',
+              name_en: 'Dump Weapon Parent',
+              name_ja: 'ダンプ武器親更新済み',
+              price_eb: 650,
+              origin: 'official_verified',
+              verify_status: 'official_verified',
+              created_at: 1000,
+              updated_at: 2000,
+            },
+            {
+              id: armorId,
               kind: 'armor',
-              name_en: 'Armor Dump Parent',
-              name_ja: '防具ダンプ親更新済み',
+              name_en: 'Dump Armor Parent',
+              name_ja: 'ダンプ防具親更新済み',
               price_eb: 450,
+              origin: 'official_verified',
+              verify_status: 'official_verified',
+              created_at: 1000,
+              updated_at: 2000,
+            },
+            {
+              id: cyberwareId,
+              kind: 'cyberware',
+              name_en: 'Dump Cyberware Parent',
+              name_ja: 'ダンプサイバー親更新済み',
+              price_eb: 950,
               origin: 'official_verified',
               verify_status: 'official_verified',
               created_at: 1000,
@@ -480,17 +639,35 @@ describe('DB Admin API (Issue #36)', () => {
 
     expect(importAllRes.status).toBe(200);
 
-    // Verify parent updated
-    const updatedParent = db.select().from(items).where(eq(items.id, parentId)).get();
-    expect(updatedParent?.name_ja).toBe('防具ダンプ親更新済み');
-    expect(updatedParent?.price_eb).toBe(450);
+    // 4. Verify all 3 parents updated
+    const updatedWeaponParent = db.select().from(items).where(eq(items.id, weaponId)).get();
+    expect(updatedWeaponParent?.name_ja).toBe('ダンプ武器親更新済み');
+    expect(updatedWeaponParent?.price_eb).toBe(650);
 
-    // Verify armor child is still intact
-    const childArmor = db.select().from(armors).where(eq(armors.item_id, parentId)).get();
+    const updatedArmorParent = db.select().from(items).where(eq(items.id, armorId)).get();
+    expect(updatedArmorParent?.name_ja).toBe('ダンプ防具親更新済み');
+    expect(updatedArmorParent?.price_eb).toBe(450);
+
+    const updatedCyberwareParent = db.select().from(items).where(eq(items.id, cyberwareId)).get();
+    expect(updatedCyberwareParent?.name_ja).toBe('ダンプサイバー親更新済み');
+    expect(updatedCyberwareParent?.price_eb).toBe(950);
+
+    // 5. Verify all 3 children (weapons, armors, cyberwares) are ALL STILL INTACT
+    const childWeapon = db.select().from(weapons).where(eq(weapons.item_id, weaponId)).get();
+    expect(childWeapon).toBeDefined();
+    expect(childWeapon?.damage).toBe('3d6');
+    expect(childWeapon?.weapon_type).toBe('pistol');
+
+    const childArmor = db.select().from(armors).where(eq(armors.item_id, armorId)).get();
     expect(childArmor).toBeDefined();
     expect(childArmor?.sp_body).toBe(11);
 
-    // Import-all with unknown column should fail with 400 and rollback
+    const childCyberware = db.select().from(cyberwares).where(eq(cyberwares.item_id, cyberwareId)).get();
+    expect(childCyberware).toBeDefined();
+    expect(childCyberware?.cw_type).toBe('cyberarm');
+    expect(childCyberware?.humanity_loss_static).toBe(7);
+
+    // 6. Import-all with unknown column should fail with 400 and rollback
     const badImportRes = await app.request('/api/db/import-all', {
       method: 'POST',
       headers: H('application/json'),
@@ -498,9 +675,9 @@ describe('DB Admin API (Issue #36)', () => {
         entities: {
           items: [
             {
-              id: parentId,
+              id: armorId,
               kind: 'armor',
-              name_en: 'Armor Dump Parent',
+              name_en: 'Dump Armor Parent',
               name_ja: 'これは反映されないべき',
               bogus_col: 123,
               origin: 'official_verified',
@@ -517,7 +694,7 @@ describe('DB Admin API (Issue #36)', () => {
     expect(badBody.details.some((d: string) => d.includes('未知のカラム'))).toBe(true);
 
     // Check that parent was not updated
-    const afterBad = db.select().from(items).where(eq(items.id, parentId)).get();
-    expect(afterBad?.name_ja).toBe('防具ダンプ親更新済み');
+    const afterBad = db.select().from(items).where(eq(items.id, armorId)).get();
+    expect(afterBad?.name_ja).toBe('ダンプ防具親更新済み');
   });
 });

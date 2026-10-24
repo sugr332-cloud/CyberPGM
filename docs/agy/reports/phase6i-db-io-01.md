@@ -9,7 +9,7 @@
 
 ## 1. 実施概要
 
-CyberPGM Issue #36（DBの全エンティティのCSV/JSON入出力、確認状態の一括変更、未確認品の一覧）の実装、および Codex 監査に基づく非破壊 Upsert / 厳格バリデーションへの修正を完了しました。
+CyberPGM Issue #36（DBの全エンティティのCSV/JSON入出力、確認状態の一括変更、未確認品の一覧）の実装、および Codex 監査に基づく非破壊 Upsert / 厳格バリデーションへの修正・回帰テストの拡充を完了しました。
 `docs/SPEC.md` §5.4・§10、既存スキーマおよびアーキテクチャに準拠し、以下の機能を設計・実装・テストしました。
 
 ### A. DB 全エンティティ（40テーブル）の CSV / JSON 入出力
@@ -74,7 +74,7 @@ CyberPGM Issue #36（DBの全エンティティのCSV/JSON入出力、確認状�
 | `packages/shared/test/csv.test.ts` | **新規**: CSV エスケープ・パース・配列変換の単体テスト（4 tests）。 |
 | `apps/server/src/routes/db-admin.ts` | **新規/改修**: DB 管理 API。<br>1. 全40エンティティ一覧・単一/一括エクスポート・インポート・未確認品一覧・一括確認更新。<br>2. **Codex監査対応**: `INSERT OR REPLACE` を廃止し、`PRAGMA table_info` から順序付き主キー列を特定した `INSERT ... ON CONFLICT(pk) DO UPDATE SET` へ改修（入力非PK列のみ更新、PKなしテーブルは標準INSERT）。<br>3. **Codex監査対応**: 未知のカラムおよび非オブジェクト行を HTTP 400 で拒否するバリデーションを追加。 |
 | `apps/server/src/index.ts` | `dbAdminRoutes` を `/api/db` にマウント。 |
-| `apps/server/test/db-admin.test.ts` | **新規/拡充**: DB 管理 API の総合テスト（計10 tests）。<br>- 全40エンティティ取得・メタデータ検証<br>- JSON/CSV 単一エクスポート<br>- JSON/CSV 単一インポート<br>- 必須列欠損時の 400 検証およびアトミックロールバック（部分更新なし）<br>- 未知のカラム・非オブジェクト行の 400 拒否およびロールバック<br>- **Codex監査対応回帰テスト**: 親 `items` 行のインポート更新時に子 `weapons`/`armors`/`cyberwares` 行が削除されず保持されることの検証<br>- 外部キー参照整合性エラーの検出とロールバック<br>- 未確認品一覧・種別絞り込み・検索<br>- 一括ステータス更新 (`bulk-verify`)<br>- 全テーブル一括エクスポート/インポート（親行更新時の子防具行保持および未知カラム時のロールバック検証を含む） |
+| `apps/server/test/db-admin.test.ts` | **新規/拡充**: DB 管理 API の総合テスト（計10 tests）。<br>- 全40エンティティ取得・メタデータ検証<br>- JSON/CSV 単一エクスポート<br>- JSON/CSV 単一インポート<br>- 必須列欠損時の 400 検証およびアトミックロールバック（部分更新なし）<br>- 未知のカラム・非オブジェクト行の 400 拒否およびロールバック<br>- **Codex監査対応回帰テスト（単一インポート）**: 親 `items` 行の更新時に、子 `weapons`・`armors`・`cyberwares` の 3 テーブルすべての既存行が削除されず保持されることの実証検証<br>- 外部キー参照整合性エラーの検出とロールバック<br>- 未確認品一覧・種別絞り込み・検索<br>- 一括ステータス更新 (`bulk-verify`)<br>- **Codex監査対応回帰テスト（一括インポート）**: 全テーブル一括エクスポート・インポート時に、親 `items` 行更新後も子 `weapons`・`armors`・`cyberwares` の 3 テーブルすべての既存行が削除されず保持されることの実証検証、および未知カラム時の 400 拒否とロールバック検証 |
 | `apps/web/src/api.ts` | DB 管理用の API クライアント関数およびインターフェース（`getDbEntities`, `exportAllDb`, `getUnverifiedItems`, `bulkVerifyItems`, `importDbEntity`, `importAllDb`）を追加。 |
 | `apps/web/src/components/DbAdminTab.tsx` | **新規**: GM 画面の DB タブ用コンポーネント（未確認品一覧・一括変更・全エンティティ一覧・CSV/JSON入出力エディタ）。 |
 | `apps/web/src/pages/GmPage.tsx` | DB タブプレースホルダーを `DbAdminTab` に差し替え。 |
@@ -90,7 +90,7 @@ CyberPGM Issue #36（DBの全エンティティのCSV/JSON入出力、確認状�
 > cyberpgm@0.1.0 lint
 > eslint .
 
-✖ 780 problems (0 errors, 780 warnings)
+✖ 779 problems (0 errors, 779 warnings)
 ```
 - エラー 0 件で正常終了。
 
@@ -108,6 +108,8 @@ Test Files  1 failed | 50 passed (51)
 ```
 - **Phase 6i 新規・拡充テスト**:
   - `apps/server/test/db-admin.test.ts` (10 tests) : **全件成功 (10 passed)**
+    - 単一インポート (`POST /api/db/import/items`) での `weapons`, `armors`, `cyberwares` 子行保持検証: **成功**
+    - 一括インポート (`POST /api/db/import-all`) での `weapons`, `armors`, `cyberwares` 子行保持検証: **成功**
   - `packages/shared/test/csv.test.ts` (4 tests) : **全件成功 (4 passed)**
 - **失敗テストの特定と分析**:
   - 失敗ファイル: `apps/server/test/item-notes.test.ts`
@@ -149,8 +151,9 @@ Test Files  1 failed | 50 passed (51)
 2. **厳格なスキーマ検証**:
    - 未知のカラムや非オブジェクト行が含まれる場合、即座に HTTP 400 エラーを返しトランザクションを中断。
    - 部分更新（一部の正常行だけが保存される状態）が発生しないことを回帰テストで証明。
-3. **回帰テストの拡充**:
-   - `db-admin.test.ts` に、親アイテムを更新しても既存の武器・防具・サイバーウェア子行が維持されることの検証（単一インポートおよび一括インポートの両方）、未知カラム・非オブジェクト行の 400 拒否とロールバック検証を追加（計 10 tests）。
+3. **回帰テストの拡充（子行保持の実証）**:
+   - `db-admin.test.ts` にて、単一インポート（`POST /api/db/import/items`）と一括インポート（`POST /api/db/import-all`）の双方で、親アイテムを更新した際に子テーブル 3 種（`weapons`・`armors`・`cyberwares`）の既存行がすべて削除されず完全に保持されることを実証検証しました。
+   - 未知カラム・非オブジェクト行の 400 拒否とロールバック検証を追加（計 10 tests）。
 
 ---
 
