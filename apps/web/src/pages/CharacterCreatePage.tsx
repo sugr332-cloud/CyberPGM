@@ -25,6 +25,9 @@ import {
 } from '@cyberpgm/rules';
 import { api } from '../api.js';
 import '../player-theme.css';
+import { saveCatalogSnapshot, loadCatalogSnapshot } from '../utils/offlineCatalog.js';
+import { useNetworkStatus } from '../hooks/useNetworkStatus.js';
+import { encodeCharacterToCode } from '@cyberpgm/shared';
 
 const STORAGE_KEY = 'cpgm_char_draft';
 const SUBMISSION_ID_KEY = 'cpgm_submission_id';
@@ -118,6 +121,8 @@ export const CharacterCreatePage: React.FC = () => {
   const [submissionId, setSubmissionId] = useState<string | null>(() => localStorage.getItem(SUBMISSION_ID_KEY));
   const [submissionStatus, setSubmissionStatus] = useState<any | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const isOnline = useNetworkStatus();
+  const [copiedCodeNotice, setCopiedCodeNotice] = useState<string | null>(null);
 
   // Load Creation Settings, Notes, and Catalog
   useEffect(() => {
@@ -135,9 +140,16 @@ export const CharacterCreatePage: React.FC = () => {
         setStartingFunds(methodsRes.starting_funds);
         setFundsScenarioTitle(methodsRes.scenario_title ?? null);
         setSkillNotes(notesRes.notes || {});
-        setCatalogItems(itemsRes.items || []);
+        if (itemsRes.items && itemsRes.items.length > 0) {
+          setCatalogItems(itemsRes.items);
+          saveCatalogSnapshot(itemsRes.items);
+        }
       } catch (err) {
-        console.error('Failed to load initial creation data:', err);
+        console.error('Failed to load initial creation data, falling back to offline snapshot:', err);
+        const snapshot = loadCatalogSnapshot();
+        if (snapshot && snapshot.items && snapshot.items.length > 0) {
+          setCatalogItems(snapshot.items);
+        }
       }
     }
     init();
@@ -420,8 +432,43 @@ export const CharacterCreatePage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  // Copy Character Code to Clipboard
+  const handleCopyCode = () => {
+    const fileData: CpgmCharacterFile = {
+      format: 'cpgm-character',
+      version: 1,
+      character: currentDraft,
+      created_with: {
+        method: activeMethodKey,
+        starting_funds: startingFunds,
+      },
+    };
+    const res = encodeCharacterToCode(fileData);
+    if (res.warning) {
+      alert(res.warning);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(res.code)
+        .then(() => {
+          setCopiedCodeNotice('キャラクターコードをクリップボードにコピーしました！');
+          setTimeout(() => setCopiedCodeNotice(null), 4000);
+        })
+        .catch(() => {
+          window.prompt('以下のキャラクターコードをコピーしてください:', res.code);
+        });
+    } else {
+      window.prompt('以下のキャラクターコードをコピーしてください:', res.code);
+    }
+  };
+
   // Submit to GM
   const handleSubmit = async () => {
+    if (!isOnline) {
+      alert('オフラインのためGMへの直接送信は行えません。「ファイル保存 (.cpgm)」または「コードをコピー」でキャラデータを保存してください。');
+      return;
+    }
+
     if (!name.trim()) {
       alert('ハンドル名を入力してください');
       setStep(1);
@@ -2062,38 +2109,89 @@ export const CharacterCreatePage: React.FC = () => {
 
           {/* Submit & Export Actions */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+            {!isOnline && (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(255, 90, 95, 0.15)',
+                  border: '1px solid var(--color-accent)',
+                  color: 'var(--color-accent)',
+                  fontSize: '0.8rem',
+                  lineHeight: '1.4',
+                  textAlign: 'center',
+                }}
+              >
+                ⚠️ 現在オフラインです。GMへの直接送信はできません。ファイル保存またはコードをコピーして保管してください。
+              </div>
+            )}
+
+            {copiedCodeNotice && (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(126, 226, 168, 0.15)',
+                  border: '1px solid var(--color-success)',
+                  color: 'var(--color-success)',
+                  fontSize: '0.85rem',
+                  textAlign: 'center',
+                }}
+              >
+                {copiedCodeNotice}
+              </div>
+            )}
+
             <button
               onClick={handleSubmit}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isOnline}
               style={{
                 padding: '14px',
                 borderRadius: '6px',
                 border: 'none',
-                backgroundColor: 'var(--color-ally)',
-                color: '#000',
+                backgroundColor: !isOnline ? 'var(--color-surface-elevated)' : 'var(--color-ally)',
+                color: !isOnline ? 'var(--color-text-muted)' : '#000',
                 fontWeight: 800,
                 fontSize: '1.05rem',
-                cursor: 'pointer',
+                cursor: !isOnline ? 'not-allowed' : 'pointer',
               }}
             >
-              {isSubmitting ? '送信中…' : 'GMに送る'}
+              {!isOnline ? 'オフラインのため送信不可（閲覧のみ）' : isSubmitting ? '送信中…' : 'GMに送る'}
             </button>
 
-            <button
-              onClick={handleExportCpgm}
-              style={{
-                padding: '10px',
-                borderRadius: '6px',
-                border: '1px solid var(--color-border-light)',
-                backgroundColor: 'var(--color-surface-elevated)',
-                color: 'var(--color-text)',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-              }}
-            >
-              ファイルに保存 (.cpgm)
-            </button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <button
+                onClick={handleExportCpgm}
+                style={{
+                  padding: '10px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--color-border-light)',
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  color: 'var(--color-text)',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                ファイル保存 (.cpgm)
+              </button>
+
+              <button
+                onClick={handleCopyCode}
+                style={{
+                  padding: '10px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--color-ally)',
+                  backgroundColor: 'rgba(79, 182, 227, 0.1)',
+                  color: 'var(--color-ally)',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                コードをコピー
+              </button>
+            </div>
           </div>
         </div>
       )}
