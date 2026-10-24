@@ -45,6 +45,7 @@ import { vehiclesRoutes } from './routes/vehicles.js';
 import { netrunRoutes } from './routes/netrun.js';
 import { loreRoutes } from './routes/lore.js';
 import { npcTemplatesRoutes } from './routes/npc-templates.js';
+import { dbAdminRoutes } from './routes/db-admin.js';
 
 export const app = new Hono();
 
@@ -85,6 +86,7 @@ app.route('/api', audioRoutes);
 app.route('/api', searchRoutes);
 app.route('/api', playerShopRoutes);
 app.route('/api', playersRoutes);
+app.route('/api/db', dbAdminRoutes);
 
 // Configure session providers
 sessionManager.setCombatProvider(getCurrentCombat);

@@ -469,7 +469,7 @@ export function runImport(options: ImportOptions): ImportReportData {
 
           if (fs.existsSync(fullSrcImgPath)) {
             const subPath = srcImgPath.replace(/^src\/icons\//, '');
-            imgRelPath = path.join('fvtt', subPath);
+            imgRelPath = path.join('fvtt', subPath).replace(/\\/g, '/');
             const fullTargetImgPath = path.join(imagesTargetDir, imgRelPath);
 
             imgCredit = findAttribution(srcImgPath, creditEntries);

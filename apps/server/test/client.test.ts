@@ -38,7 +38,7 @@ describe('client.ts DB and Images path resolution', () => {
     const originalImagesDir = process.env.IMAGES_DIR;
     try {
       process.env.IMAGES_DIR = '/tmp/custom-images';
-      expect(getImagesDir()).toBe('/tmp/custom-images');
+      expect(getImagesDir()).toBe(path.resolve('/tmp/custom-images'));
     } finally {
       if (originalImagesDir) process.env.IMAGES_DIR = originalImagesDir;
     }
