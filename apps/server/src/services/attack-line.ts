@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm';
-import { CombatParticipant, InventoryEntry, skillNameToKey, formatSkillName, soloEffects, drugModifiers } from '@cyberpgm/shared';
+import { CombatParticipant, InventoryEntry, skillNameToKey, formatSkillName, soloEffects, drugModifiers, DRIVE_SKILL, MANEUVERS } from '@cyberpgm/shared';
 import { canDodgeRanged, formatNeeded, neededRoll, rangedDv, woundPenalty, woundState } from '@cyberpgm/rules';
 import type { DvTable } from '@cyberpgm/shared';
 import { db } from '../db/client.js';
-import { items, rule_constants, weapons } from '../db/schema.js';
-import { attackModifierTotal, rangedAttackModifiers } from './attack-modifiers.js';
+import { characters, items, rule_constants, weapons } from '../db/schema.js';
+import { attackModifierTotal, rangedAttackModifiers, situationModifiers, formatAttackModifier } from './attack-modifiers.js';
 
 /**
  * 出目を入れる前に出す「計算式と成功ライン」（仕様 §5.0.1。Phase 5n）。
@@ -23,6 +23,9 @@ interface LineInput {
   distance_m?: number | null;
   dodge_mode?: 'dv' | 'dodge';
   luck_spent?: number;
+  situations?: string[];
+  situation_custom?: number;
+  maneuver?: string;
 }
 
 const RANGED = ['ranged', 'aimed', 'autofire', 'suppressive'];
@@ -64,10 +67,14 @@ export function attackLine(input: LineInput, actor: CombatParticipant, target?: 
     const modifiers = rangedAttackModifiers(db, actor, w, w.entry, input.action_key, input.distance_m ?? undefined, {
       wound, grapple: ch.status.includes('つかみ') ? -2 : 0,
       ignoreSeriousWound: drugModifiers(ch.extra).ignoreSeriousWound, precision: soloEffects(ch.role, ch.extra).precision, luck: input.luck_spent ?? 0,
+      situations: input.situations, situation_custom: input.situation_custom,
     });
     const aimed = input.action_key === 'aimed' ? -8 : 0;
     const base = ref + skill + aimed + attackModifierTotal(modifiers);
-    const modifierText = modifiers.map((m) => m.value === 0 ? `${m.label} 0` : `${m.value > 0 ? '+' : '−'} ${m.label}${Math.abs(m.value) === 1 ? '' : ` ${Math.abs(m.value)}`}`).join(' ');
+    const modifierText = modifiers.map((m) => {
+      if (m.key.startsWith('situation')) return `${m.label} ${m.value > 0 ? `+${m.value}` : `−${Math.abs(m.value)}`}`;
+      return m.value === 0 ? `${m.label} 0` : `${m.value > 0 ? '+' : '−'} ${m.label}${Math.abs(m.value) === 1 ? '' : ` ${Math.abs(m.value)}`}`;
+    }).join(' ');
     const parts = `REF ${ref} + ${formatSkillName(skillKey)} ${skill}${modifierText ? ` ${modifierText}` : ''}${aimed ? ' − 8 照準' : ''} = ${base}`;
     if (input.action_key === 'suppressive') return { text: `${parts} + 1d10 vs 各対象の WILL + 精神集中 + 1d10` };
     const tableKey = isAutofire ? `${w.dv_table_key} (Autofire)` : w.dv_table_key;
@@ -104,12 +111,75 @@ export function attackLine(input: LineInput, actor: CombatParticipant, target?: 
     const skillKey = input.action_key === 'martial_arts' ? martial! : w ? skillNameToKey(w.skill) : 'brawling';
     const skill = ch.skills[skillKey] ?? 0;
     const dex = ch.stats.dex - armor;
-    const base = dex + skill + wound;
-    const parts = `DEX ${dex} + ${formatSkillName(skillKey)} ${skill}${woundText} = ${base}`;
+    const sitMods = situationModifiers(input.situations, input.situation_custom);
+    const sitTotal = attackModifierTotal(sitMods);
+    const sitText = sitMods.map(formatAttackModifier).join(' ');
+    const base = dex + skill + wound + sitTotal;
+    const parts = `DEX ${dex} + ${formatSkillName(skillKey)} ${skill}${woundText}${sitText ? ` ${sitText}` : ''} = ${base}`;
     const tChar = target?.character;
     if (!tChar) return { text: `${parts} + 1d10 vs 相手の DEX + 回避 + 1d10` };
     const def = tChar.stats.dex - (tChar.armor_penalty ?? 0) + (tChar.skills[skillNameToKey('evasion')] ?? 0) + woundPenalty(woundState(tChar.hp, tChar.hp_max));
     return { text: `${parts} vs ${target!.name} の回避 ${def} + 1d10（相手の合計を上回れば命中。同じなら外れ）` };
+  }
+
+  if (input.action_key === 'first_aid') {
+    const tChar = target?.character;
+    const fa = ch.skills[skillNameToKey('first_aid')] ?? 0;
+    const pm = ch.skills[skillNameToKey('paramedic')] ?? 0;
+    const skillLabel = pm > fa ? '救急医療' : '応急手当';
+    const skillLevel = Math.max(fa, pm);
+    const sitMods = situationModifiers(input.situations, input.situation_custom);
+    const sitTotal = attackModifierTotal(sitMods);
+    const sitText = sitMods.map(formatAttackModifier).join(' ');
+    const luck = input.luck_spent ?? 0;
+    const luckText = luck ? ` + 運命 ${luck}` : '';
+    const base = ch.stats.tech + skillLevel + wound + luck + sitTotal;
+    const parts = `TECH ${ch.stats.tech} + ${skillLabel} ${skillLevel}${woundText}${sitText ? ` ${sitText}` : ''}${luckText} = ${base}`;
+    if (tChar) {
+      const tWound = woundState(tChar.hp, tChar.hp_max);
+      const dv = tWound === 'mortally' ? 15 : tWound === 'seriously' ? 13 : 10;
+      return { text: `${parts} vs ${target!.name}（${tWound === 'mortally' ? '瀕死' : tWound === 'seriously' ? '重傷' : '軽傷'}）難易度 ${dv} → 出目 ${formatNeeded(neededRoll(base, dv, 'dv'))}` };
+    }
+    return { text: `${parts} + 1d10 vs 難易度（軽傷 10・重傷 13・瀕死 15）` };
+  }
+
+  if (input.action_key === 'vehicle_control' || input.action_key === 'vehicle_maneuver') {
+    const st = (actor.state ?? {}) as Record<string, any>;
+    const inVeh = st.in_vehicle as { owner_id: string; vehicle_id: string; driver?: boolean; started?: boolean } | undefined;
+    if (!inVeh?.driver || !inVeh?.started) return { text: '始動したヴィークルの運転席にいません' };
+    let myVeh: any = null;
+    if (actor.character?.extra && typeof actor.character.extra === 'object') {
+      const ex = actor.character.extra as Record<string, any>;
+      myVeh = (ex.vehicles as any[])?.find((v) => v.id === inVeh.vehicle_id);
+    }
+    if (!myVeh && inVeh.owner_id) {
+      const owner = db.select().from(characters).where(eq(characters.id, inVeh.owner_id)).get();
+      if (owner?.extra) {
+        try {
+          const ex = JSON.parse(owner.extra);
+          myVeh = (ex.vehicles as any[])?.find((v) => v.id === inVeh.vehicle_id);
+        } catch { /* ignore */ }
+      }
+    }
+    const skillKey = myVeh?.kind ? DRIVE_SKILL[myVeh.kind as keyof typeof DRIVE_SKILL] ?? 'drive_land_vehicle' : 'drive_land_vehicle';
+    const skill = ch.skills[skillKey] ?? 0;
+    const ref = ch.stats.ref - armor;
+    const driveBase = ref + skill;
+    const man = input.action_key === 'vehicle_maneuver' ? MANEUVERS.find((m) => m.key === input.maneuver) : null;
+    if (input.action_key === 'vehicle_maneuver' && !man) return { text: '特殊機動を選ぶと成功ラインが出ます' };
+    if (!man && driveBase >= 10) {
+      return { text: `REF ${ref} + ${formatSkillName(skillKey)} ${skill} = ${driveBase}（10 以上）: 基本的な操縦は判定もアクションも要らない` };
+    }
+    const dv = man ? man.dv : 10;
+    const sitMods = situationModifiers(input.situations, input.situation_custom);
+    const sitTotal = attackModifierTotal(sitMods);
+    const sitText = sitMods.map(formatAttackModifier).join(' ');
+    const luck = input.luck_spent ?? 0;
+    const luckText = luck ? ` + 運命 ${luck}` : '';
+    const base = driveBase + wound + luck + sitTotal;
+    const parts = `REF ${ref} + ${formatSkillName(skillKey)} ${skill}${woundText}${sitText ? ` ${sitText}` : ''}${luckText} = ${base}`;
+    const needed = formatNeeded(neededRoll(base, dv, 'dv'));
+    return { text: `${man ? `特殊機動「${man.name}」` : '基本的な操縦'}: ${parts} vs 難易度 ${dv} → 出目 ${needed}` };
   }
   return null;
 }

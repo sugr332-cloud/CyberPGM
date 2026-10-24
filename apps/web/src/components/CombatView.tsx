@@ -31,6 +31,8 @@ import {
   combatActionInputs,
   VEHICLE_ACTIONS,
   isVehicleAction,
+  SITUATION_MODIFIERS,
+  MANUAL_STATUS_LIST,
 } from '@cyberpgm/shared';
 import {
   initiativeTotal,
@@ -190,11 +192,82 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [netAmbushIceRoll, setNetAmbushIceRoll] = useState<number | null>(null);
   const [netAmbushRunnerRoll, setNetAmbushRunnerRoll] = useState<number | null>(null);
   
+  // 状況修正（Phase 6h: Issue #31）
+  const [selectedSituations, setSelectedSituations] = useState<string[]>(
+    ((combat?.settings?.default_situations as string[]) ?? []),
+  );
+  const [customSituationText, setCustomSituationText] = useState<string>(
+    combat?.settings?.default_situation_custom !== undefined && combat.settings.default_situation_custom !== 0
+      ? String(combat.settings.default_situation_custom)
+      : '',
+  );
+  const customSituation = useMemo(() => {
+    const n = Number(customSituationText);
+    return Number.isFinite(n) ? n : 0;
+  }, [customSituationText]);
+
+  // 戦闘が変わったとき、既定値を反映
+  useEffect(() => {
+    if (combat?.settings) {
+      if (Array.isArray(combat.settings.default_situations)) {
+        setSelectedSituations(combat.settings.default_situations as string[]);
+      }
+      if (typeof combat.settings.default_situation_custom === 'number') {
+        setCustomSituationText(
+          combat.settings.default_situation_custom !== 0 ? String(combat.settings.default_situation_custom) : '',
+        );
+      }
+    }
+  }, [combat?.id]);
+
+  const toggleSituation = (key: string) => {
+    setSelectedSituations((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  };
+
+  const handleCustomSituationChange = (val: string) => {
+    const normalized = val.replace(/[−–—]/g, '-').replace(/[＋]/g, '+');
+    if (normalized === '' || normalized === '-' || normalized === '+' || /^[+-]?\d*$/.test(normalized)) {
+      setCustomSituationText(normalized);
+    }
+  };
+
+  const handleSaveDefaultSituations = async () => {
+    if (!combat) return;
+    try {
+      const res = await api.updateCombat(combat.id, {
+        settings: {
+          ...combat.settings,
+          default_situations: selectedSituations,
+          default_situation_custom: customSituation,
+        },
+      });
+      setCombat(res.combat);
+    } catch (err: any) {
+      alert(`既定値の保存に失敗しました: ${err.message}`);
+    }
+  };
+
+  const handleResetToDefaultSituations = () => {
+    setSelectedSituations(((combat?.settings?.default_situations as string[]) ?? []));
+    const def = Number(combat?.settings?.default_situation_custom) || 0;
+    setCustomSituationText(def !== 0 ? String(def) : '');
+  };
+
+  const situationTotal = useMemo(() => {
+    const listTotal = selectedSituations.reduce((sum, key) => {
+      const def = SITUATION_MODIFIERS.find((s) => s.key === key);
+      return sum + (def ? def.value : 0);
+    }, 0);
+    return listTotal + (customSituation || 0);
+  }, [selectedSituations, customSituation]);
+
   // 出目を入れる前の計算式と成功ライン（仕様 §5.0.1。Phase 5n）
   const [attackLineText, setAttackLineText] = useState<{ text: string; bands?: Array<{range:string;dv:number;needed:string;current?:boolean}> } | null>(null);
   useEffect(() => {
     const cur = combat?.participants?.[combat.turn_index];
-    if (!combat || !cur || !['ranged', 'aimed', 'autofire', ...MELEE_LIKE].includes(selectedActionKey ?? '')) {
+    if (!combat || !cur || !['ranged', 'aimed', 'autofire', 'first_aid', 'vehicle_control', 'vehicle_maneuver', ...MELEE_LIKE].includes(selectedActionKey ?? '')) {
       setAttackLineText(null);
       return;
     }
@@ -210,6 +283,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
         distance_m: distanceM ?? undefined,
         dodge_mode: dodgeMode,
         luck_spent: luckSpent || undefined,
+        situations: selectedSituations,
+        situation_custom: customSituation || undefined,
+        maneuver: selectedActionKey === 'vehicle_maneuver' ? maneuverKey : undefined,
       }),
     })
       .then((r) => r.json())
@@ -218,7 +294,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
     return () => {
       alive = false;
     };
-  }, [combat?.id, combat?.turn_index, selectedActionKey, targetParticipantId, selectedWeaponId, distanceM, dodgeMode, luckSpent]);
+  }, [combat?.id, combat?.turn_index, selectedActionKey, targetParticipantId, selectedWeaponId, distanceM, dodgeMode, luckSpent, selectedSituations, customSituation, maneuverKey]);
 
   // 出目がどのスマホから届いたか（roll_type → 名前。Phase 5n）
   const [rollFrom, setRollFrom] = useState<Record<string, string>>({});
@@ -268,6 +344,45 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
   // Mobile side tab (for 390px)
   const [mobileSideTab, setMobileSideTab] = useState<'ally' | 'enemy'>('ally');
+
+  // 手動状態付与用の入力状態（Phase 6h: Issue #34）
+  const [addStatusKey, setAddStatusKey] = useState<Record<string, string>>({});
+  const [addStatusRounds, setAddStatusRounds] = useState<Record<string, string>>({});
+
+  const handleAddStatus = async (participantId: string) => {
+    if (!combat) return;
+    const statusKey = addStatusKey[participantId] || MANUAL_STATUS_LIST[0]?.key;
+    if (!statusKey) return;
+    const rStr = addStatusRounds[participantId];
+    const rNum = rStr && Number.isInteger(Number(rStr)) && Number(rStr) > 0 ? Number(rStr) : undefined;
+    try {
+      const res = await api.updateCombatStatus(combat.id, {
+        participant_id: participantId,
+        action: 'add',
+        status: statusKey,
+        rounds: rNum,
+      });
+      setCombat(res.combat);
+      onRefreshCharacters();
+    } catch (err: any) {
+      alert(`状態の付与に失敗しました: ${err.message}`);
+    }
+  };
+
+  const handleRemoveStatus = async (participantId: string, status: string) => {
+    if (!combat) return;
+    try {
+      const res = await api.updateCombatStatus(combat.id, {
+        participant_id: participantId,
+        action: 'remove',
+        status,
+      });
+      setCombat(res.combat);
+      onRefreshCharacters();
+    } catch (err: any) {
+      alert(`状態の解除に失敗しました: ${err.message}`);
+    }
+  };
 
   // Load current combat & actions
   const refreshCombat = useCallback(async () => {
@@ -1001,6 +1116,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
           extra_crit_injury_roll: extraCritRoll,
           aimed_location: aimedLocation,
           held_item_id: heldItemId || undefined,
+          situations: selectedSituations,
+          situation_custom: customSituation || undefined,
         },
       ];
 
@@ -1018,6 +1135,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
           damage_dice: secondDamageDice.length > 0 ? secondDamageDice : undefined,
           crit_injury_roll: secondCritRoll,
           extra_crit_injury_roll: secondExtraCritRoll,
+          situations: selectedSituations,
+          situation_custom: customSituation || undefined,
         });
       }
 
@@ -1066,6 +1185,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
         extra_crit_injury_roll: extraCritRoll,
         death_save_roll: deathSaveRoll,
         attacks,
+        situations: selectedSituations,
+        situation_custom: customSituation || undefined,
         manual_changes: manualChanges,
         manual_notes: manualNotes,
         destination: (selectedActionKey === 'move' || selectedActionKey === 'run') ? destination || undefined : undefined,
@@ -1112,6 +1233,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
           extra_crit_injury_roll: extraCritRoll,
           aimed_location: aimedLocation,
           held_item_id: heldItemId || undefined,
+          situations: selectedSituations,
+          situation_custom: customSituation || undefined,
         },
       ];
 
@@ -1129,6 +1252,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
           damage_dice: secondDamageDice.length > 0 ? secondDamageDice : undefined,
           crit_injury_roll: secondCritRoll,
           extra_crit_injury_roll: secondExtraCritRoll,
+          situations: selectedSituations,
+          situation_custom: customSituation || undefined,
         });
       }
 
@@ -1177,6 +1302,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
         extra_crit_injury_roll: extraCritRoll,
         death_save_roll: deathSaveRoll,
         attacks,
+        situations: selectedSituations,
+        situation_custom: customSituation || undefined,
         manual_changes: previewResult.changes,
         manual_notes: manualNotes,
         destination: (selectedActionKey === 'move' || selectedActionKey === 'run') ? destination || undefined : undefined,
@@ -3608,6 +3735,62 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
                   {/* Dice Roll Inputs */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {/* 状況修正 (日本語版 p.130。Phase 6h: Issue #31) */}
+                    <div style={{ marginTop: '4px', marginBottom: '4px', padding: '10px 12px', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                          状況修正 (p.130):
+                          <span style={{ marginLeft: '8px', fontFamily: 'var(--font-mono)', color: situationTotal < 0 ? 'var(--color-danger)' : situationTotal > 0 ? 'var(--color-ally)' : 'var(--color-text-muted)' }}>
+                            合計 {situationTotal > 0 ? `+${situationTotal}` : situationTotal}
+                          </span>
+                        </span>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            type="button"
+                            data-testid="save-default-situations-btn"
+                            onClick={handleSaveDefaultSituations}
+                            style={{ fontSize: '0.75rem', padding: '3px 8px', backgroundColor: 'var(--color-surface-elevated)', border: '1px solid var(--color-border-light)', borderRadius: '4px', cursor: 'pointer', color: 'var(--color-text)' }}
+                          >
+                            戦闘の既定として保存
+                          </button>
+                          <button
+                            type="button"
+                            data-testid="reset-default-situations-btn"
+                            onClick={handleResetToDefaultSituations}
+                            style={{ fontSize: '0.75rem', padding: '3px 8px', backgroundColor: 'transparent', border: '1px solid var(--color-border-light)', borderRadius: '4px', cursor: 'pointer', color: 'var(--color-text-muted)' }}
+                          >
+                            既定に戻す
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
+                        {SITUATION_MODIFIERS.map((s) => (
+                          <label key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              data-testid={`situation-check-${s.key}`}
+                              checked={selectedSituations.includes(s.key)}
+                              onChange={() => toggleSituation(s.key)}
+                            />
+                            {s.label} ({s.value > 0 ? `+${s.value}` : s.value})
+                          </label>
+                        ))}
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
+                          その他 ±:
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[+-]?[0-9]*"
+                            data-testid="situation-custom-input"
+                            value={customSituationText}
+                            placeholder="0"
+                            onChange={(e) => handleCustomSituationChange(e.target.value)}
+                            style={{ width: '48px', padding: '2px 4px', textAlign: 'center', backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border-light)', borderRadius: '4px', color: 'var(--color-text)' }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
                     {attackLineText && (
                       <div data-testid="attack-line" style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: 'var(--color-ally)' }}>
                         {attackLineText.text}
@@ -4287,14 +4470,137 @@ export const CombatView: React.FC<CombatViewProps> = ({
           )}
         </div>
 
-        {/* SP & Ammo */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+        {/* SP & 状態 */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', fontSize: '0.8rem', color: 'var(--color-text-muted)', flexWrap: 'wrap', gap: '4px' }}>
           <span>SP 頭 {char?.sp_head ?? '—'} / 胴 {char?.sp_body ?? '—'}</span>
-          <span>{char?.status && char.status.length > 0 ? char.status.join(', ') : '通常'}</span>
+          <div data-testid={`gm-participant-status-${p.id}`} style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'flex-end', maxWidth: '65%' }}>
+            {(!char?.status || char.status.length === 0) && <span>通常</span>}
+            {char?.status?.map((st) => {
+              const isAuto = ['seriously', 'mortally', 'dead', '重傷', '瀕死', '死亡'].includes(st);
+              const label = st === 'seriously' ? '重傷' : st === 'mortally' ? '瀕死' : st === 'dead' ? '死亡' : st;
+              const rLeft = (p.state?.statusRounds as Record<string, number> | undefined)?.[st];
+              const roundText = typeof rLeft === 'number' && rLeft > 0 ? ` あと ${rLeft}R` : '';
+              return (
+                <span
+                  key={st}
+                  title={isAuto ? 'HP を直すと変わる' : undefined}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '2px',
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    backgroundColor: isAuto ? 'rgba(235, 75, 75, 0.15)' : 'rgba(79, 182, 227, 0.15)',
+                    color: isAuto ? 'var(--color-danger)' : 'var(--color-ally)',
+                    border: `1px solid ${isAuto ? 'var(--color-danger)' : 'var(--color-border-light)'}`,
+                  }}
+                >
+                  <span>{label}{roundText}</span>
+                  {isAuto ? (
+                    <span style={{ fontSize: '0.65rem', opacity: 0.8 }} title="HP を直すと変わる">（HP連動）</span>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid={`remove-status-${p.id}-${st}`}
+                      aria-label={`${p.name}の${st}を解除`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveStatus(p.id, st);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        padding: '0 2px',
+                        fontSize: '0.75rem',
+                        lineHeight: 1,
+                        opacity: 0.7,
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+          </div>
         </div>
 
         {expanded && char && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem' }}>
+            {/* 状態の手動付与 (Phase 6h: Issue #34) */}
+            <div
+              style={{
+                marginTop: '2px',
+                padding: '6px 8px',
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '4px',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span style={{ fontWeight: 600 }}>状態付与:</span>
+              <select
+                data-testid={`add-status-select-${p.id}`}
+                value={addStatusKey[p.id] || MANUAL_STATUS_LIST[0]?.key || ''}
+                onChange={(e) => setAddStatusKey({ ...addStatusKey, [p.id]: e.target.value })}
+                style={{
+                  fontSize: '0.75rem',
+                  padding: '2px 4px',
+                  backgroundColor: 'var(--color-bg)',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: '3px',
+                  color: 'var(--color-text)',
+                }}
+              >
+                {MANUAL_STATUS_LIST.map((m) => (
+                  <option key={m.key} value={m.key}>{m.label}</option>
+                ))}
+              </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '0.75rem' }}>
+                残りR:
+                <input
+                  type="number"
+                  min={1}
+                  data-testid={`add-status-rounds-${p.id}`}
+                  placeholder="永続"
+                  value={addStatusRounds[p.id] || ''}
+                  onChange={(e) => setAddStatusRounds({ ...addStatusRounds, [p.id]: e.target.value })}
+                  style={{
+                    width: '42px',
+                    padding: '2px 4px',
+                    textAlign: 'center',
+                    backgroundColor: 'var(--color-bg)',
+                    border: '1px solid var(--color-border-light)',
+                    borderRadius: '3px',
+                    color: 'var(--color-text)',
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                data-testid={`add-status-btn-${p.id}`}
+                onClick={() => handleAddStatus(p.id)}
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '0.75rem',
+                  backgroundColor: 'var(--color-ally)',
+                  color: '#000',
+                  fontWeight: 600,
+                  border: 'none',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                }}
+              >
+                付与
+              </button>
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontFamily: 'var(--font-mono)' }}>
               {Object.entries(char.stats || {}).map(([k, v]) => (
                 <span key={k}>

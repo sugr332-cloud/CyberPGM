@@ -22,11 +22,58 @@ export const CombatActionDefSchema = z.object({
   desc: z.string(),
 });
 
+// 日本語版コアルールブック p.130「判定修正値」の不利な修正の例（GM が課す修正は累積する）
+export interface SituationModifierDef {
+  key: string;
+  label: string;
+  value: number;
+}
+
+export const SITUATION_MODIFIERS: SituationModifierDef[] = [
+  { key: 'dim', label: '夜または薄暗い状況', value: -1 },
+  { key: 'untrained', label: 'まったく未経験の行為をする', value: -1 },
+  { key: 'complex', label: '複雑な行為', value: -2 },
+  { key: 'lacking_tools', label: '道具や部品が不足している', value: -2 },
+  { key: 'no_sleep', label: '前夜の睡眠が不足している', value: -2 },
+  { key: 'stress', label: '極端なストレスにさらされている', value: -2 },
+  { key: 'exhausted', label: '極度に疲労している', value: -4 },
+  { key: 'intoxicated', label: '酒や鎮静剤を過剰に摂取している', value: -4 },
+  { key: 'covert', label: '行為を秘密裏に行なう', value: -4 },
+  { key: 'obscured', label: '煙や暗闇で視界が悪い', value: -4 },
+];
+
+/**
+ * 手動で付け外しできる状態の一覧（Phase 6h。アプリが判定に使っている状態名だけ）
+ */
+export interface ManualStatusDef {
+  key: string;
+  label: string;
+  desc: string;
+}
+
+export const MANUAL_STATUS_LIST: ManualStatusDef[] = [
+  { key: '気絶', label: '気絶', desc: '行動不能。ラウンド経過で解除可能' },
+  { key: '伏せ', label: '伏せ', desc: '立ち上がるまで移動不可' },
+  { key: '着火（小）', label: '着火（小）', desc: 'ターン終了時に HP 直接 2 ダメージ' },
+  { key: '着火（中）', label: '着火（中）', desc: 'ターン終了時に HP 直接 4 ダメージ' },
+  { key: '着火（大）', label: '着火（大）', desc: 'ターン終了時に HP 直接 6 ダメージ' },
+  { key: '放射線（小）', label: '放射線（小）', desc: 'ターン終了時に HP 直接 2 ダメージ' },
+  { key: '放射線（大）', label: '放射線（大）', desc: 'ターン終了時に HP 直接 6 ダメージ' },
+  { key: '感電', label: '感電', desc: 'ターン終了時に 6d6 ダメージ' },
+  { key: '溺れ', label: '溺れ', desc: 'ターン開始時に BODY ぶん HP 直接ダメージ' },
+  { key: '真空', label: '真空', desc: 'ターン終了時に INT/REF/DEX が 1d6 減少' },
+  { key: '弾丸を回避できない', label: '弾丸を回避できない', desc: '弾丸の回避判定ができない' },
+  { key: '回避できない', label: '回避できない', desc: '近接攻撃の回避判定ができない' },
+  { key: '隠れている', label: '隠れている', desc: '盤面で敵に見えない' },
+];
+
 export interface CombatSettings {
   tieBreak: 'reroll' | 'ref' | 'manual'; // reroll: 同値は振り直す（ルール。既定）
   autoRollNpc: boolean;
   autoRollPc: boolean;
   hideEnemyStats: boolean;
+  default_situations?: string[];
+  default_situation_custom?: number;
   [key: string]: unknown;
 }
 
@@ -37,6 +84,8 @@ export const CombatSettingsSchema = z.object({
   hideEnemyStats: z.boolean().default(true),
   // プレイヤーのスマホに自分の残弾を見せるか（Phase 5r）。GM にはいつも見える
   playerAmmoVisible: z.boolean().default(true),
+  default_situations: z.array(z.string()).optional(),
+  default_situation_custom: z.number().optional(),
 }).catchall(z.unknown());
 
 export interface CombatInitiativeRoll {
@@ -291,6 +340,8 @@ export const SingleAttackInputSchema = z.object({
   ignore_armor_percent: z.number().min(0).max(100).optional(),
   aimed_location: z.enum(['head', 'held_item', 'leg', 'weakpoint']).optional(),
   held_item_id: z.string().optional(),
+  situations: z.array(z.string()).optional(),
+  situation_custom: z.number().optional(),
   manual_changes: z.array(CombatChangeSchema).optional(),
 });
 
@@ -403,6 +454,9 @@ export const ResolveActionInputSchema = z.object({
   }).optional(),
   // Multi-attack for ROF > 1
   attacks: z.array(SingleAttackInputSchema).optional(),
+  // 状況修正（Phase 6h。日本語版コアルールブック p.130）
+  situations: z.array(z.string()).optional(),
+  situation_custom: z.number().optional(),
   // Manual / unconfirmed adjustments
   manual_changes: z.array(CombatChangeSchema).optional(),
   manual_notes: z.string().optional(),

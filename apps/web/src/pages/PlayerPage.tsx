@@ -1429,6 +1429,29 @@ export const PlayerPage: React.FC = () => {
                   負傷状態: {sheet.woundState === 'mortally' ? '瀕死 (ペナルティ -4)' : '重傷 (ペナルティ -2)'}
                 </div>
               )}
+              {Array.isArray(sheet.status) && sheet.status.length > 0 && (
+                <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                  {sheet.status.map((st: string) => {
+                    const rLeft = ((myCombatPart?.state as any)?.statusRounds as Record<string, number> | undefined)?.[st];
+                    const roundText = typeof rLeft === 'number' && rLeft > 0 ? ` あと ${rLeft}R` : '';
+                    return (
+                      <span
+                        key={st}
+                        style={{
+                          fontSize: '0.75rem',
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: 'rgba(79, 182, 227, 0.15)',
+                          color: 'var(--color-ally)',
+                          border: '1px solid var(--color-ally)',
+                        }}
+                      >
+                        {st}{roundText}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Armor SP (Head & Body) */}
@@ -2135,6 +2158,43 @@ export const PlayerPage: React.FC = () => {
                     <div style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: '2px', color: isMyTurn ? 'var(--color-ally)' : 'var(--color-text)' }}>
                       {isMyTurn ? `あなた（${sheet.name}）の手番です` : `${turnName} の手番です`}
                     </div>
+                  </div>
+                );
+              })()}
+
+              {/* 自分の状態一覧（Phase 6h: Issue #34） */}
+              {(() => {
+                const myStatus: string[] = (myCombatPart?.character?.status as string[]) ?? (sheet.status as string[]) ?? [];
+                const myStatusRounds = ((myCombatPart?.state as any)?.statusRounds as Record<string, number> | undefined) ?? {};
+                if (myStatus.length === 0) return null;
+                return (
+                  <div data-testid="player-combat-status-list" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', justifyContent: 'center', padding: '6px', backgroundColor: 'var(--color-surface)', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>あなたの状態:</span>
+                    {myStatus.map((st: string) => {
+                      const isAuto = ['seriously', 'mortally', 'dead', '重傷', '瀕死', '死亡'].includes(st);
+                      const label = st === 'seriously' ? '重傷' : st === 'mortally' ? '瀕死' : st === 'dead' ? '死亡' : st;
+                      const rLeft = myStatusRounds[st];
+                      const roundText = typeof rLeft === 'number' && rLeft > 0 ? ` あと ${rLeft}R` : '';
+                      return (
+                        <span
+                          key={st}
+                          data-testid={`player-status-badge-${st}`}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            backgroundColor: isAuto ? 'rgba(235, 75, 75, 0.2)' : 'rgba(79, 182, 227, 0.2)',
+                            color: isAuto ? 'var(--color-danger)' : 'var(--color-ally)',
+                            border: `1px solid ${isAuto ? 'var(--color-danger)' : 'var(--color-ally)'}`,
+                          }}
+                        >
+                          {label}{roundText}
+                        </span>
+                      );
+                    })}
                   </div>
                 );
               })()}

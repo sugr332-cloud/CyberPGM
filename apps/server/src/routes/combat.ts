@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, desc, and, asc, isNull } from 'drizzle-orm';
+import { eq, desc, and, asc, isNull, like } from 'drizzle-orm';
 import { db, sqlite } from '../db/client.js';
 import {
   combats,
@@ -11,6 +11,8 @@ import {
   weapons,
   rule_constants,
   scenario_sessions,
+  session_log,
+  encounters,
   boards,
   board_tokens,
   board_objects,
@@ -36,8 +38,10 @@ import {
   soloEffects,
   roleRank,
   DvTable,
+  MANUAL_STATUS_LIST,
 } from '@cyberpgm/shared';
 import { resolveCombatAction, actionsAllowed, WEAPON_NAME_ALIASES, listActionAvailability } from '../services/combat-resolver.js';
+import { generateCombatSummary } from '../services/combat-summary.js';
 import { netActionBlockReason } from '../services/netrun-resolver.js';
 import { woundState, initiativeTotal, resolveDamage, gridDistance, DEFAULT_RULES } from '@cyberpgm/rules';
 import { randomInt } from 'node:crypto';
@@ -306,9 +310,18 @@ combatRoutes.get('/combats/current/my-lines', async (c) => {
       distance_m = gridDistance(actorToken, targetToken, { ...DEFAULT_RULES, diagonalRule }) * Number(grid.cell_m || 2);
     }
   }
+  const defaultSituations = (combat.settings as any)?.default_situations;
+  const defaultSituationCustom = (combat.settings as any)?.default_situation_custom;
   const lines: Record<string, unknown> = {};
   for (const key of ['ranged', 'aimed', 'autofire', 'suppressive', 'melee', 'brawl', 'martial_arts']) {
-    lines[key] = attackLine({ action_key: key, weapon_entry_id, distance_m, luck_spent: luckSpent }, me, target);
+    lines[key] = attackLine({
+      action_key: key,
+      weapon_entry_id,
+      distance_m,
+      luck_spent: luckSpent,
+      situations: defaultSituations,
+      situation_custom: defaultSituationCustom,
+    }, me, target);
   }
   return c.json({ lines });
 });
@@ -1154,6 +1167,80 @@ combatRoutes.patch('/combats/:id', requireGm, async (c) => {
         }
       }
     }
+
+    // シナリオセッションに属しているか確認（Phase 6h: Issue #35）
+    // session_log の ref に combat_id が含まれる行を探す
+    const encounterLog = db
+      .select()
+      .from(session_log)
+      .where(and(eq(session_log.kind, 'combat'), like(session_log.ref, `%"combat_id":"${combatId}"%`)))
+      .get();
+
+    if (encounterLog) {
+      const sessionId = encounterLog.scenario_session_id;
+      // 二重保存防止: すでにこの combatId の要約ログが存在すれば削除して置き換える（終了取り消し→再終了にも対応）
+      const existingSummary = db
+        .select()
+        .from(session_log)
+        .where(
+          and(
+            eq(session_log.scenario_session_id, sessionId),
+            eq(session_log.kind, 'combat'),
+            like(session_log.ref, `%"combat_id":"${combatId}"%`),
+            like(session_log.ref, `%"summary":true%`),
+          ),
+        )
+        .all();
+      for (const ex of existingSummary) {
+        db.delete(session_log).where(eq(session_log.id, ex.id)).run();
+      }
+
+      // 取り消されていない combat_log を取得
+      const rawLogs = db
+        .select()
+        .from(combat_log)
+        .where(and(eq(combat_log.combat_id, combatId), eq(combat_log.undone, false)))
+        .orderBy(asc(combat_log.at))
+        .all();
+
+      const logs = rawLogs.map((l) => ({
+        ...l,
+        input: JSON.parse(l.input || '{}'),
+        breakdown: JSON.parse(l.breakdown || '{}'),
+        changes: JSON.parse(l.changes || '[]'),
+      })) as CombatLogEntry[];
+
+      const hydratedCombat = getHydratedCombat(combatId);
+      const participants = hydratedCombat?.participants ?? [];
+      let encounterTitle = '';
+      try {
+        const refObj = JSON.parse(encounterLog.ref || '{}');
+        if (refObj.encounter_id) {
+          const enc = db.select().from(encounters).where(eq(encounters.id, refObj.encounter_id)).get();
+          if (enc?.title) encounterTitle = enc.title;
+        }
+      } catch {
+        /* ignore */
+      }
+
+      const summaryText = generateCombatSummary(
+        { ...cb, round: (updates.round as number) ?? cb.round, created_at: cb.created_at, ended_at: updates.ended_at as number },
+        logs,
+        participants,
+        encounterTitle,
+      );
+
+      db.insert(session_log)
+        .values({
+          id: generateUlid(),
+          scenario_session_id: sessionId,
+          at: Date.now(),
+          kind: 'combat',
+          text: summaryText,
+          ref: JSON.stringify({ combat_id: combatId, summary: true }),
+        })
+        .run();
+    }
   } else if (body.action === 'next_turn') {
     // 「一手戻る」で戻せるようにログに残す（Phase 5j）
     const turnChange = advanceTurn(combatId);
@@ -1256,7 +1343,7 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
         actor.id,
         parsed.data.action_key,
         JSON.stringify(parsed.data),
-        JSON.stringify(result.breakdown),
+        JSON.stringify({ ...result.breakdown, formula: result.formula, success: result.success }),
         JSON.stringify(result.changes),
         0,
         now,
@@ -1498,6 +1585,212 @@ combatRoutes.post('/combats/:id/apply', requireGm, async (c) => {
   if (autoAdvanced) broadcastTurn(combatId);
 
   return c.json({ result, combat: updatedCombat, auto_advanced: autoAdvanced });
+});
+
+/**
+ * POST /api/combats/:id/status: 手動で状態を付け外しする（Phase 6h: Issue #34）。
+ * 一手戻る（undo）で戻せるように combat_log に記録する。
+ */
+combatRoutes.post('/combats/:id/status', requireGm, async (c) => {
+  const combatId = c.req.param('id');
+  if (!combatId) return c.json({ error: 'Missing combat ID' }, 400);
+
+  const combat = getHydratedCombat(combatId);
+  if (!combat) return c.json({ error: 'Combat not found' }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+  const { participant_id, action, status, rounds } = body as {
+    participant_id?: string;
+    action?: 'add' | 'remove';
+    status?: string;
+    rounds?: number | null;
+  };
+
+  if (!participant_id || !action || !status) {
+    return c.json({ error: 'Missing participant_id, action, or status' }, 400);
+  }
+
+  if (action !== 'add' && action !== 'remove') {
+    return c.json({ error: 'Action must be add or remove' }, 400);
+  }
+
+  const part = combat.participants.find((p) => p.id === participant_id);
+  if (!part) return c.json({ error: 'Participant not found' }, 404);
+  const char = part.character;
+  if (!char) return c.json({ error: 'Character not found for participant' }, 404);
+
+  // HPから自動で付く状態は手動で外せない（HPを直すと変わる）
+  const HP_AUTO_STATUSES = ['seriously', 'mortally', 'dead', '重傷', '瀕死', '死亡'];
+  if (HP_AUTO_STATUSES.includes(status)) {
+    return c.json({ error: 'HP から自動で付く状態（重傷・瀕死・死亡）は手動で付け外しできません。HP を直すと変わります' }, 400);
+  }
+
+  // 手動付与できる状態名の検証（未対応の状態名や解除専用の状態名は400で拒否）
+  const ALLOWED_MANUAL_STATUSES = new Set(MANUAL_STATUS_LIST.map((s) => s.key));
+  if (action === 'add' && !ALLOWED_MANUAL_STATUSES.has(status)) {
+    return c.json({ error: `未対応または手動付与できない状態名です: ${status}` }, 400);
+  }
+
+  const changes: CombatChange[] = [];
+  const now = Date.now();
+  const logId = generateUlid();
+
+  if (action === 'add') {
+    const statusBefore = [...(char.status || [])];
+    const statusAfter = statusBefore.includes(status) ? statusBefore : [...statusBefore, status];
+    changes.push({
+      target_id: char.id,
+      target_name: char.name,
+      field: 'status',
+      before: statusBefore,
+      after: statusAfter,
+      desc: `${char.name} 状態: ${status} を付与`,
+    });
+
+    const curState = (part.state || {}) as Record<string, any>;
+    const roundsBefore = (curState.statusRounds as Record<string, number>) ?? null;
+    const roundsAfter = { ...(roundsBefore ?? {}) };
+    if (typeof rounds === 'number' && rounds > 0) {
+      roundsAfter[status] = rounds;
+    } else {
+      delete roundsAfter[status];
+    }
+    changes.push({
+      target_id: part.id,
+      target_name: part.name,
+      field: 'state',
+      before: { statusRounds: roundsBefore },
+      after: { statusRounds: Object.keys(roundsAfter).length > 0 ? roundsAfter : null },
+      desc: `${char.name} ${status} の効果時間: ${rounds ? `${rounds} ラウンド` : '解除するまで続く'}`,
+    });
+  } else if (action === 'remove') {
+    if (status === 'つかみ' || status === '鋼のつかみ') {
+      // つかみは相手との組（grappling / grappled_by）があるので両者の組を同時に解く
+      const curState = (part.state || {}) as Record<string, any>;
+      const partnerId = (curState.grappling as string) || (curState.grappled_by as string);
+      const partner = partnerId ? combat.participants.find((p) => p.id === partnerId) : undefined;
+      const partnerChar = partner?.character;
+
+      // 自身の解除
+      const selfStatusBefore = [...(char.status || [])];
+      const selfStatusAfter = selfStatusBefore.filter((s) => s !== 'つかみ' && s !== '鋼のつかみ');
+      changes.push({
+        target_id: char.id,
+        target_name: char.name,
+        field: 'status',
+        before: selfStatusBefore,
+        after: selfStatusAfter,
+        desc: `${char.name} つかみ状態が終わる`,
+      });
+      changes.push({
+        target_id: part.id,
+        target_name: part.name,
+        field: 'state',
+        before: { grappling: curState.grappling ?? null, grappled_by: curState.grappled_by ?? null, choke_count: curState.choke_count ?? null },
+        after: { grappling: null, grappled_by: null, choke_count: null },
+        desc: `${part.name} つかみ解除`,
+      });
+
+      // 相手の解除
+      if (partner && partnerChar) {
+        const pStatusBefore = [...(partnerChar.status || [])];
+        const pStatusAfter = pStatusBefore.filter((s) => s !== 'つかみ' && s !== '鋼のつかみ');
+        const pState = (partner.state || {}) as Record<string, any>;
+        changes.push({
+          target_id: partnerChar.id,
+          target_name: partnerChar.name,
+          field: 'status',
+          before: pStatusBefore,
+          after: pStatusAfter,
+          desc: `${partnerChar.name} つかみ状態が終わる`,
+        });
+        changes.push({
+          target_id: partner.id,
+          target_name: partner.name,
+          field: 'state',
+          before: { grappling: pState.grappling ?? null, grappled_by: pState.grappled_by ?? null, choke_count: pState.choke_count ?? null },
+          after: { grappling: null, grappled_by: null, choke_count: null },
+          desc: `${partner.name} つかみ解除`,
+        });
+      }
+    } else {
+      const statusBefore = [...(char.status || [])];
+      const statusAfter = statusBefore.filter((s) => s !== status);
+      changes.push({
+        target_id: char.id,
+        target_name: char.name,
+        field: 'status',
+        before: statusBefore,
+        after: statusAfter,
+        desc: `${char.name} 状態: ${status} を解除`,
+      });
+
+      const curState = (part.state || {}) as Record<string, any>;
+      const roundsBefore = (curState.statusRounds as Record<string, number>) ?? null;
+      if (roundsBefore && status in roundsBefore) {
+        const roundsAfter = { ...roundsBefore };
+        delete roundsAfter[status];
+        changes.push({
+          target_id: part.id,
+          target_name: part.name,
+          field: 'state',
+          before: { statusRounds: roundsBefore },
+          after: { statusRounds: Object.keys(roundsAfter).length > 0 ? roundsAfter : null },
+          desc: `${char.name} ${status} のタイマー解除`,
+        });
+      }
+    }
+  } else {
+    return c.json({ error: 'Invalid action' }, 400);
+  }
+
+  // DB 更新とログ記録
+  sqlite.transaction(() => {
+    sqlite
+      .prepare(
+        `INSERT INTO combat_log (id, combat_id, round, actor_id, action_key, input, breakdown, changes, undone, at)
+         VALUES (?, ?, ?, ?, ?, ?, '{}', ?, 0, ?)`,
+      )
+      .run(
+        logId,
+        combatId,
+        combat.round,
+        part.id,
+        action === 'add' ? 'status_add' : 'status_remove',
+        JSON.stringify(body),
+        JSON.stringify(changes),
+        now,
+      );
+
+    for (const ch of changes) {
+      if (ch.field === 'status') {
+        sqlite
+          .prepare('UPDATE characters SET status = ?, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify(ch.after), now, ch.target_id);
+      } else if (ch.field === 'state') {
+        const pRow = sqlite
+          .prepare('SELECT state FROM combat_participants WHERE id = ?')
+          .get(ch.target_id) as any;
+        if (pRow) {
+          const st = JSON.parse(pRow.state || '{}');
+          const afterObj = ch.after as Record<string, unknown>;
+          for (const [k, v] of Object.entries(afterObj)) {
+            if (v === null) delete st[k];
+            else st[k] = v;
+          }
+          sqlite
+            .prepare('UPDATE combat_participants SET state = ? WHERE id = ?')
+            .run(JSON.stringify(st), ch.target_id);
+        }
+      }
+    }
+  })();
+
+  const updatedCombat = getHydratedCombat(combatId);
+  sessionManager.broadcastCombatUpdate(updatedCombat);
+  sessionManager.updateAllCharacterSheets();
+
+  return c.json({ success: true, combat: updatedCombat });
 });
 
 /**

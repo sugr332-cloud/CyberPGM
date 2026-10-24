@@ -68,7 +68,7 @@ import { z } from 'zod';
 import type { AppDatabase } from '../db/client.js';
 import { rule_constants, weapons, items, boards, board_tokens, board_objects, board_drops, characters } from '../db/schema.js';
 import { eq, and, ne } from 'drizzle-orm';
-import { attackModifierTotal, rangedAttackModifiers, rangedWeaponQuality } from './attack-modifiers.js';
+import { attackModifierTotal, rangedAttackModifiers, rangedWeaponQuality, situationModifiers, formatAttackModifier } from './attack-modifiers.js';
 
 type ResolveInput = z.infer<typeof ResolveActionInputSchema>;
 
@@ -1778,7 +1778,7 @@ function resolveCombatActionInner(
       const list = Array.isArray(msg) ? msg : [msg];
       return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: list.join(' / '), breakdown: {}, changes: [], missing_inputs: list };
     };
-    const done = (success: boolean, formula: string, changes: CombatChange[]): ResolveResult => ({ action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, target_id: targetPart?.id, target_name: targetPart?.name, success, formula, breakdown: {}, changes });
+    const done = (success: boolean, formula: string, changes: CombatChange[], breakdown?: Record<string, any>): ResolveResult => ({ action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, target_id: targetPart?.id, target_name: targetPart?.name, success, formula, breakdown: breakdown ?? {}, changes });
     const st = (actorPart.state ?? {}) as Record<string, any>;
     const inVeh = st.in_vehicle as { owner_id: string; vehicle_id: string; driver?: boolean; started?: boolean } | undefined;
     // ヴィークルは持ち主のキャラの extra.vehicles にある。同じ行動で 2 回変えるときは、変えたあとの値から
@@ -1848,7 +1848,7 @@ function resolveCombatActionInner(
       return done(true, start ? `${myVeh!.name} を始動した。行動順の先頭になり、【移動】は ${myVeh!.move}（ヴィークルの値）。「走る」はできない` : `${myVeh!.name} を止めた`, changes);
     }
 
-    const skillKey = myVeh ? DRIVE_SKILL[myVeh.kind] : 'drive_land_vehicle';
+    const skillKey = (myVeh?.kind && DRIVE_SKILL[myVeh.kind]) ? DRIVE_SKILL[myVeh.kind] : 'drive_land_vehicle';
     const skill = actorChar.skills[skillKey] ?? 0;
     const driveBase = actorRef + skill;
     if (input.action_key === 'vehicle_control' || input.action_key === 'vehicle_maneuver') {
@@ -1859,13 +1859,21 @@ function resolveCombatActionInner(
       const r = d10v(input.attack_roll);
       if (r === null) return fail(recordRollMissing(input.attack_roll, 'attack_roll', 'attack_extra', '操縦の出目 (1d10) を「攻撃」の欄に入れてください'));
       const dv = man ? man.dv : 10;
-      const total = driveBase + actorWoundPen + luck + r;
+      const sitMods = situationModifiers(input.situations, input.situation_custom);
+      const sitTotal = attackModifierTotal(sitMods);
+      const sitFormula = sitMods.map(formatAttackModifier).join(' ');
+      const total = driveBase + actorWoundPen + luck + sitTotal + r;
       const ok = total > dv;
       const changes: CombatChange[] = [actionChange(man ? `特殊機動: ${man.name}` : '操縦')];
       if (man) changes.push({ target_id: actorPart.id, target_name: actorPart.name, field: 'state', before: { move_used: actorPart.move_used }, after: { move_used: true }, desc: `${actorPart.name} 移動アクション使用 (特殊機動)` });
       if (!ok) changes.push(updateVehicle(veh, { out_of_control: true }, `${myVeh!.name} 制御不能（移動は GM が決める）`));
       else if (myVeh!.out_of_control) changes.push(updateVehicle(veh, { out_of_control: false }, `${myVeh!.name} 制御を取り戻した`));
-      return done(ok, `${man ? `特殊機動「${man.name}」` : '基本的な操縦'}: REF ${actorRef} + ${formatSkillName(skillKey)} ${skill}${actorWoundPen ? ` ${actorWoundPen}` : ''}${luckText} + 出目 ${r} = ${total} vs 難易度 ${dv} -> ${ok ? '成功' : '失敗: 制御不能（移動は GM が決め、何かにぶつかれば体当たりと同じ）'}`, changes);
+      return done(
+        ok,
+        `${man ? `特殊機動「${man.name}」` : '基本的な操縦'}: REF ${actorRef} + ${formatSkillName(skillKey)} ${skill}${actorWoundPen ? ` ${actorWoundPen}` : ''}${sitFormula ? ` ${sitFormula}` : ''}${luckText} + 出目 ${r} = ${total} vs 難易度 ${dv} -> ${ok ? '成功' : '失敗: 制御不能（移動は GM が決め、何かにぶつかれば体当たりと同じ）'}`,
+        changes,
+        { total, dv, situations: sitMods.map((m) => m.key) }
+      );
     }
 
     if (input.action_key === 'vehicle_ram') {
@@ -2025,7 +2033,10 @@ function resolveCombatActionInner(
     const fa = actorChar.skills[skillNameToKey('first_aid')] ?? 0;
     const pm = actorChar.skills[skillNameToKey('paramedic')] ?? 0;
     const skillLabel = pm > fa ? '救急医療' : '応急手当';
-    const base = actorChar.stats.tech + Math.max(fa, pm) + actorWoundPen + luck;
+    const sitMods = situationModifiers(input.situations, input.situation_custom);
+    const sitTotal = attackModifierTotal(sitMods);
+    const sitFormula = sitMods.map(formatAttackModifier).join(' ');
+    const base = actorChar.stats.tech + Math.max(fa, pm) + actorWoundPen + luck + sitTotal;
     const res = resolveCheck({ base, first: roll.first, extra: roll.extra, target: dv, mode: 'dv' }, rules);
     const changes: CombatChange[] = [
       {
@@ -2036,7 +2047,7 @@ function resolveCombatActionInner(
         desc: `${actorPart.name} アクション使用 (応急手当)${actionCountLabel(actorPart)}`,
       },
     ];
-    let formula = `応急手当: TECH ${actorChar.stats.tech} + ${skillLabel} ${Math.max(fa, pm)}${actorWoundPen ? ` ${actorWoundPen}` : ''}${luckText} + 出目 = ${res.total} vs 難易度 ${dv}（${wound === 'mortally' ? '瀕死' : wound === 'seriously' ? '重傷' : '軽傷'}）-> ${res.success ? '成功' : '失敗'}`;
+    let formula = `応急手当: TECH ${actorChar.stats.tech} + ${skillLabel} ${Math.max(fa, pm)}${actorWoundPen ? ` ${actorWoundPen}` : ''}${sitFormula ? ` ${sitFormula}` : ''}${luckText} + 出目 = ${res.total} vs 難易度 ${dv}（${wound === 'mortally' ? '瀕死' : wound === 'seriously' ? '重傷' : '軽傷'}）-> ${res.success ? '成功' : '失敗'}`;
     if (res.success) {
       if (wound === 'mortally') {
         changes.push({
@@ -2178,7 +2189,14 @@ function resolveCombatActionInner(
         if (targets.length === 0) missing.push('制圧射撃の対象を 1 人以上選択してください');
         if (missing.length) return { action_key: input.action_key, actor_id: actorPart.id, actor_name: actorPart.name, success: false, formula: missing.join(' / '), breakdown: {}, changes: [], missing_inputs: missing };
         const shooterSkill = actorChar.skills[skillNameToKey('autofire')] ?? 0;
-        const mods = rangedAttackModifiers(db, actorPart, wData!, invWeapon, 'suppressive', undefined, { wound: woundPenalty(woundState(actorChar.hp, actorChar.hp_max)), grapple: grapplePenalty(actorChar.status), ignoreSeriousWound: drugModifiers(actorChar.extra).ignoreSeriousWound, precision: soloEffects(actorChar.role, actorChar.extra).precision });
+        const mods = rangedAttackModifiers(db, actorPart, wData!, invWeapon, 'suppressive', undefined, {
+          wound: woundPenalty(woundState(actorChar.hp, actorChar.hp_max)),
+          grapple: grapplePenalty(actorChar.status),
+          ignoreSeriousWound: drugModifiers(actorChar.extra).ignoreSeriousWound,
+          precision: soloEffects(actorChar.role, actorChar.extra).precision,
+          situations: input.situations,
+          situation_custom: input.situation_custom,
+        });
         const shooterBase = actorChar.stats.ref - (actorChar.armor_penalty ?? 0) + shooterSkill + attackModifierTotal(mods);
         const shooterRoll = resolveD10(input.attack_roll!.first, input.attack_roll!.extra).value;
         const shooterTotal = shooterBase + shooterRoll;
@@ -2538,6 +2556,8 @@ function resolveCombatActionInner(
         wound: woundPenalty(actorWound), grapple: grapplePenalty(actorChar.status),
         ignoreSeriousWound: drugModifiers(actorChar.extra).ignoreSeriousWound,
         precision: solo.precision, luck: i === 0 ? luck : 0,
+        situations: att.situations ?? input.situations,
+        situation_custom: att.situation_custom ?? input.situation_custom,
       });
       const base = stat + skillLevel + (isAimed ? -8 : 0) + attackModifierTotal(modifiers);
 
@@ -2582,7 +2602,10 @@ function resolveCombatActionInner(
         defFormula = `難易度 ${dv}`;
       }
 
-      const modifierFormula = modifiers.map((m) => `${m.value === 0 ? '0' : `${m.value > 0 ? '+' : '−'}${Math.abs(m.value)}`}（${m.label}）`).join(' ');
+      const modifierFormula = modifiers.map((m) => {
+        if (m.key.startsWith('situation')) return `${m.label} ${m.value > 0 ? `+${m.value}` : `−${Math.abs(m.value)}`}`;
+        return `${m.value === 0 ? '0' : `${m.value > 0 ? '+' : '−'}${Math.abs(m.value)}`}（${m.label}）`;
+      }).join(' ');
       let subFormula = `${prefix}REF ${stat} + 技能 ${skillLevel} ${modifierFormula ? `${modifierFormula} ` : ''}+ 出目 ${attD10}${isAimed ? ' −8（照準）' : ''} = ${attackTotal} vs ${defFormula} -> ${isHit ? '命中' : '外れ'}`;
       if (att.attack_roll!.first === 1 && !solo.fumbleImmune && attackWeaponEntry && rangedWeaponQuality(db, wData, attackWeaponEntry) === 'low' && !attackWeaponEntry.malfunctioned) {
         const inventory = (actorChar.inventory as InventoryEntry[]) ?? [];
@@ -2983,12 +3006,15 @@ function resolveCombatActionInner(
       };
 
       const attD10 = atkD10(att.attack_roll!);
-      const attackTotal = base + attD10 + (i === 0 ? luck : 0) + solo.precision;
+      const sitMods = situationModifiers(att.situations ?? input.situations, att.situation_custom ?? input.situation_custom);
+      const sitTotal = attackModifierTotal(sitMods);
+      const sitFormula = sitMods.map((m) => `${m.label} ${m.value > 0 ? `+${m.value}` : `−${Math.abs(m.value)}`}`).join(' ');
+      const attackTotal = base + attD10 + (i === 0 ? luck : 0) + solo.precision + sitTotal;
       const cannotDodgeMelee = (cur.status ?? []).includes('回避できない');
       let isHit = true;
       let sub = '';
       if (cannotDodgeMelee) {
-        sub = `${prefix}${label}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''}${precisionText} = ${attackTotal} vs ${tPart.name} 固定設備（回避不可） -> 命中`;
+        sub = `${prefix}${label}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${sitFormula ? ` ${sitFormula}` : ''}${i === 0 ? luckText : ''}${precisionText} = ${attackTotal} vs ${tPart.name} 固定設備（回避不可） -> 命中`;
       } else {
         const defStat = tChar.stats.dex - (tChar.armor_penalty ?? 0);
         const defSkill = tChar.skills[skillNameToKey('evasion')] ?? 0;
@@ -2996,7 +3022,7 @@ function resolveCombatActionInner(
         const defD10 = resolveD10(att.defense_roll!.first, att.defense_roll!.extra).value;
         const defTotal = defStat + defSkill + defWoundPen + defD10;
         isHit = attackTotal > defTotal;
-        sub = `${prefix}${label}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${i === 0 ? luckText : ''}${precisionText} = ${attackTotal} vs ${tPart.name} 回避 DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
+        sub = `${prefix}${label}: DEX ${stat} + 技能 ${skillLevel} + 出目 ${attD10}${actorWoundPen ? ` ${actorWoundPen}` : ''}${sitFormula ? ` ${sitFormula}` : ''}${i === 0 ? luckText : ''}${precisionText} = ${attackTotal} vs ${tPart.name} 回避 DEX ${defStat} + 回避 ${defSkill} + 出目 ${defD10}${defWoundPen ? ` ${defWoundPen}` : ''} = ${defTotal} -> ${isHit ? '命中' : '外れ'}`;
       }
       if (!isHit) {
         formulaParts.push(sub);
