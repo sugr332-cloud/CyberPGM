@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
   CharacterSheet,
   DeviceInfo,
@@ -25,6 +25,7 @@ import { ResumeQrPanel } from '../components/ResumeQrPanel.js';
 import { CharacterEditorView } from '../components/CharacterEditorView.js';
 import { CharacterDetail } from '../components/CharacterDetail.js';
 import { BgmPlayer, BgmState } from '../components/BgmPlayer.js';
+import { DbAdminTab } from '../components/DbAdminTab.js';
 import { getGmBgmOn, onGmBgmChange } from '../gmBgm.js';
 import { GlobalSearch } from '../components/GlobalSearch.js';
 import { LoreView } from '../components/LoreView.js';
@@ -1232,6 +1233,8 @@ export const GmPage: React.FC = () => {
               <ScenarioPlayView characters={characters} />
             )}
           </div>
+        ) : activeTab === 'db' ? (
+          <DbAdminTab />
         ) : (
           /* Placeholder for other tabs */
           <div

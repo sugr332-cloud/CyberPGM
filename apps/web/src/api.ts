@@ -1034,7 +1034,92 @@ export const api = {
       { method: 'POST', body: JSON.stringify(data) },
       getGmToken(),
     ),
+  // DB Admin (Phase 6i)
+  getDbEntities: () =>
+    request<{ entities: DbEntitySummary[] }>('/api/db/entities', {}, getGmToken()),
+  exportAllDb: () =>
+    request<any>('/api/db/export-all', {}, getGmToken()),
+  getUnverifiedItems: (params?: { kind?: string; q?: string; limit?: number; offset?: number }) => {
+    const qp = new URLSearchParams();
+    if (params?.kind) qp.set('kind', params.kind);
+    if (params?.q) qp.set('q', params.q);
+    if (params?.limit) qp.set('limit', String(params.limit));
+    if (params?.offset) qp.set('offset', String(params.offset));
+    const qs = qp.toString();
+    return request<{
+      items: UnverifiedItem[];
+      total: number;
+      overall_total: number;
+      counts_by_kind: Record<string, number>;
+      limit: number;
+      offset: number;
+    }>(`/api/db/unverified-items${qs ? `?${qs}` : ''}`, {}, getGmToken());
+  },
+  bulkVerifyItems: (itemIds: string[], verifyStatus: string) =>
+    request<{ message: string; updated_count: number; verify_status: string }>(
+      '/api/db/items/bulk-verify',
+      { method: 'POST', body: JSON.stringify({ item_ids: itemIds, verify_status: verifyStatus }) },
+      getGmToken(),
+    ),
+  importDbEntity: async (entity: string, data: any, isCsv?: boolean) => {
+    const token = getGmToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (isCsv) {
+      headers['Content-Type'] = 'text/csv; charset=utf-8';
+    } else {
+      headers['Content-Type'] = 'application/json';
+    }
+    const res = await fetch(`/api/db/import/${entity}`, {
+      method: 'POST',
+      headers,
+      body: isCsv ? (typeof data === 'string' ? data : String(data)) : JSON.stringify(data),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      const err = new Error(json.error || json.message || 'インポートに失敗しました') as any;
+      err.details = json.details;
+      throw err;
+    }
+    return json;
+  },
+  importAllDb: async (data: any) => {
+    const token = getGmToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch('/api/db/import-all', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      const err = new Error(json.error || json.message || '一括インポートに失敗しました') as any;
+      err.details = json.details;
+      throw err;
+    }
+    return json;
+  },
 };
+
+export interface DbEntitySummary {
+  name: string;
+  count: number;
+  columns: Array<{ name: string; type: string; required: boolean; isPk: boolean }>;
+  foreignKeys: Array<{ from: string; targetTable: string; targetColumn: string }>;
+}
+
+export interface UnverifiedItem {
+  id: string;
+  kind: string;
+  name_en: string;
+  name_ja: string | null;
+  name_ja_override: string | null;
+  price_eb: number | null;
+  verify_status: string;
+  origin: string;
+  updated_at: number;
+}
 
 export interface PlayerShopStock {
   item_id: string;
