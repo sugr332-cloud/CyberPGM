@@ -65,3 +65,7 @@ command agy --mode accept-edits --model gemini-4-argon-high
 
 ## 問題・仕様との食い違い
 ```
+
+## 追加フェーズ（2026-10-25）
+
+- [Phase 6c: 同梱シナリオを選ぶだけで開始](phase6c-scenario-library.md) — PR #39を起点に、パッケージ検証、自動登録、選択肢実行、NPC・遭遇、戦闘復帰、開始導線、E2Eを8段階で実装する。状態は未着手。Claudeの設計・審査・承認後にAGYが着手する。仕様はSPEC §5.3.3、依存関係はSPEC §10を参照。

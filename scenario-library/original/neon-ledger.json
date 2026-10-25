@@ -1,0 +1,663 @@
+{
+  "scenario": {
+    "id": "cpred-original-neon-ledger",
+    "title": "ネオンの帳簿（オリジナル・分岐シナリオ）",
+    "summary": "失踪した配送員の救出と不正データの処遇を巡る、交渉・潜入・戦闘の選択型オリジナル短編。原作掲載シナリオの翻案ではありません。",
+    "meta": {
+      "players_min": 2,
+      "players_max": 5,
+      "hours": 3,
+      "tags": [
+        "オリジナル",
+        "分岐",
+        "調査",
+        "潜入"
+      ],
+      "shop_ids": [],
+      "reward_note": "報酬・IPはGM判断。公式数値を推測していない。"
+    },
+    "version": 1,
+    "created_at": 1792740000000,
+    "updated_at": 1792740000000
+  },
+  "scenes": [
+    {
+      "id": "cpred-original-neon-ledger-start",
+      "scenario_id": "cpred-original-neon-ledger",
+      "title": "消えた配送員",
+      "read_aloud": "夜の小雨に濡れた路地。修理屋ミカが古い配送端末を差し出す。「運び屋のレンが帰ってこない。端末の最後の信号は旧貨物駅から出ている」",
+      "gm_notes": "依頼人ミカ：応急修理屋。レンを探してほしい。報酬はGMがキャンペーン経済に合わせて決める。情報を断っても旧貨物駅へ向かえる。",
+      "location": "ミカの工房",
+      "npc_ids": [],
+      "position": {
+        "x": 100,
+        "y": 120
+      },
+      "sort_index": 0,
+      "is_adhoc": false,
+      "stage": {
+        "portraits": []
+      },
+      "bgm": null
+    },
+    {
+      "id": "cpred-original-neon-ledger-station",
+      "scenario_id": "cpred-original-neon-ledger",
+      "title": "旧貨物駅の調査",
+      "read_aloud": "貨物駅には壊れた監視カメラと新しいタイヤ痕が残っている。閉鎖ゲートの先から発電機の音が聞こえる。",
+      "gm_notes": "知覚・電子セキュリティなどの判定を提示。失敗しても進行を止めない。監視カメラの映像から敵の存在を把握する。",
+      "location": "旧貨物駅",
+      "npc_ids": [],
+      "position": {
+        "x": 370,
+        "y": 120
+      },
+      "sort_index": 1,
+      "is_adhoc": false,
+      "stage": {
+        "portraits": []
+      },
+      "bgm": null
+    },
+    {
+      "id": "cpred-original-neon-ledger-contact",
+      "scenario_id": "cpred-original-neon-ledger",
+      "title": "警備員との交渉",
+      "read_aloud": "警備員のカイは手を上げた。「あんたら、レンを探しているのか？　俺もこの仕事から抜けたい」",
+      "gm_notes": "カイ：借金を抱える施設警備員。交渉に成功すれば地下搬入口を教える。敵対すると戦闘に発展し得る。",
+      "location": "旧貨物駅・警備室",
+      "npc_ids": [],
+      "position": {
+        "x": 640,
+        "y": 120
+      },
+      "sort_index": 2,
+      "is_adhoc": false,
+      "stage": {
+        "portraits": []
+      },
+      "bgm": null
+    },
+    {
+      "id": "cpred-original-neon-ledger-sneak",
+      "scenario_id": "cpred-original-neon-ledger",
+      "title": "地下搬入口",
+      "read_aloud": "地下への鉄扉には簡易ロックがある。奥から複数人の声が聞こえる。",
+      "gm_notes": "ロック解除や忍び足で進める。失敗時は敵の警戒が上がり、次のシーンで不利な状況をGMが演出する。",
+      "location": "地下搬入口",
+      "npc_ids": [],
+      "position": {
+        "x": 910,
+        "y": 120
+      },
+      "sort_index": 3,
+      "is_adhoc": false,
+      "stage": {
+        "portraits": []
+      },
+      "bgm": null
+    },
+    {
+      "id": "cpred-original-neon-ledger-fight",
+      "scenario_id": "cpred-original-neon-ledger",
+      "title": "倉庫の対峙",
+      "read_aloud": "倉庫には拘束されたレンと、黒い運搬ケースを守る武装集団がいた。リーダーが言う。「ケースを置いて帰れ」",
+      "gm_notes": "リーダーのヴェイル：密輸組織の現場責任者。戦闘か交渉か逃走かを選べる。敵データはシナリオ専用未設定。GMが既存NPCテンプレートを割り当てる。",
+      "location": "地下倉庫",
+      "npc_ids": [],
+      "position": {
+        "x": 1180,
+        "y": 120
+      },
+      "sort_index": 4,
+      "is_adhoc": false,
+      "stage": {
+        "portraits": []
+      },
+      "bgm": null
+    },
+    {
+      "id": "cpred-original-neon-ledger-rescue",
+      "scenario_id": "cpred-original-neon-ledger",
+      "title": "レンの救出",
+      "read_aloud": "レンの拘束具が外れる。彼は震えながら告げる。「ケースには個人情報の不正取引記録が入っている」",
+      "gm_notes": "レン：配送員。裏切りではなく巻き込まれた被害者。次に情報の処遇を決める。",
+      "location": "地下倉庫",
+      "npc_ids": [],
+      "position": {
+        "x": 100,
+        "y": 420
+      },
+      "sort_index": 5,
+      "is_adhoc": false,
+      "stage": {
+        "portraits": []
+      },
+      "bgm": null
+    },
+    {
+      "id": "cpred-original-neon-ledger-choice",
+      "scenario_id": "cpred-original-neon-ledger",
+      "title": "記録の行方",
+      "read_aloud": "ケースの記録には不正な債権取引が残っている。レンは「公開すれば誰かが救われる。でも追手が来る」と言った。",
+      "gm_notes": "公開・依頼人への引渡し・破棄の三択。全員が納得できる結末でなくてもよい。",
+      "location": "ミカの工房",
+      "npc_ids": [],
+      "position": {
+        "x": 370,
+        "y": 420
+      },
+      "sort_index": 6,
+      "is_adhoc": false,
+      "stage": {
+        "portraits": []
+      },
+      "bgm": null
+    },
+    {
+      "id": "cpred-original-neon-ledger-ending_public",
+      "scenario_id": "cpred-original-neon-ledger",
+      "title": "結末：告発",
+      "read_aloud": "記録が拡散される。街の電光掲示板が一瞬だけ債権企業の名を映し、すぐに消えた。",
+      "gm_notes": "名声と敵対勢力の両方を獲得しうる。具体的な報酬・IPはGMが決める。",
+      "location": "街",
+      "npc_ids": [],
+      "position": {
+        "x": 640,
+        "y": 420
+      },
+      "sort_index": 7,
+      "is_adhoc": false,
+      "stage": {
+        "portraits": []
+      },
+      "bgm": null
+    },
+    {
+      "id": "cpred-original-neon-ledger-ending_private",
+      "scenario_id": "cpred-original-neon-ledger",
+      "title": "結末：静かな帰還",
+      "read_aloud": "レンは帰宅し、ミカはため息をつく。運搬ケースは誰にも見られない場所にしまわれた。",
+      "gm_notes": "安堵の結末だが不正取引は残る。後続シナリオの導入にできる。",
+      "location": "ミカの工房",
+      "npc_ids": [],
+      "position": {
+        "x": 910,
+        "y": 420
+      },
+      "sort_index": 8,
+      "is_adhoc": false,
+      "stage": {
+        "portraits": []
+      },
+      "bgm": null
+    },
+    {
+      "id": "cpred-original-neon-ledger-ending_destroy",
+      "scenario_id": "cpred-original-neon-ledger",
+      "title": "結末：灰になる記録",
+      "read_aloud": "記録は焼却炉で灰になった。追跡者は証拠を失い、被害者もまた真相を知る機会を失った。",
+      "gm_notes": "追跡を振り切りやすい一方、救済の芽を摘む選択。",
+      "location": "廃棄場",
+      "npc_ids": [],
+      "position": {
+        "x": 1180,
+        "y": 420
+      },
+      "sort_index": 9,
+      "is_adhoc": false,
+      "stage": {
+        "portraits": []
+      },
+      "bgm": null
+    }
+  ],
+  "links": [
+    {
+      "id": "cpred-original-neon-ledger-ln-0",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-start",
+      "to_scene_id": "cpred-original-neon-ledger-station",
+      "condition": "依頼を引き受け旧貨物駅へ向かう"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-1",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-station",
+      "to_scene_id": "cpred-original-neon-ledger-contact",
+      "condition": "警備員と接触する"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-2",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-station",
+      "to_scene_id": "cpred-original-neon-ledger-sneak",
+      "condition": "見つからないよう地下へ入る"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-3",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-contact",
+      "to_scene_id": "cpred-original-neon-ledger-sneak",
+      "condition": "話し合いで通行方法を聞き出す"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-4",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-contact",
+      "to_scene_id": "cpred-original-neon-ledger-fight",
+      "condition": "話し合いで通行方法を聞き出す"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-5",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-sneak",
+      "to_scene_id": "cpred-original-neon-ledger-rescue",
+      "condition": "静かに鍵を開ける"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-6",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-sneak",
+      "to_scene_id": "cpred-original-neon-ledger-fight",
+      "condition": "静かに鍵を開ける"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-7",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-fight",
+      "to_scene_id": "cpred-original-neon-ledger-rescue",
+      "condition": "武器を下ろし交渉する"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-8",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-fight",
+      "to_scene_id": "cpred-original-neon-ledger-fight",
+      "condition": "武器を下ろし交渉する"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-9",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-fight",
+      "to_scene_id": "cpred-original-neon-ledger-sneak",
+      "condition": "一旦撤退し再び潜入する"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-10",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-rescue",
+      "to_scene_id": "cpred-original-neon-ledger-choice",
+      "condition": "ミカの工房で記録の扱いを相談する"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-11",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-choice",
+      "to_scene_id": "cpred-original-neon-ledger-ending_public",
+      "condition": "取引記録を公開する"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-12",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-choice",
+      "to_scene_id": "cpred-original-neon-ledger-ending_private",
+      "condition": "証拠をミカに預ける"
+    },
+    {
+      "id": "cpred-original-neon-ledger-ln-13",
+      "scenario_id": "cpred-original-neon-ledger",
+      "from_scene_id": "cpred-original-neon-ledger-choice",
+      "to_scene_id": "cpred-original-neon-ledger-ending_destroy",
+      "condition": "記録を破棄する"
+    }
+  ],
+  "choices": [
+    {
+      "id": "cpred-original-neon-ledger-ch-0",
+      "scene_id": "cpred-original-neon-ledger-start",
+      "label": "依頼を引き受け旧貨物駅へ向かう",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-station"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-station"
+        }
+      ],
+      "sort_index": 1
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-1",
+      "scene_id": "cpred-original-neon-ledger-start",
+      "label": "依頼は断るが独自に調査する",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-station"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-station"
+        }
+      ],
+      "sort_index": 2
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-2",
+      "scene_id": "cpred-original-neon-ledger-station",
+      "label": "警備員と接触する",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-contact"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-contact"
+        }
+      ],
+      "sort_index": 3
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-3",
+      "scene_id": "cpred-original-neon-ledger-station",
+      "label": "見つからないよう地下へ入る",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-sneak"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-sneak"
+        }
+      ],
+      "sort_index": 4
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-4",
+      "scene_id": "cpred-original-neon-ledger-contact",
+      "label": "話し合いで通行方法を聞き出す",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-sneak"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-fight"
+        }
+      ],
+      "sort_index": 5
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-5",
+      "scene_id": "cpred-original-neon-ledger-contact",
+      "label": "警備員を制圧して進む",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-fight"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-fight"
+        }
+      ],
+      "sort_index": 6
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-6",
+      "scene_id": "cpred-original-neon-ledger-sneak",
+      "label": "静かに鍵を開ける",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-rescue"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-fight"
+        }
+      ],
+      "sort_index": 7
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-7",
+      "scene_id": "cpred-original-neon-ledger-sneak",
+      "label": "正面から突入する",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-fight"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-fight"
+        }
+      ],
+      "sort_index": 8
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-8",
+      "scene_id": "cpred-original-neon-ledger-fight",
+      "label": "武器を下ろし交渉する",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-rescue"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-fight"
+        }
+      ],
+      "sort_index": 9
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-9",
+      "scene_id": "cpred-original-neon-ledger-fight",
+      "label": "敵を制圧したとしてレンを救出する",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-rescue"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-rescue"
+        }
+      ],
+      "sort_index": 10
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-10",
+      "scene_id": "cpred-original-neon-ledger-fight",
+      "label": "一旦撤退し再び潜入する",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-sneak"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-sneak"
+        }
+      ],
+      "sort_index": 11
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-11",
+      "scene_id": "cpred-original-neon-ledger-rescue",
+      "label": "ミカの工房で記録の扱いを相談する",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-choice"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-choice"
+        }
+      ],
+      "sort_index": 12
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-12",
+      "scene_id": "cpred-original-neon-ledger-choice",
+      "label": "取引記録を公開する",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-ending_public"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-ending_public"
+        }
+      ],
+      "sort_index": 13
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-13",
+      "scene_id": "cpred-original-neon-ledger-choice",
+      "label": "証拠をミカに預ける",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-ending_private"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-ending_private"
+        }
+      ],
+      "sort_index": 14
+    },
+    {
+      "id": "cpred-original-neon-ledger-ch-14",
+      "scene_id": "cpred-original-neon-ledger-choice",
+      "label": "記録を破棄する",
+      "skill_key": null,
+      "dv": null,
+      "who": "全員",
+      "on_success": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-ending_destroy"
+        }
+      ],
+      "on_failure": [
+        {
+          "kind": "next_scene",
+          "scene_id": "cpred-original-neon-ledger-ending_destroy"
+        }
+      ],
+      "sort_index": 15
+    }
+  ],
+  "clues": [
+    {
+      "id": "cpred-original-neon-ledger-clue",
+      "scenario_id": "cpred-original-neon-ledger",
+      "scene_id": "cpred-original-neon-ledger-station",
+      "title": "最終位置情報",
+      "body": "レンの配送端末は旧貨物駅から最後の信号を出している。",
+      "image_id": null
+    }
+  ],
+  "handouts": [
+    {
+      "id": "cpred-original-neon-ledger-ho",
+      "scenario_id": "cpred-original-neon-ledger",
+      "scene_id": "cpred-original-neon-ledger-choice",
+      "title": "不正取引記録（概要）",
+      "body": "架空の債権企業による個人情報の不正な移送と取引の記録。詳細な企業名はGMが設定。",
+      "image_id": null
+    }
+  ],
+  "encounters": [
+    {
+      "id": "cpred-original-neon-ledger-enc",
+      "scenario_id": "cpred-original-neon-ledger",
+      "scene_id": "cpred-original-neon-ledger-fight",
+      "title": "倉庫の密輸団",
+      "participants": [],
+      "notes": "ヴェイル（リーダー）と警備員2名を想定。NPC/モブDBに登録してから、このエンカウンターへ割り当ててください。数値は公式資料を参照。"
+    }
+  ],
+  "random_tables": []
+}
